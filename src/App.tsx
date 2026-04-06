@@ -1,8 +1,9 @@
 import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
-import { LayoutDashboard, BookOpen, ScrollText, Rocket } from 'lucide-react';
+import { LayoutDashboard, BookOpen, ScrollText, Rocket, MessageSquare } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import UploadVocabulary from './pages/UploadVocabulary';
 import UploadExercises from './pages/UploadExercises';
+import PromptsEditor from './pages/PromptsEditor';
 
 function App() {
   return (
@@ -25,6 +26,10 @@ function App() {
             <ScrollText size={20} />
             Exercises
           </NavLink>
+          <NavLink to="/prompts" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <MessageSquare size={20} />
+            AI Prompts
+          </NavLink>
         </nav>
       </div>
       <main className="main-content">
@@ -32,6 +37,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/vocabulary" element={<UploadVocabulary />} />
           <Route path="/exercises" element={<UploadExercises />} />
+          <Route path="/prompts" element={<PromptsEditor />} />
         </Routes>
       </main>
     </Router>
