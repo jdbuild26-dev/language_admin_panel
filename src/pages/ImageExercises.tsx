@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Upload, Plus, Trash2, Save, Image, Tag, CheckCircle, X, Loader2 } from 'lucide-react';
+import { Upload, Plus, Trash2, Save, Image, Tag, CheckCircle, Loader2 } from 'lucide-react';
 import api from '../services/api';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
