@@ -6,6 +6,7 @@ import UploadExercises from './pages/UploadExercises';
 import PromptsEditor from './pages/PromptsEditor';
 import ImageExercises from './pages/ImageExercises';
 import ReadingExercises from './pages/ReadingExercises';
+import TagTopics from './pages/TagTopics';
 
 function App() {
   return (
@@ -31,6 +32,9 @@ function App() {
           <NavLink to="/reading-exercises" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <BookMarked size={20} />
             Reading Exercises
+          <NavLink to="/tag-topics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Filter size={20} />
+            Tag Topics
           </NavLink>
           <NavLink to="/image-exercises" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <ImageIcon size={20} />
@@ -48,6 +52,7 @@ function App() {
           <Route path="/vocabulary" element={<UploadVocabulary />} />
           <Route path="/exercises" element={<UploadExercises />} />
           <Route path="/reading-exercises" element={<ReadingExercises />} />
+          <Route path="/tag-topics" element={<TagTopics />} />
           <Route path="/image-exercises" element={<ImageExercises />} />
           <Route path="/prompts" element={<PromptsEditor />} />
         </Routes>
