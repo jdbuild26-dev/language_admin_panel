@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
-import { LayoutDashboard, BookOpen, ScrollText, Rocket, MessageSquare, ImageIcon, BookMarked } from 'lucide-react';
+import { LayoutDashboard, BookOpen, ScrollText, Rocket, MessageSquare, ImageIcon, BookMarked, Filter } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import UploadVocabulary from './pages/UploadVocabulary';
 import UploadExercises from './pages/UploadExercises';
@@ -32,6 +32,7 @@ function App() {
           <NavLink to="/reading-exercises" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <BookMarked size={20} />
             Reading Exercises
+          </NavLink>
           <NavLink to="/tag-topics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <Filter size={20} />
             Tag Topics
