@@ -2,7 +2,10 @@ import { useState, useRef } from 'react';
 import { Upload, CheckCircle2, AlertCircle, FileSpreadsheet, Settings } from 'lucide-react';
 import api from '../services/api';
 
+type UploadMode = 'exercises' | 'passages';
+
 export default function UploadExercises() {
+    const [mode, setMode] = useState<UploadMode>('exercises');
     const [file, setFile] = useState<File | null>(null);
     const [skill, setSkill] = useState('Reading');
     const [typeSlug, setTypeSlug] = useState('match_pairs');
@@ -25,13 +28,18 @@ export default function UploadExercises() {
 
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('skill', skill);
-        formData.append('type_slug', typeSlug);
-        formData.append('category', category);
 
         try {
-            const res = await api.post('/admin/sync/exercises', formData);
-            setResult({ success: true, message: res.data.message });
+            if (mode === 'passages') {
+                const res = await api.post('/admin/sync/passages', formData);
+                setResult({ success: true, message: res.data.message });
+            } else {
+                formData.append('skill', skill);
+                formData.append('type_slug', typeSlug);
+                formData.append('category', category);
+                const res = await api.post('/admin/sync/exercises', formData);
+                setResult({ success: true, message: res.data.message });
+            }
             setFile(null);
         } catch (err: any) {
             setResult({ success: false, message: err.response?.data?.detail || 'Upload failed' });
@@ -45,41 +53,73 @@ export default function UploadExercises() {
             <h1>Sync Exercises</h1>
             <p className="mb-8 text-muted">Import practice exercises from CSV with specific skill mapping.</p>
 
-            <div className="grid grid-2 gap-2 mb-8">
-                <div className="form-group">
-                    <label className="form-label">Skill</label>
-                    <select className="form-control" value={skill} onChange={(e) => setSkill(e.target.value)}>
-                        <option>Reading</option>
-                        <option>Writing</option>
-                        <option>Listening</option>
-                        <option>Speaking</option>
-                    </select>
-                </div>
-                <div className="form-group">
-                    <label className="form-label">Category</label>
-                    <select className="form-control" value={category} onChange={(e) => setCategory(e.target.value)}>
-                        <option value="main">Main (Default)</option>
-                        <option value="vocabulary">Vocabulary</option>
-                        <option value="grammar">Grammar</option>
-                    </select>
-                </div>
+            {/* Mode toggle */}
+            <div className="flex gap-2 mb-8" style={{ borderBottom: '1px solid var(--border)' }}>
+                {(['exercises', 'passages'] as UploadMode[]).map(m => (
+                    <button
+                        key={m}
+                        onClick={() => { setMode(m); setResult(null); setFile(null); }}
+                        className="btn btn-secondary"
+                        style={{
+                            borderRadius: '6px 6px 0 0',
+                            borderBottom: mode === m ? '2px solid var(--accent)' : '2px solid transparent',
+                            fontWeight: mode === m ? 600 : 400,
+                            textTransform: 'capitalize',
+                        }}
+                    >
+                        {m === 'passages' ? 'Passages CSV' : 'Exercises CSV'}
+                    </button>
+                ))}
             </div>
 
-            <div className="form-group mb-8">
-                <label className="form-label">Question Type Slug</label>
-                <div className="flex gap-2">
-                    <input
-                        type="text"
-                        className="form-control"
-                        value={typeSlug}
-                        onChange={(e) => setTypeSlug(e.target.value)}
-                        placeholder="e.g. match_pairs, passage_mcq..."
-                    />
-                    <button className="btn btn-secondary bg-card-bg border border-border" onClick={() => setTypeSlug('')}>
-                        <Settings size={18} />
-                    </button>
+            {mode === 'passages' && (
+                <div className="card mb-8" style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: 8 }}>
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
+                        Upload a <strong>passages-only CSV</strong> first (columns: <code>PassageID</code>, <code>passage_en</code>, <code>passage_fr</code>, etc.).
+                        Then upload the questions CSV referencing those passage IDs.
+                    </p>
                 </div>
-            </div>
+            )}
+
+            {mode === 'exercises' && (
+                <div className="grid grid-2 gap-2 mb-8">
+                    <div className="form-group">
+                        <label className="form-label">Skill</label>
+                        <select className="form-control" value={skill} onChange={(e) => setSkill(e.target.value)}>
+                            <option>Reading</option>
+                            <option>Writing</option>
+                            <option>Listening</option>
+                            <option>Speaking</option>
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Category</label>
+                        <select className="form-control" value={category} onChange={(e) => setCategory(e.target.value)}>
+                            <option value="main">Main (Default)</option>
+                            <option value="vocabulary">Vocabulary</option>
+                            <option value="grammar">Grammar</option>
+                        </select>
+                    </div>
+                </div>
+            )}
+
+            {mode === 'exercises' && (
+                <div className="form-group mb-8">
+                    <label className="form-label">Question Type Slug</label>
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            className="form-control"
+                            value={typeSlug}
+                            onChange={(e) => setTypeSlug(e.target.value)}
+                            placeholder="e.g. match_pairs, passage_mcq..."
+                        />
+                        <button className="btn btn-secondary bg-card-bg border border-border" onClick={() => setTypeSlug('')}>
+                            <Settings size={18} />
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div className="card">
                 <div
@@ -96,7 +136,7 @@ export default function UploadExercises() {
                     />
                     <Upload className="file-upload-icon" />
                     <div className="file-upload-text">
-                        {file ? file.name : 'Click to select or drag and drop your exercise CSV'}
+                        {file ? file.name : `Click to select or drag and drop your ${mode === 'passages' ? 'passages' : 'exercise'} CSV`}
                     </div>
                     {file && <div className="file-info"><FileSpreadsheet className="inline" /> {(file.size / 1024).toFixed(2)} KB</div>}
                 </div>
@@ -113,7 +153,7 @@ export default function UploadExercises() {
                     disabled={!file || loading}
                     onClick={handleUpload}
                 >
-                    {loading ? 'Processing...' : 'Import Exercises'}
+                    {loading ? 'Processing...' : mode === 'passages' ? 'Import Passages' : 'Import Exercises'}
                 </button>
             </div>
         </div>
