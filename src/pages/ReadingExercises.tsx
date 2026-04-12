@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Trash2, Eye, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, X } from 'lucide-react';
+import { Search, Trash2, Eye, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, X, Edit2, Save } from 'lucide-react';
 import api from '../services/api';
 
 interface ExerciseSummary {
@@ -20,13 +20,178 @@ interface ExerciseDetail extends ExerciseSummary {
   metadata_: Record<string, unknown>;
 }
 
+interface ExcelRow {
+  [key: string]: string | number | boolean | null;
+}
+
 interface QuestionTypeOption {
   slug: string;
   name: string | null;
 }
 
-type Tab = 'list' | 'detail';
+type Tab = 'list' | 'detail' | 'editor';
 
+// ── Inline table editor for a flat Excel-row dict ──────────────────────────
+function ExcelRowEditor({
+  externalId,
+  onSaved,
+}: {
+  externalId: string;
+  onSaved: () => void;
+}) {
+  const [row, setRow] = useState<ExcelRow | null>(null);
+  const [typeSlug, setTypeSlug] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!externalId.trim()) return;
+    setLoading(true);
+    setError('');
+    setRow(null);
+    setSaved(false);
+    try {
+      const r = await api.get(`/admin/exercises/${externalId.trim()}/excel-row`);
+      setRow(r.data.row);
+      setTypeSlug(r.data.type_slug || '');
+    } catch (e: any) {
+      setError(e.response?.data?.detail || 'Failed to load exercise row');
+    } finally {
+      setLoading(false);
+    }
+  }, [externalId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleChange = (key: string, value: string) => {
+    setRow(prev => prev ? { ...prev, [key]: value } : prev);
+    setSaved(false);
+  };
+
+  const handleSave = async () => {
+    if (!row) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, { row });
+      setSaved(true);
+      onSaved();
+    } catch (e: any) {
+      setError(e.response?.data?.detail || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <p className="text-muted">Loading row data...</p>;
+  if (error) return (
+    <div className="alert alert-error">
+      <AlertCircle className="inline mr-2" size={16} />{error}
+    </div>
+  );
+  if (!row) return null;
+
+  // Group keys into logical sections
+  const META_KEYS = ['ExerciseID', 'Level', 'Category', 'QuestionType', 'Difficulty', 'Exercise Tag', 'TimeLimitSeconds'];
+  const INST_KEYS = ['Instruction_EN', 'Instruction_FR'];
+  const metaEntries = META_KEYS.filter(k => k in row);
+  const instEntries = INST_KEYS.filter(k => k in row);
+  const otherEntries = Object.keys(row).filter(k => !META_KEYS.includes(k) && !INST_KEYS.includes(k));
+
+  const renderField = (key: string) => {
+    const val = String(row[key] ?? '');
+    const isLong = val.length > 80 || key.toLowerCase().includes('paragraph') || key.toLowerCase().includes('passage');
+    return (
+      <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
+        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 220 }}>
+          {key}
+        </td>
+        <td style={{ padding: '6px 8px' }}>
+          {isLong ? (
+            <textarea
+              value={val}
+              onChange={e => handleChange(key, e.target.value)}
+              rows={3}
+              style={{
+                width: '100%', resize: 'vertical', fontSize: 13,
+                background: 'var(--input-bg, var(--card-bg))',
+                border: '1px solid var(--border)', borderRadius: 4,
+                padding: '6px 8px', color: 'var(--text)',
+                fontFamily: 'inherit',
+              }}
+            />
+          ) : (
+            <input
+              type="text"
+              value={val}
+              onChange={e => handleChange(key, e.target.value)}
+              style={{
+                width: '100%', fontSize: 13,
+                background: 'var(--input-bg, var(--card-bg))',
+                border: '1px solid var(--border)', borderRadius: 4,
+                padding: '5px 8px', color: 'var(--text)',
+              }}
+            />
+          )}
+        </td>
+      </tr>
+    );
+  };
+
+  const SectionHeader = ({ label }: { label: string }) => (
+    <tr>
+      <td colSpan={2} style={{ padding: '10px 12px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.06em', background: 'var(--card-bg)' }}>
+        {label}
+      </td>
+    </tr>
+  );
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{externalId}</span>
+          {typeSlug && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{typeSlug}</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {saved && <span style={{ fontSize: 12, color: '#4ade80' }}><CheckCircle2 size={14} className="inline mr-1" />Saved</span>}
+          <button className="btn btn-secondary" style={{ padding: '5px 10px', fontSize: 13 }} onClick={load}>
+            Reload
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ padding: '5px 12px', fontSize: 13 }}
+            onClick={handleSave}
+            disabled={saving}
+          >
+            <Save size={14} className="inline mr-1" />
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="alert alert-error mb-8">
+          <AlertCircle className="inline mr-2" size={16} />{error}
+        </div>
+      )}
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <tbody>
+            {metaEntries.length > 0 && <><SectionHeader label="Metadata" />{metaEntries.map(renderField)}</>}
+            {instEntries.length > 0 && <><SectionHeader label="Instructions" />{instEntries.map(renderField)}</>}
+            {otherEntries.length > 0 && <><SectionHeader label="Content" />{otherEntries.map(renderField)}</>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ──────────────────────────────────────────────────────────
 export default function ReadingExercises() {
   const [tab, setTab] = useState<Tab>('list');
 
@@ -49,12 +214,15 @@ export default function ReadingExercises() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
 
+  // Editor state
+  const [editorId, setEditorId] = useState('');
+  const [editorInputId, setEditorInputId] = useState('');
+
   // Delete state
   const [confirmDelete, setConfirmDelete] = useState<ExerciseSummary | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // Load question types once
   useEffect(() => {
     api.get('/admin/question-types').then(r => setQuestionTypes(r.data.items)).catch(() => {});
   }, []);
@@ -100,6 +268,12 @@ export default function ReadingExercises() {
     fetchDetail(ex.external_id);
   };
 
+  const handleEditExercise = (ex: ExerciseSummary) => {
+    setEditorId(ex.external_id);
+    setEditorInputId(ex.external_id);
+    setTab('editor');
+  };
+
   const handleDelete = async () => {
     if (!confirmDelete) return;
     setDeleteLoading(true);
@@ -127,11 +301,11 @@ export default function ReadingExercises() {
   return (
     <div>
       <h1>Reading Exercises</h1>
-      <p className="mb-8 text-muted">Browse, inspect, and delete exercises by type and category.</p>
+      <p className="mb-8 text-muted">Browse, inspect, edit, and delete exercises by type and category.</p>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-8" style={{ borderBottom: '1px solid var(--border)' }}>
-        {(['list', 'detail'] as Tab[]).map(t => (
+        {(['list', 'detail', 'editor'] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -142,7 +316,7 @@ export default function ReadingExercises() {
               fontWeight: tab === t ? 600 : 400,
             }}
           >
-            {t === 'list' ? 'Exercise List' : 'Detail / Search'}
+            {t === 'list' ? 'Exercise List' : t === 'detail' ? 'Detail / Search' : 'Table Editor'}
           </button>
         ))}
       </div>
@@ -158,7 +332,6 @@ export default function ReadingExercises() {
       {/* ── LIST TAB ── */}
       {tab === 'list' && (
         <div>
-          {/* Filters */}
           <div className="grid grid-2 gap-2 mb-8">
             <div className="form-group">
               <label className="form-label">Question Type</label>
@@ -224,6 +397,14 @@ export default function ReadingExercises() {
                             <Eye size={14} />
                           </button>
                           <button
+                            className="btn btn-secondary"
+                            style={{ padding: '4px 8px', fontSize: 12 }}
+                            onClick={() => handleEditExercise(ex)}
+                            title="Edit in table editor"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
                             className="btn"
                             style={{ padding: '4px 8px', fontSize: 12, background: 'var(--error-bg, #3b1a1a)', color: '#f87171', border: '1px solid #7f1d1d' }}
                             onClick={() => setConfirmDelete(ex)}
@@ -238,7 +419,6 @@ export default function ReadingExercises() {
                 </table>
               </div>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex gap-2 mt-8" style={{ alignItems: 'center' }}>
                   <button className="btn btn-secondary" disabled={page <= 1} onClick={() => fetchList(page - 1)}>
@@ -289,13 +469,22 @@ export default function ReadingExercises() {
                     {detail.passage_id && <> · passage: <code>{detail.passage_id}</code></>}
                   </p>
                 </div>
-                <button
-                  className="btn"
-                  style={{ padding: '6px 12px', background: 'var(--error-bg, #3b1a1a)', color: '#f87171', border: '1px solid #7f1d1d' }}
-                  onClick={() => setConfirmDelete(detail)}
-                >
-                  <Trash2 size={14} className="inline mr-1" /> Delete
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: '6px 12px' }}
+                    onClick={() => { setEditorId(detail.external_id); setEditorInputId(detail.external_id); setTab('editor'); }}
+                  >
+                    <Edit2 size={14} className="inline mr-1" /> Edit
+                  </button>
+                  <button
+                    className="btn"
+                    style={{ padding: '6px 12px', background: 'var(--error-bg, #3b1a1a)', color: '#f87171', border: '1px solid #7f1d1d' }}
+                    onClick={() => setConfirmDelete(detail)}
+                  >
+                    <Trash2 size={14} className="inline mr-1" /> Delete
+                  </button>
+                </div>
               </div>
 
               {detail.instruction_en && (
@@ -324,6 +513,38 @@ export default function ReadingExercises() {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── EDITOR TAB ── */}
+      {tab === 'editor' && (
+        <div>
+          <div className="form-group mb-8" style={{ display: 'flex', gap: 8 }}>
+            <input
+              className="form-control"
+              placeholder="Enter Exercise ID to edit..."
+              value={editorInputId}
+              onChange={e => setEditorInputId(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && setEditorId(editorInputId)}
+              style={{ flex: 1 }}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={() => setEditorId(editorInputId)}
+              disabled={!editorInputId.trim()}
+            >
+              <Edit2 size={16} />
+              Load
+            </button>
+          </div>
+
+          {editorId && (
+            <ExcelRowEditor
+              key={editorId}
+              externalId={editorId}
+              onSaved={() => showToast(true, `Saved ${editorId}`)}
+            />
           )}
         </div>
       )}
