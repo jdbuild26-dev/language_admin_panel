@@ -75,8 +75,10 @@ export default function UploadExercises() {
             {mode === 'passages' && (
                 <div className="card mb-8" style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: 8 }}>
                     <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
-                        Upload a <strong>passages-only CSV</strong> first (columns: <code>PassageID</code>, <code>passage_en</code>, <code>passage_fr</code>, etc.).
-                        Then upload the questions CSV referencing those passage IDs.
+                        <strong>Step 1 of 2 — Upload scenarios/passages first.</strong><br />
+                        For <strong>Running Conversation</strong>: upload <code>Running-conversation.csv</code> here.<br />
+                        Then go to <strong>Exercises CSV</strong> tab and upload <code>Running-conversation(2).csv</code> with <code>type_slug = conversation_dialogue</code>.<br />
+                        The backend will automatically merge the two files using the shared <code>ExerciseID</code>.
                     </p>
                 </div>
             )}
