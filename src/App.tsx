@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
-import { LayoutDashboard, BookOpen, ScrollText, Rocket, MessageSquare, ImageIcon, BookMarked, Filter } from 'lucide-react';
+import { LayoutDashboard, BookOpen, ScrollText, Rocket, MessageSquare, ImageIcon, BookMarked, Filter, Dumbbell } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import UploadVocabulary from './pages/UploadVocabulary';
 import UploadExercises from './pages/UploadExercises';
@@ -7,6 +7,7 @@ import PromptsEditor from './pages/PromptsEditor';
 import ImageExercises from './pages/ImageExercises';
 import ReadingExercises from './pages/ReadingExercises';
 import TagTopics from './pages/TagTopics';
+import MainPractice from './pages/MainPractice';
 
 function App() {
   return (
@@ -24,6 +25,10 @@ function App() {
           <NavLink to="/vocabulary" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <BookOpen size={20} />
             Vocabulary
+          </NavLink>
+          <NavLink to="/main-practice" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Dumbbell size={20} />
+            Main Practice
           </NavLink>
           <NavLink to="/exercises" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <ScrollText size={20} />
@@ -51,6 +56,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/vocabulary" element={<UploadVocabulary />} />
+          <Route path="/main-practice" element={<MainPractice />} />
           <Route path="/exercises" element={<UploadExercises />} />
           <Route path="/reading-exercises" element={<ReadingExercises />} />
           <Route path="/tag-topics" element={<TagTopics />} />

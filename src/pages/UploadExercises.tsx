@@ -74,9 +74,11 @@ export default function UploadExercises() {
 
             {mode === 'passages' && (
                 <div className="card mb-8" style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: 8 }}>
-                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
-                        Upload a <strong>passages-only CSV</strong> first (columns: <code>PassageID</code>, <code>passage_en</code>, <code>passage_fr</code>, etc.).
-                        Then upload the questions CSV referencing those passage IDs.
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                        <strong>Step 1 of 2 — Upload the image/scenario file first.</strong><br /><br />
+                        <strong>Running Conversation:</strong> Upload <code>Running-conversation.csv</code> here, then upload <code>Running-conversation(2).csv</code> in Exercises CSV with <code>type_slug = conversation_dialogue</code>.<br /><br />
+                        <strong>Image Labelling:</strong> Upload an image-map CSV here (columns: <code>ExerciseID</code>, <code>Image link from Cloudinary</code>, <code>Marker_1_X</code>, <code>Marker_1_Y</code> ... <code>Marker_8_X</code>, <code>Marker_8_Y</code>), then upload the labels CSV in Exercises CSV with <code>type_slug = image_labelling</code>.<br /><br />
+                        The backend merges both files automatically using the shared <code>ExerciseID</code>.
                     </p>
                 </div>
             )}
