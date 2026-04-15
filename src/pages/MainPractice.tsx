@@ -8,7 +8,7 @@ type CefrLevel = typeof CEFR_LEVELS[number];
 type Category = typeof CATEGORIES[number];
 type Slide = 'main' | 'subtypes' | 'exercises' | 'create';
 
-interface QuestionType { slug: string; name: string | null; }
+interface QuestionType { slug: string; name: string | null; is_active: boolean; }
 
 interface ExerciseSubtype {
   id: string;
@@ -125,19 +125,160 @@ function ConfirmModal({ title, body, onConfirm, onCancel, loading }: {
   );
 }
 
+// ─── Analytics Modal ─────────────────────────────────────────────────────────
+function AnalyticsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void }) {
+  const [data, setData] = useState<{ total: number; by_level: Record<string, number> } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get(`/admin/question-types/${qt.slug}/analytics`)
+      .then(r => setData(r.data))
+      .catch(() => setError('Failed to load analytics'))
+      .finally(() => setLoading(false));
+  }, [qt.slug]);
+
+  const LEVELS = ['A1', 'A2', 'B1', 'B2'];
+  const maxCount = data ? Math.max(...Object.values(data.by_level), 1) : 1;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div className="card" style={{ maxWidth: 480, width: '90%', position: 'relative' }}>
+        <button onClick={onClose} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
+        <h3 style={{ marginBottom: 4 }}>Analytics</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: '1.5rem', fontFamily: 'monospace' }}>{qt.slug}</p>
+
+        {loading && <p style={{ color: 'var(--text-muted)' }}>Loading...</p>}
+        {error && <p style={{ color: 'var(--error)' }}>{error}</p>}
+        {data && (
+          <>
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ flex: 1, background: 'var(--bg)', borderRadius: 8, padding: '1rem', textAlign: 'center' }}>
+                <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--white)' }}>{data.total}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Total Exercises</div>
+              </div>
+              <div style={{ flex: 1, background: 'var(--bg)', borderRadius: 8, padding: '1rem', textAlign: 'center' }}>
+                <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--white)' }}>{Object.keys(data.by_level).length}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Levels with Data</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {LEVELS.map(lvl => {
+                const count = data.by_level[lvl] || 0;
+                const pct = Math.round((count / maxCount) * 100);
+                return (
+                  <div key={lvl} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 28, fontWeight: 700, fontSize: 13, color: 'var(--text-muted)' }}>{lvl}</span>
+                    <div style={{ flex: 1, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: count > 0 ? 'var(--accent)' : 'transparent', borderRadius: 4, transition: 'width 0.4s ease' }} />
+                    </div>
+                    <span style={{ width: 36, textAlign: 'right', fontSize: 13, fontWeight: 600, color: count > 0 ? 'var(--white)' : 'var(--text-muted)' }}>{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── AI Prompts Modal ─────────────────────────────────────────────────────────
+function PromptsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get(`/admin/question-types/${qt.slug}/prompt`)
+      .then(r => setData(r.data))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [qt.slug]);
+
+  const prompt = data?.prompt;
+  const LEVELS = ['A1', 'A2', 'B1', 'B2'];
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, overflowY: 'auto', padding: '2rem 1rem' }}>
+      <div className="card" style={{ maxWidth: 600, width: '90%', position: 'relative' }}>
+        <button onClick={onClose} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
+        <h3 style={{ marginBottom: 4 }}>AI Prompts</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: '1.5rem', fontFamily: 'monospace' }}>{qt.slug}</p>
+
+        {loading && <p style={{ color: 'var(--text-muted)' }}>Loading...</p>}
+
+        {!loading && !prompt && (
+          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+            <MessageSquare size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
+            <p>No AI prompt configured for this exercise type.</p>
+            <p style={{ fontSize: 12, marginTop: 8 }}>Go to <strong>AI Prompts</strong> in the sidebar to create one.</p>
+          </div>
+        )}
+
+        {prompt && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: '1rem' }}>
+              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '0.75rem' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Topic</div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{prompt.topic}</div>
+              </div>
+              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '0.75rem' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Slug</div>
+                <div style={{ fontSize: 13, fontFamily: 'monospace' }}>{prompt.slug}</div>
+              </div>
+            </div>
+            {LEVELS.map(lvl => {
+              const key = lvl.toLowerCase();
+              const inst = prompt[`instruction_${key}`];
+              const aiP = prompt[`ai_prompt_${key}`];
+              if (!inst && !aiP) return null;
+              return (
+                <div key={lvl} style={{ marginBottom: '1rem', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  <div style={{ background: 'rgba(31,111,235,0.1)', padding: '6px 12px', fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>{lvl}</div>
+                  {inst && <div style={{ padding: '8px 12px', fontSize: 13, borderBottom: aiP ? '1px solid var(--border)' : 'none' }}><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>INSTRUCTION: </span>{inst}</div>}
+                  {aiP && <div style={{ padding: '8px 12px', fontSize: 13 }}><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>AI PROMPT: </span>{aiP}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Slide 1: Main Practice ───────────────────────────────────────────────────
 function Slide1Main({
-  level, setLevel, category, setCategory, questionTypes, onEdit,
+  level, setLevel, category, setCategory, questionTypes, setQuestionTypes, onEdit,
 }: {
   level: CefrLevel; setLevel: (l: CefrLevel) => void;
   category: Category; setCategory: (c: Category) => void;
   questionTypes: QuestionType[];
+  setQuestionTypes: React.Dispatch<React.SetStateAction<QuestionType[]>>;
   onEdit: (qt: QuestionType) => void;
 }) {
   // Fetch available slugs for the selected level from the same endpoint the practice page uses.
-  // null = still loading or level not yet filtered (show all).
   const [availableSlugs, setAvailableSlugs] = useState<string[] | null>(null);
   const [slugsLoading, setSlugsLoading] = useState(false);
+
+  // Modal state
+  const [analyticsQt, setAnalyticsQt] = useState<QuestionType | null>(null);
+  const [promptsQt, setPromptsQt] = useState<QuestionType | null>(null);
+  const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
+
+  const handleToggleActive = async (qt: QuestionType) => {
+    setTogglingSlug(qt.slug);
+    try {
+      const r = await api.post(`/admin/question-types/${qt.slug}/toggle-active`);
+      // Use the is_active value returned by the backend
+      setQuestionTypes(prev => prev.map(q => q.slug === qt.slug ? { ...q, is_active: r.data.is_active } : q));
+    } catch {
+      // silently fail — toast is in parent
+    } finally {
+      setTogglingSlug(null);
+    }
+  };
 
   useEffect(() => {
     setSlugsLoading(true);
@@ -211,30 +352,44 @@ function Slide1Main({
               <tr><td colSpan={4} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No exercise types found for {category}.</td></tr>
             ) : (
               visibleTypes.map((qt, idx) => (
-                <tr key={qt.slug} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.1s' }}
+                <tr key={qt.slug} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.1s', opacity: qt.is_active ? 1 : 0.45 }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                   <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{idx + 1}</td>
-                  <td style={{ padding: '12px 16px', fontWeight: 600 }}>{qt.name || qt.slug}</td>
+                  <td style={{ padding: '12px 16px', fontWeight: 600 }}>
+                    {qt.name || qt.slug}
+                    {!qt.is_active && (
+                      <span style={{ marginLeft: 8, fontSize: 11, background: '#ef444422', color: '#ef4444', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>
+                        DEACTIVATED
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 13, color: 'var(--text-muted)' }}>
                     {level}_{qt.slug}
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                       {/* Analytics */}
-                      <button title="Analytics" style={iconBtnStyle('#1f6feb')}>
+                      <button title="Analytics" onClick={() => setAnalyticsQt(qt)} style={iconBtnStyle('#1f6feb')}>
                         <BarChart3 size={15} />
                       </button>
                       {/* AI Prompts */}
-                      <button title="AI Prompts" style={iconBtnStyle('#2ea043')}>
+                      <button title="AI Prompts" onClick={() => setPromptsQt(qt)} style={iconBtnStyle('#2ea043')}>
                         <MessageSquare size={15} />
                       </button>
                       {/* Edit - opens Slide 2 */}
                       <button title="Edit subtypes" onClick={() => onEdit(qt)} style={iconBtnStyle('#f59e0b')}>
                         <Pencil size={15} />
                       </button>
-                      {/* Deactivate */}
-                      <button title="Deactivate" style={iconBtnStyle('#ef4444')}>
+                      {/* Activate / Deactivate */}
+                      <button
+                        title={qt.is_active ? 'Deactivate (hides from practice page)' : 'Activate (shows on practice page)'}
+                        onClick={() => handleToggleActive(qt)}
+                        disabled={togglingSlug === qt.slug}
+                        style={{
+                          ...iconBtnStyle(qt.is_active ? '#ef4444' : '#2ea043'),
+                          opacity: togglingSlug === qt.slug ? 0.5 : 1,
+                        }}>
                         <Power size={15} />
                       </button>
                     </div>
@@ -245,6 +400,10 @@ function Slide1Main({
           </tbody>
         </table>
       </div>
+
+      {/* Modals */}
+      {analyticsQt && <AnalyticsModal qt={analyticsQt} onClose={() => setAnalyticsQt(null)} />}
+      {promptsQt && <PromptsModal qt={promptsQt} onClose={() => setPromptsQt(null)} />}
     </div>
   );
 }
@@ -307,8 +466,8 @@ function Slide2Subtypes({
 
   const handleToggleActive = async (sub: ExerciseSubtype) => {
     try {
-      await api.patch(`/admin/exercise-subtypes/${sub.id}`, { is_active: !sub.is_active });
-      setSubtypes(prev => prev.map(s => s.id === sub.id ? { ...s, is_active: !s.is_active } : s));
+      const r = await api.patch(`/admin/exercise-subtypes/${sub.id}/toggle-active`);
+      setSubtypes(prev => prev.map(s => s.id === sub.id ? { ...s, is_active: r.data.is_active } : s));
       showToast(true, `${sub.is_active ? 'Deactivated' : 'Activated'} "${sub.name_en}"`);
     } catch (e: any) {
       showToast(false, e.response?.data?.detail || 'Update failed');
@@ -513,7 +672,8 @@ function Slide3Exercises({
   const [page, setPage] = useState(1);
   const pageSize = 50;
   const [loading, setLoading] = useState(true);
-  const [showDeactivated, setShowDeactivated] = useState(false);
+  const [showDeactivatedOnly, setShowDeactivatedOnly] = useState(false);
+  // editingId: which row is in edit mode (null = none)
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ExerciseRow | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -523,24 +683,25 @@ function Slide3Exercises({
   const load = useCallback(async (p = 1) => {
     setLoading(true);
     try {
-      // type_slug scopes to the exercise type; level filters by CEFR Level.code
       const params: Record<string, string | number> = {
         page: p, page_size: pageSize,
         type_slug: exerciseType.slug,
         level,
       };
       const r = await api.get('/admin/exercises', { params });
-      let items: ExerciseRow[] = r.data.items || [];
-      if (!showDeactivated) items = items.filter((e: ExerciseRow) => e.is_active !== false);
+      const allItems: ExerciseRow[] = r.data.items || [];
+      const items = showDeactivatedOnly
+        ? allItems.filter((e: ExerciseRow) => e.is_active === false)
+        : allItems;
       setExercises(items);
-      setTotal(r.data.total || items.length);
+      setTotal(r.data.total || allItems.length);
       setPage(p);
     } catch {
       setExercises([]);
     } finally {
       setLoading(false);
     }
-  }, [exerciseType.slug, level, showDeactivated]);
+  }, [exerciseType.slug, level, showDeactivatedOnly]);
 
   useEffect(() => { load(1); }, [load]);
 
@@ -561,8 +722,8 @@ function Slide3Exercises({
 
   const handleToggleActive = async (ex: ExerciseRow) => {
     try {
-      await api.patch(`/admin/exercises/${ex.external_id}`, { is_active: !ex.is_active });
-      setExercises(prev => prev.map(e => e.id === ex.id ? { ...e, is_active: !e.is_active } : e));
+      const r = await api.patch(`/admin/exercises/${ex.external_id}/toggle-active`);
+      setExercises(prev => prev.map(e => e.id === ex.id ? { ...e, is_active: r.data.is_active } : e));
       showToast(true, `${ex.is_active ? 'Deactivated' : 'Activated'} ${ex.external_id}`);
     } catch (e: any) {
       showToast(false, e.response?.data?.detail || 'Update failed');
@@ -572,12 +733,14 @@ function Slide3Exercises({
   const handleDownloadCSV = async () => {
     try {
       const r = await api.get('/admin/exercises/export', {
-        params: { type_slug: exerciseType.slug, level, skill: category },
+        params: { type_slug: exerciseType.slug, level },
         responseType: 'blob',
       });
       const url = URL.createObjectURL(r.data);
       const a = document.createElement('a');
-      a.href = url; a.download = `${exerciseType.slug}_${level}_${category}.csv`; a.click();
+      a.href = url;
+      a.download = `${exerciseType.slug}_${level}_${subtype.subtype_slug}.csv`;
+      a.click();
       URL.revokeObjectURL(url);
     } catch {
       showToast(false, 'Export not available yet');
@@ -585,105 +748,149 @@ function Slide3Exercises({
   };
 
   const totalPages = Math.ceil(total / pageSize);
+  const subtypeIndex = 1; // placeholder — would come from the subtype list position
 
   return (
     <div>
       {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.5rem' }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.25rem' }}>
+        <button onClick={onBack}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14 }}>
           <ChevronLeft size={16} /> Back
         </button>
-        <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
           CEFR Level: <strong style={{ color: 'var(--white)' }}>{level}</strong>
           &nbsp;&nbsp;Category: <strong style={{ color: 'var(--white)' }}>{category}</strong>
         </span>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-        <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug} &gt;&gt; {subtype.name_en}</h2>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={showDeactivated} onChange={e => setShowDeactivated(e.target.checked)} />
-            Show deactivated only
-          </label>
-          <button onClick={handleDownloadCSV} title="Download CSV"
-            style={{ width: 36, height: 36, borderRadius: 8, background: '#2ea04322', border: 'none', cursor: 'pointer', color: '#2ea043', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Download size={18} />
-          </button>
+      {/* Title row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+        <h2 style={{ margin: 0 }}>
+          {exerciseType.name || exerciseType.slug} &gt;&gt; {subtypeIndex}. {subtype.name_en}
+        </h2>
+        {/* Download CSV — green, top right */}
+        <button onClick={handleDownloadCSV} title="Download CSV"
+          style={{
+            width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer',
+            background: '#2ea043', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+          <Download size={18} />
+        </button>
+      </div>
+
+      {/* Tabs + deactivated toggle on same row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--border)', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', gap: 0 }}>
+          {(['list', 'detail'] as ExTab[]).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              style={{
+                padding: '8px 24px', background: 'none', border: 'none', cursor: 'pointer',
+                color: tab === t ? 'var(--white)' : 'var(--text-muted)',
+                borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent',
+                fontWeight: tab === t ? 600 : 500, fontSize: 14, transition: 'all 0.15s',
+              }}>
+              {t === 'list' ? 'Exercise List' : 'Detail / Search'}
+            </button>
+          ))}
         </div>
+        {/* Show deactivated toggle — top right of tabs */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', paddingBottom: 8 }}>
+          <input type="checkbox" checked={showDeactivatedOnly} onChange={e => setShowDeactivatedOnly(e.target.checked)} />
+          Show deactivated only
+        </label>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: '1.5rem', borderBottom: '1px solid var(--border)' }}>
-        {(['list', 'detail'] as ExTab[]).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{
-              padding: '8px 20px', background: 'none', border: 'none', cursor: 'pointer',
-              color: tab === t ? 'var(--white)' : 'var(--text-muted)',
-              borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent',
-              fontWeight: tab === t ? 600 : 400, fontSize: 14, transition: 'all 0.15s',
-            }}>
-            {t === 'list' ? 'Exercise List' : 'Detail / Search'}
-          </button>
-        ))}
-      </div>
-
-      {/* LIST TAB */}
+      {/* ── EXERCISE LIST TAB ── */}
       {tab === 'list' && (
         <>
           {loading ? (
             <p style={{ color: 'var(--text-muted)' }}>Loading...</p>
           ) : exercises.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)' }}>No exercises found.</p>
+            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+              <p>No exercises found{showDeactivatedOnly ? ' (deactivated)' : ''}.</p>
+            </div>
           ) : (
             <>
-              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', width: 120 }}>ExID</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>Question Type</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', width: 80 }}>Level</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', width: 160 }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {exercises.map(ex => (
-                      <tr key={ex.id} style={{ borderBottom: '1px solid var(--border)', opacity: ex.is_active === false ? 0.5 : 1 }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                        <td style={{ padding: '9px 14px', fontFamily: 'monospace' }}>{ex.external_id}</td>
-                        <td style={{ padding: '9px 14px' }}>{ex.type_slug ?? '—'}</td>
-                        <td style={{ padding: '9px 14px' }}>{ex.level ?? '—'}</td>
-                        <td style={{ padding: '9px 14px' }}>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                            {/* Edit - toggles inline editor */}
-                            <button title="Edit" onClick={() => setEditingId(editingId === ex.external_id ? null : ex.external_id)}
-                              style={iconBtnStyle(editingId === ex.external_id ? '#f59e0b' : '#60a5fa')}>
-                              {editingId === ex.external_id ? <Save size={14} /> : <Pencil size={14} />}
-                            </button>
-                            <button title="Delete" onClick={() => setConfirmDelete(ex)} style={iconBtnStyle('#ef4444')}>
-                              <Trash2 size={14} />
-                            </button>
-                            <button title={ex.is_active === false ? 'Activate' : 'Deactivate'} onClick={() => handleToggleActive(ex)}
-                              style={iconBtnStyle(ex.is_active === false ? '#2ea043' : '#ef4444')}>
-                              <Power size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {/* Inline editor row */}
-                    {editingId && exercises.find(e => e.external_id === editingId) && (
-                      <tr key={`editor-${editingId}`}>
-                        <td colSpan={4} style={{ padding: '1rem', background: 'rgba(31,111,235,0.05)', borderBottom: '1px solid var(--border)' }}>
-                          <ExcelRowEditor key={editingId} externalId={editingId} onSaved={() => { showToast(true, `Saved ${editingId}`); load(page); }} />
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              {/* Outer wrapper with horizontal scroll on the right */}
+              <div style={{ display: 'flex', gap: 0 }}>
+                <div style={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
+                  <div className="card" style={{ padding: 0, overflow: 'hidden', minWidth: 600 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '2px solid var(--border)' }}>
+                          {/* Actions col on LEFT per design */}
+                          <th style={{ padding: '10px 14px', width: 130 }}></th>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', textDecoration: 'underline' }}>ExID</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)' }}>Question Type</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', width: 80 }}>Level</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {exercises.map(ex => (
+                          <>
+                            <tr key={ex.id}
+                              style={{ borderBottom: '1px solid var(--border)', opacity: ex.is_active === false ? 0.45 : 1 }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                              {/* Actions — LEFT side, matching design */}
+                              <td style={{ padding: '9px 14px' }}>
+                                <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                                  {/* Edit / Save toggle */}
+                                  <button
+                                    title={editingId === ex.external_id ? 'Close editor' : 'Edit'}
+                                    onClick={() => setEditingId(editingId === ex.external_id ? null : ex.external_id)}
+                                    style={iconBtnStyle(editingId === ex.external_id ? '#f59e0b' : '#60a5fa')}>
+                                    <Pencil size={13} />
+                                  </button>
+                                  {/* Delete */}
+                                  <button title="Delete" onClick={() => setConfirmDelete(ex)} style={iconBtnStyle('#ef4444')}>
+                                    <Trash2 size={13} />
+                                  </button>
+                                  {/* Deactivate */}
+                                  <button
+                                    title={ex.is_active === false ? 'Activate' : 'Deactivate'}
+                                    onClick={() => handleToggleActive(ex)}
+                                    style={iconBtnStyle(ex.is_active === false ? '#2ea043' : '#ef4444')}>
+                                    <Power size={13} />
+                                  </button>
+                                  {/* Image upload — only shown for image-based exercise types */}
+                                  {['image_mcq', 'image_labelling', 'diagram_mapping', 'match_desc_to_image'].includes(exerciseType.slug) && (
+                                    <button title="Upload image" style={iconBtnStyle('#f87171')}>
+                                      <Upload size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                              <td style={{ padding: '9px 14px', fontFamily: 'monospace', fontWeight: 600 }}>{ex.external_id}</td>
+                              <td style={{ padding: '9px 14px', color: 'var(--text-muted)' }}>{ex.type_slug ?? '—'}</td>
+                              <td style={{ padding: '9px 14px' }}>{ex.level ?? '—'}</td>
+                            </tr>
+                            {/* Inline editor — expands below the row when pencil clicked */}
+                            {editingId === ex.external_id && (
+                              <tr key={`editor-${ex.external_id}`}>
+                                <td colSpan={4} style={{ padding: '1rem 1.5rem', background: 'rgba(31,111,235,0.04)', borderBottom: '2px solid var(--accent)' }}>
+                                  <ExcelRowEditor
+                                    key={ex.external_id}
+                                    externalId={ex.external_id}
+                                    onSaved={() => {
+                                      showToast(true, `Saved ${ex.external_id}`);
+                                      load(page);
+                                    }}
+                                  />
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
+
               {totalPages > 1 && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 16, alignItems: 'center' }}>
                   <button className="btn btn-secondary" disabled={page <= 1} onClick={() => load(page - 1)} style={{ padding: '6px 12px' }}>Prev</button>
@@ -696,11 +903,12 @@ function Slide3Exercises({
         </>
       )}
 
-      {/* DETAIL TAB */}
+      {/* ── DETAIL / SEARCH TAB ── */}
       {tab === 'detail' && (
         <div>
           <div style={{ display: 'flex', gap: 8, marginBottom: '1.5rem' }}>
-            <input className="form-control" placeholder="Enter Exercise ID..." value={searchId}
+            <input className="form-control" placeholder="Enter Exercise ID (e.g. HTS001)..."
+              value={searchId}
               onChange={e => setSearchId(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && setDetailId(searchId)}
               style={{ flex: 1 }} />
@@ -708,10 +916,17 @@ function Slide3Exercises({
               Load
             </button>
           </div>
-          {detailId && <ExcelRowEditor key={detailId} externalId={detailId} onSaved={() => showToast(true, `Saved ${detailId}`)} />}
+          {detailId && (
+            <ExcelRowEditor
+              key={detailId}
+              externalId={detailId}
+              onSaved={() => showToast(true, `Saved ${detailId}`)}
+            />
+          )}
         </div>
       )}
 
+      {/* Delete confirm modal */}
       {confirmDelete && (
         <ConfirmModal
           title="Delete Exercise"
@@ -924,6 +1139,7 @@ export default function MainPractice() {
           level={level} setLevel={setLevel}
           category={category} setCategory={setCategory}
           questionTypes={questionTypes}
+          setQuestionTypes={setQuestionTypes}
           onEdit={handleEdit}
         />
       )}
