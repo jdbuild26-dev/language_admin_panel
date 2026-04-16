@@ -1,5 +1,5 @@
-﻿import { useState, useEffect, useCallback } from 'react';
-import { Plus, Pencil, Trash2, X, Save, Search, AlertCircle, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, Pencil, Trash2, X, Save, Search, AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Sparkles, Loader2 } from 'lucide-react';
 import api from '../services/api';
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -84,6 +84,26 @@ function VocabModal({
 
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
 
+  const [completing, setCompleting] = useState(false);
+  const handleAIComplete = async () => {
+    // If we have at least one field, we can try to complete
+    if (!form.word?.trim() && !form.word_masc?.trim() && !form.word_fem?.trim() && !form.english_word?.trim()) {
+      setError('Please enter at least one word form (French or English)');
+      return;
+    }
+
+    setCompleting(true);
+    setError('');
+    try {
+      const r = await api.post('/admin/vocabulary/ai-complete', form);
+      setForm((f: any) => ({ ...f, ...r.data }));
+    } catch (e: any) {
+      setError('AI completion failed');
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!form.english_word?.trim() && !form.word?.trim() && !form.word_masc?.trim() && !form.word_fem?.trim()) {
       setError('At least one word form is required');
@@ -111,7 +131,25 @@ function VocabModal({
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, overflowY: 'auto', padding: '2rem 1rem' }}>
       <div className="card" style={{ maxWidth: 720, width: '95%', position: 'relative' }}>
         <button onClick={onClose} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
-        <h3 style={{ marginBottom: '1.5rem' }}>{isEdit ? 'Edit Vocabulary' : 'Add Vocabulary'}</h3>
+        <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: 12 }}>
+          {isEdit ? 'Edit Vocabulary' : 'Add Vocabulary'}
+          <button 
+            className="btn btn-secondary" 
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '4px 10px', fontSize: 11, 
+              background: 'rgba(96,165,250,0.1)', 
+              color: '#3b82f6', 
+              border: '1px solid rgba(96,165,250,0.2)',
+              borderRadius: 6
+            }}
+            onClick={handleAIComplete}
+            disabled={completing}
+          >
+            {completing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            {completing ? 'Completing...' : 'AI Complete'}
+          </button>
+        </h3>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
           {/* Left column */}
