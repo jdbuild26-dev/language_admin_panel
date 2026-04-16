@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet } from 'lucide-react';
+import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet, CloudUpload } from 'lucide-react';
 import api from '../services/api';
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'] as const;
@@ -1113,6 +1113,7 @@ function Slide4Create({
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<{current: number, total: number} | null>(null);
 
   // Auto-generate subtype slug from exercise code + English name
   useEffect(() => {
@@ -1137,26 +1138,72 @@ function Slide4Create({
       };
       await api.post('/admin/exercise-subtypes', payload);
 
-      // If a CSV file was also provided, upload it
+      // --- Batched Upload with Progress ---
       if (file) {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('skill', category);
-        fd.append('type_slug', exerciseType.slug);
-        fd.append('category', 'main');
-        await api.post('/admin/sync/exercises', fd);
+        const text = await file.text();
+        const lines = text.split('\n').filter(l => l.trim());
+        if (lines.length > 1) {
+          const headers = lines[0];
+          const dataRows = lines.slice(1);
+          const BATCH_SIZE = 15;
+          const totalBatches = Math.ceil(dataRows.length / BATCH_SIZE);
+          
+          setUploadProgress({ current: 0, total: dataRows.length });
+
+          for (let i = 0; i < dataRows.length; i += BATCH_SIZE) {
+            const batchRows = dataRows.slice(i, i + BATCH_SIZE);
+            const batchCsv = [headers, ...batchRows].join('\n');
+            const blob = new Blob([batchCsv], { type: 'text/csv' });
+            
+            const fd = new FormData();
+            fd.append('file', blob, 'batch.csv');
+            fd.append('skill', category);
+            fd.append('type_slug', exerciseType.slug);
+            fd.append('category', 'main');
+            
+            await api.post('/admin/sync/exercises', fd);
+            setUploadProgress({ current: Math.min(i + BATCH_SIZE, dataRows.length), total: dataRows.length });
+          }
+        }
       }
 
-      showToast(true, `Created "${form.name_en}"`);
+      showToast(true, `Created "${form.name_en}" and synced exercises`);
       onCreated();
     } catch (e: any) {
       setError(e.response?.data?.detail || 'Save failed');
     } finally {
       setSaving(false);
+      setUploadProgress(null);
     }
   };
 
-  return (
+    return (
+    <div style={{ position: 'relative' }}>
+      {uploadProgress && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(10px)', zIndex: 99999
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1a1b23 0%, #111218 100%)',
+            padding: '3rem', borderRadius: 24, width: 440,
+            border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center'
+          }}>
+            <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: '0.5rem', color: '#fff' }}>Syncing Exercises</h2>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
+              Processing {uploadProgress.current} of {uploadProgress.total} rows
+            </p>
+            <div style={{ height: 12, width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
+                background: 'linear-gradient(90deg, #6366f1 0%, #a855f7 100%)', transition: 'width 0.5s ease'
+              }} />
+            </div>
+          </div>
+        </div>
+      )}
+
     <div>
       {/* Breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.5rem' }}>
@@ -1248,6 +1295,7 @@ function Slide4Create({
           )}
         </div>
       </div>
+      </div>
     </div>
   );
 }
@@ -1264,6 +1312,7 @@ export default function MainPractice() {
 
   useEffect(() => {
     api.get('/admin/question-types')
+
       .then(r => setQuestionTypes(r.data.items || []))
       .catch(() => setQuestionTypes([]));
   }, []);
