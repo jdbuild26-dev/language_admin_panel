@@ -3,7 +3,7 @@ import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, M
 import api from '../services/api';
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'] as const;
-const CATEGORIES = ['Reading', 'Listening', 'Writing', 'Speaking'] as const;
+const CATEGORIES = ['Reading', 'Listening', 'Writing', 'Speaking', 'Grammar', 'Vocabulary'] as const;
 type CefrLevel = typeof CEFR_LEVELS[number];
 type Category = typeof CATEGORIES[number];
 type Slide = 'main' | 'subtypes' | 'exercises' | 'create';
@@ -87,6 +87,22 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'speak_topic',               // Speak About Topic
     'speak_image',               // Speak About Image / Describe Image
     'speak_interactive',         // Interactive Speaking
+  ],
+  Grammar: [
+    'grammar_mcq',               // Grammar MCQ
+    'grammar_fill_blanks',       // Grammar Fill in the Blanks
+    'grammar_correction',        // Grammar Correction
+    'grammar_transformation',    // Sentence Transformation
+    'grammar_matching',          // Grammar Matching
+    'grammar_reorder',           // Grammar Reorder
+  ],
+  Vocabulary: [
+    'vocab_mcq',                 // Vocabulary MCQ
+    'vocab_fill_blanks',         // Vocabulary Fill in the Blanks
+    'vocab_matching',            // Vocabulary Matching
+    'vocab_translation',         // Vocabulary Translation
+    'vocab_image',               // Vocabulary Image Match
+    'vocab_spelling',            // Vocabulary Spelling
   ],
 };
 
@@ -184,39 +200,110 @@ function AnalyticsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void
   );
 }
 
-// ─── AI Prompts Modal ─────────────────────────────────────────────────────────
-function PromptsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void }) {
+// ─── AI Prompts Modal (editable) ─────────────────────────────────────────────
+function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: () => void; showToast: (ok: boolean, msg: string) => void }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [openLevel, setOpenLevel] = useState<string>('A1');
 
-  useEffect(() => {
+  const LEVELS = ['A1', 'A2', 'B1', 'B2'];
+
+  const load = () => {
+    setLoading(true);
     api.get(`/admin/question-types/${qt.slug}/prompt`)
-      .then(r => setData(r.data))
+      .then(r => {
+        setData(r.data);
+        const p = r.data?.prompt;
+        if (p) {
+          const flat: Record<string, string> = {
+            topic: p.topic || '',
+            slug: p.slug || '',
+            ai_role: p.ai_role || '',
+            user_role: p.user_role || '',
+          };
+          LEVELS.forEach(lvl => {
+            const k = lvl.toLowerCase();
+            flat[`instruction_${k}`] = p[`instruction_${k}`] || '';
+            flat[`ai_prompt_${k}`] = p[`ai_prompt_${k}`] || '';
+          });
+          setForm(flat);
+        }
+      })
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [qt.slug]);
+  };
+
+  useEffect(() => { load(); }, [qt.slug]);
 
   const prompt = data?.prompt;
-  const LEVELS = ['A1', 'A2', 'B1', 'B2'];
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      if (prompt?.id) {
+        await api.put(`/admin/prompts/${prompt.id}`, form);
+        showToast(true, 'Prompt saved');
+      } else {
+        // Create new prompt with slug matching the exercise type
+        await api.post('/admin/prompts', { ...form, slug: qt.slug, topic: form.topic || qt.name || qt.slug });
+        showToast(true, 'Prompt created');
+      }
+      setEditing(false);
+      load();
+    } catch (e: any) {
+      showToast(false, e.response?.data?.detail || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startCreate = () => {
+    const flat: Record<string, string> = { topic: qt.name || qt.slug, slug: qt.slug, ai_role: '', user_role: '' };
+    LEVELS.forEach(lvl => {
+      const k = lvl.toLowerCase();
+      flat[`instruction_${k}`] = '';
+      flat[`ai_prompt_${k}`] = '';
+    });
+    setForm(flat);
+    setEditing(true);
+  };
+
+  const fieldStyle: React.CSSProperties = {
+    width: '100%', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)',
+    borderRadius: 4, padding: '5px 8px', color: 'var(--text)', fontFamily: 'inherit',
+  };
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, overflowY: 'auto', padding: '2rem 1rem' }}>
-      <div className="card" style={{ maxWidth: 600, width: '90%', position: 'relative' }}>
+      <div className="card" style={{ maxWidth: 680, width: '95%', position: 'relative' }}>
         <button onClick={onClose} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
-        <h3 style={{ marginBottom: 4 }}>AI Prompts</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+          <h3 style={{ margin: 0 }}>AI Prompts</h3>
+          {!loading && prompt && !editing && (
+            <button onClick={() => setEditing(true)} style={{ ...iconBtnStyle('#f59e0b'), width: 28, height: 28 }} title="Edit prompt">
+              <Pencil size={13} />
+            </button>
+          )}
+        </div>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: '1.5rem', fontFamily: 'monospace' }}>{qt.slug}</p>
 
         {loading && <p style={{ color: 'var(--text-muted)' }}>Loading...</p>}
 
-        {!loading && !prompt && (
+        {!loading && !prompt && !editing && (
           <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
             <MessageSquare size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
             <p>No AI prompt configured for this exercise type.</p>
-            <p style={{ fontSize: 12, marginTop: 8 }}>Go to <strong>AI Prompts</strong> in the sidebar to create one.</p>
+            <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={startCreate}>
+              <Plus size={14} className="inline mr-1" /> Create Prompt
+            </button>
           </div>
         )}
 
-        {prompt && (
+        {/* ── View mode ── */}
+        {prompt && !editing && (
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: '1rem' }}>
               <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '0.75rem' }}>
@@ -228,6 +315,11 @@ function PromptsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void }
                 <div style={{ fontSize: 13, fontFamily: 'monospace' }}>{prompt.slug}</div>
               </div>
             </div>
+            {prompt.ai_role && (
+              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: 13 }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>AI ROLE: </span>{prompt.ai_role}
+              </div>
+            )}
             {LEVELS.map(lvl => {
               const key = lvl.toLowerCase();
               const inst = prompt[`instruction_${key}`];
@@ -237,10 +329,73 @@ function PromptsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void }
                 <div key={lvl} style={{ marginBottom: '1rem', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
                   <div style={{ background: 'rgba(31,111,235,0.1)', padding: '6px 12px', fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>{lvl}</div>
                   {inst && <div style={{ padding: '8px 12px', fontSize: 13, borderBottom: aiP ? '1px solid var(--border)' : 'none' }}><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>INSTRUCTION: </span>{inst}</div>}
-                  {aiP && <div style={{ padding: '8px 12px', fontSize: 13 }}><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>AI PROMPT: </span>{aiP}</div>}
+                  {aiP && <div style={{ padding: '8px 12px', fontSize: 13, whiteSpace: 'pre-wrap' }}><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>AI PROMPT: </span>{aiP}</div>}
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ── Edit / Create mode ── */}
+        {editing && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: '1rem' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>Topic</label>
+                <input style={fieldStyle} value={form.topic || ''} onChange={e => setForm(f => ({ ...f, topic: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>AI Role</label>
+                <input style={fieldStyle} value={form.ai_role || ''} onChange={e => setForm(f => ({ ...f, ai_role: e.target.value }))} placeholder="e.g. French language tutor" />
+              </div>
+            </div>
+
+            {/* Per-level accordion */}
+            {LEVELS.map(lvl => {
+              const k = lvl.toLowerCase();
+              const isOpen = openLevel === lvl;
+              return (
+                <div key={lvl} style={{ marginBottom: 8, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  <button
+                    onClick={() => setOpenLevel(isOpen ? '' : lvl)}
+                    style={{ width: '100%', background: isOpen ? 'rgba(31,111,235,0.12)' : 'var(--card-bg)', border: 'none', cursor: 'pointer', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text)' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>{lvl}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {isOpen && (
+                    <div style={{ padding: '12px' }}>
+                      <div className="form-group" style={{ marginBottom: 8 }}>
+                        <label className="form-label" style={{ fontSize: 11 }}>User Instruction</label>
+                        <textarea
+                          rows={2}
+                          style={{ ...fieldStyle, resize: 'vertical' }}
+                          value={form[`instruction_${k}`] || ''}
+                          onChange={e => setForm(f => ({ ...f, [`instruction_${k}`]: e.target.value }))}
+                          placeholder={`Instruction shown to user at ${lvl} level`}
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: 11 }}>AI System Prompt</label>
+                        <textarea
+                          rows={5}
+                          style={{ ...fieldStyle, resize: 'vertical' }}
+                          value={form[`ai_prompt_${k}`] || ''}
+                          onChange={e => setForm(f => ({ ...f, [`ai_prompt_${k}`]: e.target.value }))}
+                          placeholder={`System prompt sent to AI for ${lvl} evaluation`}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <div style={{ display: 'flex', gap: 8, marginTop: '1rem' }}>
+              <button className="btn btn-secondary" onClick={() => { setEditing(false); if (!prompt) onClose(); }}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                <Save size={14} className="inline mr-1" />{saving ? 'Saving...' : 'Save Prompt'}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -250,13 +405,14 @@ function PromptsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void }
 
 // ─── Slide 1: Main Practice ───────────────────────────────────────────────────
 function Slide1Main({
-  level, setLevel, category, setCategory, questionTypes, setQuestionTypes, onEdit,
+  level, setLevel, category, setCategory, questionTypes, setQuestionTypes, onEdit, showToast,
 }: {
   level: CefrLevel; setLevel: (l: CefrLevel) => void;
   category: Category; setCategory: (c: Category) => void;
   questionTypes: QuestionType[];
   setQuestionTypes: React.Dispatch<React.SetStateAction<QuestionType[]>>;
   onEdit: (qt: QuestionType) => void;
+  showToast: (ok: boolean, msg: string) => void;
 }) {
   // Fetch available slugs for the selected level from the same endpoint the practice page uses.
   const [availableSlugs, setAvailableSlugs] = useState<string[] | null>(null);
@@ -403,7 +559,7 @@ function Slide1Main({
 
       {/* Modals */}
       {analyticsQt && <AnalyticsModal qt={analyticsQt} onClose={() => setAnalyticsQt(null)} />}
-      {promptsQt && <PromptsModal qt={promptsQt} onClose={() => setPromptsQt(null)} />}
+      {promptsQt && <PromptsModal qt={promptsQt} onClose={() => setPromptsQt(null)} showToast={showToast} />}
     </div>
   );
 }
@@ -1141,6 +1297,7 @@ export default function MainPractice() {
           questionTypes={questionTypes}
           setQuestionTypes={setQuestionTypes}
           onEdit={handleEdit}
+          showToast={showToast}
         />
       )}
 
