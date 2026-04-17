@@ -707,7 +707,7 @@ function Slide2Subtypes({
         <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Direct CSV upload — shown for exercise types that don't need subtypes */}
-          {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks') && (
+          {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks' || exerciseType.slug === 'write_topic') && (
             <DirectCsvUpload
               exerciseType={exerciseType}
               level={level}
