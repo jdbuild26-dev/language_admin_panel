@@ -571,6 +571,127 @@ function iconBtnStyle(color: string): React.CSSProperties {
   };
 }
 
+// ─── Write Image Upload Panel ─────────────────────────────────────────────────
+function WriteImageUploadPanel({
+  exerciseType, level, category, showToast,
+}: {
+  exerciseType: QuestionType; level: CefrLevel; category: Category;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  const [exercises, setExercises] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null); // exerciseId being uploaded
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingExId = useRef<string | null>(null);
+
+  const loadExercises = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get('/admin/exercises', {
+        params: { type_slug: exerciseType.slug, level, page: 1, page_size: 50 }
+      });
+      setExercises(r.data.items || []);
+    } catch {
+      setExercises([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadClick = (exId: string) => {
+    pendingExId.current = exId;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const exId = pendingExId.current;
+    if (!file || !exId) return;
+    e.target.value = '';
+
+    setUploading(exId);
+    try {
+      // 1. Upload to Cloudinary
+      const fd = new FormData();
+      fd.append('file', file);
+      const uploadRes = await api.post('/admin/upload-image', fd);
+      const imageUrl = uploadRes.data.url;
+
+      // 2. Patch the exercise content with the new image URL
+      await api.patch(`/admin/exercises/${exId}/image-url`, { image_url: imageUrl });
+
+      // 3. Update local state
+      setExercises(prev => prev.map(ex =>
+        ex.external_id === exId ? { ...ex, image_url: imageUrl } : ex
+      ));
+      showToast(true, `Image uploaded for ${exId}`);
+    } catch (e: any) {
+      showToast(false, e.response?.data?.detail || 'Upload failed');
+    } finally {
+      setUploading(null);
+      pendingExId.current = null;
+    }
+  };
+
+  return (
+    <div>
+      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          Upload images for each exercise. Images are stored on Cloudinary.
+        </p>
+        <button className="btn btn-secondary" style={{ fontSize: 13, padding: '5px 12px' }} onClick={loadExercises} disabled={loading}>
+          {loading ? 'Loading…' : 'Load Exercises'}
+        </button>
+      </div>
+
+      {exercises.length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
+                <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>ID</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Current Image</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600 }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {exercises.map(ex => {
+                const imgUrl = ex.image_url || ex.content?.image_url || '';
+                const isUploading = uploading === ex.external_id;
+                return (
+                  <tr key={ex.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontWeight: 600 }}>{ex.external_id}</td>
+                    <td style={{ padding: '10px 14px' }}>
+                      {imgUrl ? (
+                        <img src={imgUrl} alt="" style={{ height: 48, width: 72, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No image</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ fontSize: 12, padding: '4px 10px', opacity: isUploading ? 0.6 : 1 }}
+                        onClick={() => handleUploadClick(ex.external_id)}
+                        disabled={isUploading}
+                      >
+                        <CloudUpload size={13} style={{ display: 'inline', marginRight: 4 }} />
+                        {isUploading ? 'Uploading…' : imgUrl ? 'Replace' : 'Upload'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Direct CSV Upload (for exercise types like correct_spelling) ─────────────
 function DirectCsvUpload({
   exerciseType, level, category, showToast,
@@ -707,7 +828,7 @@ function Slide2Subtypes({
         <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Direct CSV upload — shown for exercise types that don't need subtypes */}
-          {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks' || exerciseType.slug === 'write_topic') && (
+          {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks' || exerciseType.slug === 'write_topic' || exerciseType.slug === 'write_image') && (
             <DirectCsvUpload
               exerciseType={exerciseType}
               level={level}
@@ -782,6 +903,19 @@ function Slide2Subtypes({
           onCancel={() => setConfirmDelete(null)}
           loading={deleteLoading}
         />
+      )}
+
+      {/* Image upload panel for write_image */}
+      {exerciseType.slug === 'write_image' && (
+        <div style={{ marginTop: '2rem' }}>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: 16 }}>Image Management</h3>
+          <WriteImageUploadPanel
+            exerciseType={exerciseType}
+            level={level}
+            category={category}
+            showToast={showToast}
+          />
+        </div>
       )}
     </div>
   );
