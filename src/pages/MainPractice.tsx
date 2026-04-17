@@ -573,7 +573,7 @@ function iconBtnStyle(color: string): React.CSSProperties {
 
 // ─── Write Image Upload Panel ─────────────────────────────────────────────────
 function WriteImageUploadPanel({
-  exerciseType, level, category, showToast,
+  exerciseType, level, category: _category, showToast,
 }: {
   exerciseType: QuestionType; level: CefrLevel; category: Category;
   showToast: (ok: boolean, msg: string) => void;
@@ -694,7 +694,7 @@ function WriteImageUploadPanel({
 
 // ─── Direct CSV Upload (for exercise types like correct_spelling) ─────────────
 function DirectCsvUpload({
-  exerciseType, level, category, showToast,
+  exerciseType, level: _level, category, showToast,
 }: {
   exerciseType: QuestionType; level: CefrLevel; category: Category;
   showToast: (ok: boolean, msg: string) => void;
