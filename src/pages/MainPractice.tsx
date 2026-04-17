@@ -56,6 +56,7 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'match_sentence_ending',     // Match Sentence Ending
     'sentence_completion',       // Sentence Completion
     'reading_conversation',      // Reading Conversation
+  ],
   Listening: [
     'listen_select',             // Listen and Select
     'type_what_you_hear',        // Listen and Type
@@ -570,6 +571,68 @@ function iconBtnStyle(color: string): React.CSSProperties {
   };
 }
 
+// ─── Direct CSV Upload (for exercise types like correct_spelling) ─────────────
+function DirectCsvUpload({
+  exerciseType, level, category, showToast,
+}: {
+  exerciseType: QuestionType; level: CefrLevel; category: Category;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    setProgress(null);
+    try {
+      // Send the whole file in one request — avoids splitting quoted multi-line cells
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      fd.append('skill', category);
+      fd.append('type_slug', exerciseType.slug);
+      fd.append('category', 'main');
+      setProgress({ current: 0, total: 1 });
+      const result = await api.post('/admin/sync/exercises', fd);
+      const count = result.data?.message?.match(/\d+/)?.[0] ?? '?';
+      setProgress({ current: 1, total: 1 });
+      showToast(true, `Uploaded ${count} exercises`);
+    } catch (e: any) {
+      showToast(false, e.response?.data?.detail || 'Upload failed');
+    } finally {
+      setUploading(false);
+      setProgress(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  return (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+      />
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+        className="btn btn-secondary"
+        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '6px 14px', opacity: uploading ? 0.7 : 1 }}
+        title="Upload Fix the Spelling CSV"
+      >
+        <CloudUpload size={15} />
+        {uploading
+          ? progress
+            ? `${progress.current}/${progress.total}`
+            : 'Uploading…'
+          : 'Upload CSV'}
+      </button>
+    </>
+  );
+}
+
 // ─── Slide 2: Subtypes List ───────────────────────────────────────────────────
 function Slide2Subtypes({
   level, category, exerciseType,
@@ -642,10 +705,21 @@ function Slide2Subtypes({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
-        <button onClick={onCreate} title="Create new subtype"
-          style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Plus size={18} />
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* Direct CSV upload — shown for exercise types that don't need subtypes */}
+          {exerciseType.slug === 'correct_spelling' && (
+            <DirectCsvUpload
+              exerciseType={exerciseType}
+              level={level}
+              category={category}
+              showToast={showToast}
+            />
+          )}
+          <button onClick={onCreate} title="Create new subtype"
+            style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Plus size={18} />
+          </button>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -1135,33 +1209,16 @@ function Slide4Create({
       };
       await api.post('/admin/exercise-subtypes', payload);
 
-      // --- Batched Upload with Progress ---
+      // --- Upload file directly (no line-splitting to avoid breaking quoted multi-line cells) ---
       if (file) {
-        const text = await file.text();
-        const lines = text.split('\n').filter(l => l.trim());
-        if (lines.length > 1) {
-          const headers = lines[0];
-          const dataRows = lines.slice(1);
-          const BATCH_SIZE = 15;
-          const totalBatches = Math.ceil(dataRows.length / BATCH_SIZE);
-          
-          setUploadProgress({ current: 0, total: dataRows.length });
-
-          for (let i = 0; i < dataRows.length; i += BATCH_SIZE) {
-            const batchRows = dataRows.slice(i, i + BATCH_SIZE);
-            const batchCsv = [headers, ...batchRows].join('\n');
-            const blob = new Blob([batchCsv], { type: 'text/csv' });
-            
-            const fd = new FormData();
-            fd.append('file', blob, 'batch.csv');
-            fd.append('skill', category);
-            fd.append('type_slug', exerciseType.slug);
-            fd.append('category', 'main');
-            
-            await api.post('/admin/sync/exercises', fd);
-            setUploadProgress({ current: Math.min(i + BATCH_SIZE, dataRows.length), total: dataRows.length });
-          }
-        }
+        setUploadProgress({ current: 0, total: 1 });
+        const fd = new FormData();
+        fd.append('file', file, file.name);
+        fd.append('skill', category);
+        fd.append('type_slug', exerciseType.slug);
+        fd.append('category', 'main');
+        await api.post('/admin/sync/exercises', fd);
+        setUploadProgress({ current: 1, total: 1 });
       }
 
       showToast(true, `Created "${form.name_en}" and synced exercises`);
