@@ -56,7 +56,6 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'match_sentence_ending',     // Match Sentence Ending
     'sentence_completion',       // Sentence Completion
     'reading_conversation',      // Reading Conversation
-  ],
   Listening: [
     'listen_select',             // Listen and Select
     'type_what_you_hear',        // Listen and Type
@@ -76,10 +75,8 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'write_topic',               // Write About Topic
     'write_image',               // Write About Image
     'write_documents',           // Write Documents
-    'write_form',                // Fill the Form
     'write_interactive',         // Interactive Writing
     'writing_conversation',      // Writing Conversation
-    'sentence_completion',       // Sentence Completion
     'write_analysis',            // Write About Data
   ],
   Speaking: [
