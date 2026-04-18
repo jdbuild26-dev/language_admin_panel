@@ -77,14 +77,16 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'write_image',               // Write About Image
     'write_documents',           // Write Documents
     'write_interactive',         // Interactive Writing
-    'writing_conversation',      // Writing Conversation
+    'writing_conversation',      // Writing Conversation (Running)
     'write_analysis',            // Write About Data
+    'summarise_audio',           // Summarise What You Hear
   ],
   Speaking: [
     'speak_translate',           // Translate by Speaking
     'speak_topic',               // Speak About Topic
     'speak_image',               // Speak About Image / Describe Image
     'speak_interactive',         // Interactive Speaking
+    'speaking_conversation',     // Speaking Conversation (Running)
   ],
   Grammar: [
     'grammar_mcq',               // Grammar MCQ
@@ -412,8 +414,8 @@ function Slide1Main({
   onEdit: (qt: QuestionType) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
-  // Fetch available slugs for the selected level from the same endpoint the practice page uses.
-  const [availableSlugs, setAvailableSlugs] = useState<string[] | null>(null);
+  // Fetch available slugs — kept for potential future use but not used for filtering in admin
+  const [_availableSlugs, setAvailableSlugs] = useState<string[] | null>(null);
   const [slugsLoading, setSlugsLoading] = useState(false);
 
   // Modal state
@@ -442,11 +444,21 @@ function Slide1Main({
       .finally(() => setSlugsLoading(false));
   }, [level]);
 
-  // Filter: must be in this category's slug list AND available at this level
-  const visibleTypes = questionTypes.filter(qt =>
-    SKILL_SLUGS[category].includes(qt.slug) &&
-    (availableSlugs === null || availableSlugs.includes(qt.slug))
-  );
+  // Filter: must be in this category's slug list
+  // Note: we do NOT filter by availableSlugs here — that's for the student practice page.
+  // The admin panel should show all configured exercise types so admins can upload content.
+  // Merge DB types with SKILL_SLUGS so types not yet in DB still appear.
+  const dbSlugs = new Set(questionTypes.map(qt => qt.slug));
+  const allSlugsForCategory = SKILL_SLUGS[category] || [];
+  const mergedTypes: QuestionType[] = [
+    // DB types that are in this category
+    ...questionTypes.filter(qt => allSlugsForCategory.includes(qt.slug)),
+    // Slugs in SKILL_SLUGS but not yet in DB — show as placeholder
+    ...allSlugsForCategory
+      .filter(slug => !dbSlugs.has(slug))
+      .map(slug => ({ slug, name: slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), is_active: true })),
+  ];
+  const visibleTypes = mergedTypes;
 
   return (
     <div>
@@ -828,7 +840,7 @@ function Slide2Subtypes({
         <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Direct CSV upload — shown for exercise types that don't need subtypes */}
-          {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks' || exerciseType.slug === 'write_topic' || exerciseType.slug === 'write_image') && (
+          {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks' || exerciseType.slug === 'write_topic' || exerciseType.slug === 'write_image' || exerciseType.slug === 'summarise_audio' || exerciseType.slug === 'write_interactive' || exerciseType.slug === 'speak_interactive' || exerciseType.slug === 'writing_conversation' || exerciseType.slug === 'speaking_conversation') && (
             <DirectCsvUpload
               exerciseType={exerciseType}
               level={level}
