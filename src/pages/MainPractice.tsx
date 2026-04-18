@@ -77,7 +77,7 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'write_image',               // Write About Image
     'write_documents',           // Write Documents
     'write_interactive',         // Interactive Writing
-    'writing_conversation',      // Writing Conversation
+    'writing_conversation',      // Writing Conversation (Running)
     'write_analysis',            // Write About Data
     'summarise_audio',           // Summarise What You Hear
   ],
@@ -86,6 +86,7 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'speak_topic',               // Speak About Topic
     'speak_image',               // Speak About Image / Describe Image
     'speak_interactive',         // Interactive Speaking
+    'speaking_conversation',     // Speaking Conversation (Running)
   ],
   Grammar: [
     'grammar_mcq',               // Grammar MCQ
@@ -839,7 +840,7 @@ function Slide2Subtypes({
         <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Direct CSV upload — shown for exercise types that don't need subtypes */}
-          {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks' || exerciseType.slug === 'write_topic' || exerciseType.slug === 'write_image' || exerciseType.slug === 'summarise_audio' || exerciseType.slug === 'write_interactive' || exerciseType.slug === 'speak_interactive') && (
+          {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks' || exerciseType.slug === 'write_topic' || exerciseType.slug === 'write_image' || exerciseType.slug === 'summarise_audio' || exerciseType.slug === 'write_interactive' || exerciseType.slug === 'speak_interactive' || exerciseType.slug === 'writing_conversation' || exerciseType.slug === 'speaking_conversation') && (
             <DirectCsvUpload
               exerciseType={exerciseType}
               level={level}
