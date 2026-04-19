@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet, CloudUpload } from 'lucide-react';
+import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet, CloudUpload, Sparkles, Check } from 'lucide-react';
 import api from '../services/api';
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'] as const;
@@ -403,6 +403,179 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   );
 }
 
+// ─── AI Generator Modal ──────────────────────────────────────────────────────
+function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
+  qt: QuestionType; level: string; category: string; onClose: () => void; showToast: (ok: boolean, msg: string) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [exercises, setExercises] = useState<any[]>([]);
+  const [form, setForm] = useState({
+    topic: '',
+    grammar: '',
+    count: 5,
+    custom: '',
+    targetLang: 'French',
+    langCode: 'FR'
+  });
+
+  const handleGenerate = async () => {
+    if (!form.topic) {
+      showToast(false, 'Please provide a topic');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.post('/admin/generate-exercises', null, {
+        params: {
+          target_lang: form.targetLang,
+          lang_code: form.langCode,
+          level: level,
+          exercise_tag: form.topic,
+          vocab_tag: form.topic,
+          grammar_tag: form.grammar,
+          count: form.count,
+          custom_instructions: form.custom
+        }
+      });
+      setExercises((res.data.exercises || []).map((ex: any) => ({ ...ex, dbStatus: 'ready' })));
+      showToast(true, `Generated ${res.data.exercises?.length || 0} exercises`);
+    } catch (e: any) {
+      showToast(false, e.response?.data?.detail || 'Generation failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveToDB = async (index: number) => {
+    const ex = exercises[index];
+    const newExs = [...exercises];
+    newExs[index].dbStatus = 'saving';
+    setExercises(newExs);
+
+    try {
+      const headers = [
+        "ExerciseID", "Question Type", "Exercise Tag", "Vocabulary Tag", "Grammar Tag", 
+        "Level", "Difficulty", "Shuffle Tokens", "Time Limit", "Token #", 
+        `Heading_${form.langCode}`, "Heading_EN", "Complete Sentence _EN", `Complete Sentence _${form.langCode}`, 
+        "BubbleTokens", "CorrectTokenOrder", "Distractor Tokens"
+      ];
+      
+      const values = [
+        ex.ExerciseID, "translate_bubbles", ex["Exercise Tag"], ex["Vocabulary Tag"], ex["Grammar Tag"] || "",
+        ex.Level, ex.Difficulty, ex["Shuffle Tokens"], ex["Time Limit"], ex["Token #"],
+        ex[`Heading_${form.langCode}`], ex.Heading_EN, ex["Complete Sentence _EN"], ex[`Complete Sentence _${form.langCode}`],
+        ex.BubbleTokens, ex.CorrectTokenOrder, ex["Distractor Tokens"]
+      ];
+
+      const csvContent = headers.join(',') + '\n' + values.map(v => `"${v}"`).join(',');
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const formData = new FormData();
+      formData.append('file', blob, 'exercise.csv');
+      formData.append('skill', category);
+      formData.append('type_slug', qt.slug);
+      formData.append('category', 'main');
+
+      await api.post('/admin/sync/exercises', formData);
+      
+      const finalExs = [...exercises];
+      finalExs[index].dbStatus = 'saved';
+      setExercises(finalExs);
+    } catch (e: any) {
+      const finalExs = [...exercises];
+      finalExs[index].dbStatus = 'error';
+      setExercises(finalExs);
+      showToast(false, e.response?.data?.detail || 'Save failed');
+    }
+  };
+
+  const saveAll = async () => {
+    setSavingAll(true);
+    for (let i = 0; i < exercises.length; i++) {
+      if (exercises[i].dbStatus !== 'saved') {
+        await saveToDB(i);
+      }
+    }
+    setSavingAll(false);
+    showToast(true, 'Completed database sync');
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, overflowY: 'auto', padding: '2rem 1rem' }}>
+      <div className="card" style={{ maxWidth: 1000, width: '95%', position: 'relative', maxHeight: '90vh', overflowY: 'auto' }}>
+        <button onClick={onClose} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.5rem' }}>
+          <Sparkles size={24} style={{ color: 'var(--accent)' }} />
+          <h2 style={{ margin: 0 }}>AI Exercise Generator</h2>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+          <div className="form-group">
+            <label className="form-label">Topic / Theme</label>
+            <input className="form-control" value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="e.g. Professional communication" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Grammar Focus (Optional)</label>
+            <input className="form-control" value={form.grammar} onChange={e => setForm({ ...form, grammar: e.target.value })} placeholder="e.g. Subjunctive" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Count</label>
+            <input type="number" className="form-control" value={form.count} onChange={e => setForm({ ...form, count: parseInt(e.target.value) })} min={1} max={10} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: '2rem' }}>
+          <button className="btn btn-primary" onClick={handleGenerate} disabled={loading}>
+            {loading ? 'Generating...' : 'Generate Exercises'}
+          </button>
+          {exercises.length > 0 && (
+            <button className="btn btn-secondary" onClick={saveAll} disabled={savingAll}>
+              {savingAll ? 'Saving...' : 'Save All to DB'}
+            </button>
+          )}
+        </div>
+
+        {exercises.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'rgba(255,255,255,0.05)', borderBottom: '1px solid var(--border)' }}>
+                  <th style={{ padding: '10px', textAlign: 'left' }}>ID</th>
+                  <th style={{ padding: '10px', textAlign: 'left' }}>English Sentence</th>
+                  <th style={{ padding: '10px', textAlign: 'left' }}>Target Sentence</th>
+                  <th style={{ padding: '10px', textAlign: 'center' }}>Status</th>
+                  <th style={{ padding: '10px', textAlign: 'right' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {exercises.map((ex, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '10px', fontFamily: 'monospace' }}>{ex.ExerciseID}</td>
+                    <td style={{ padding: '10px' }}>{ex["Complete Sentence _EN"]}</td>
+                    <td style={{ padding: '10px' }}>{ex[`Complete Sentence _${form.langCode}`]}</td>
+                    <td style={{ padding: '10px', textAlign: 'center' }}>
+                      {ex.dbStatus === 'saving' && <span style={{ color: 'var(--accent)' }}>Saving...</span>}
+                      {ex.dbStatus === 'saved' && <Check size={16} style={{ color: '#10b981', margin: '0 auto' }} />}
+                      {ex.dbStatus === 'error' && <span style={{ color: '#ef4444' }}>Error</span>}
+                      {ex.dbStatus === 'ready' && <span style={{ color: 'var(--text-muted)' }}>Ready</span>}
+                    </td>
+                    <td style={{ padding: '10px', textAlign: 'right' }}>
+                      <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: 12 }} 
+                        onClick={() => saveToDB(i)} disabled={ex.dbStatus === 'saving' || ex.dbStatus === 'saved'}>
+                        {ex.dbStatus === 'saved' ? 'Saved' : 'Save'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Slide 1: Main Practice ───────────────────────────────────────────────────
 function Slide1Main({
   level, setLevel, category, setCategory, questionTypes, setQuestionTypes, onEdit, showToast,
@@ -421,6 +594,7 @@ function Slide1Main({
   // Modal state
   const [analyticsQt, setAnalyticsQt] = useState<QuestionType | null>(null);
   const [promptsQt, setPromptsQt] = useState<QuestionType | null>(null);
+  const [aiGenQt, setAiGenQt] = useState<QuestionType | null>(null); // New state for AI Gen
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
 
   const handleToggleActive = async (qt: QuestionType) => {
@@ -543,6 +717,12 @@ function Slide1Main({
                       <button title="AI Prompts" onClick={() => setPromptsQt(qt)} style={iconBtnStyle('#2ea043')}>
                         <MessageSquare size={15} />
                       </button>
+                      {/* AI Generator */}
+                      {qt.slug === 'translate_bubbles' && (
+                        <button title="AI Generate" onClick={() => setAiGenQt(qt)} style={iconBtnStyle('#a855f7')}>
+                          <Sparkles size={15} />
+                        </button>
+                      )}
                       {/* Edit - opens Slide 2 */}
                       <button title="Edit subtypes" onClick={() => onEdit(qt)} style={iconBtnStyle('#f59e0b')}>
                         <Pencil size={15} />
@@ -570,6 +750,15 @@ function Slide1Main({
       {/* Modals */}
       {analyticsQt && <AnalyticsModal qt={analyticsQt} onClose={() => setAnalyticsQt(null)} />}
       {promptsQt && <PromptsModal qt={promptsQt} onClose={() => setPromptsQt(null)} showToast={showToast} />}
+      {aiGenQt && (
+        <AIGeneratorModal 
+          qt={aiGenQt} 
+          level={level} 
+          category={category} 
+          onClose={() => setAiGenQt(null)} 
+          showToast={showToast} 
+        />
+      )}
     </div>
   );
 }
