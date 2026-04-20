@@ -491,6 +491,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [showDetailed, setShowDetailed] = useState(false);
     const [previewExIndex, setPreviewExIndex] = useState<number | null>(null);
     const [lastExtId, setLastExtId] = useState<string | null>(null);
+    const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+    const batchActive = useRef(false);
     const [form, setForm] = useState({
       topic: '',
       grammar: '',
@@ -525,30 +527,91 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         showToast(false, 'Please provide a topic');
         return;
       }
+      
+      const BATCH_SIZE = qt.slug === 'translate_bubbles' ? 35 : 10;
+      const totalCycles = Math.ceil(form.count / BATCH_SIZE);
+      
       setLoading(true);
-      try {
-        const res = await api.post('/admin/generate-exercises', null, {
-          params: {
-            target_lang: form.targetLang,
-            lang_code: form.langCode,
-            level: level,
-            exercise_tag: form.topic,
-            vocab_tag: form.topic,
-            grammar_tag: form.grammar,
-            count: form.count,
-            custom_instructions: form.custom,
-            exercise_type: qt.slug,
-            last_ext_id: lastExtId
+      batchActive.current = true;
+      setBatchProgress({ current: 0, total: totalCycles });
+      
+      let currentLastExtId = lastExtId;
+      
+      for (let i = 0; i < totalCycles; i++) {
+        if (!batchActive.current) break; // Check for cancellation
+        
+        const currentCount = Math.min(BATCH_SIZE, form.count - i * BATCH_SIZE);
+        setBatchProgress({ current: i + 1, total: totalCycles });
+        
+        try {
+          const res = await api.post('/admin/generate-exercises', null, {
+            params: {
+              target_lang: form.targetLang,
+              lang_code: form.langCode,
+              level: level,
+              exercise_tag: form.topic,
+              vocab_tag: form.topic,
+              grammar_tag: form.grammar,
+              count: currentCount,
+              custom_instructions: form.custom,
+              exercise_type: qt.slug,
+              last_ext_id: currentLastExtId
+            }
+          });
+          
+          const newExs = (res.data.exercises || []).map((ex: Record<string, unknown>) => ({ ...ex, dbStatus: 'ready' }));
+          
+          setExercises(prev => [...prev, ...newExs]);
+          
+          if (newExs.length > 0) {
+            currentLastExtId = newExs[newExs.length - 1].ExerciseID;
+            setLastExtId(currentLastExtId);
           }
-        });
-        setExercises((res.data.exercises || []).map((ex: Record<string, unknown>) => ({ ...ex, dbStatus: 'ready' })));
-        showToast(true, `Generated ${res.data.exercises?.length || 0} exercises`);
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Generation failed');
-      } finally {
-        setLoading(false);
+          
+          showToast(true, `Cycle ${i + 1}/${totalCycles}: Generated ${newExs.length} exercises`);
+        } catch (e: unknown) {
+          const err = e as { response?: { data?: { detail?: string } } };
+          showToast(false, `Cycle ${i + 1} failed: ${err.response?.data?.detail || 'Generation failed'}`);
+          if (i === 0) break; // if first cycle fails completely, stop
+        }
       }
+      
+      setLoading(false);
+      batchActive.current = false;
+      setBatchProgress({ current: 0, total: 0 });
+    };
+
+    const stopBatch = () => {
+      batchActive.current = false;
+      setLoading(false);
+      showToast(true, 'Batch generation stopped.');
+    };
+
+    const exportToCSV = () => {
+      if (exercises.length === 0) return;
+      const headers = Object.keys(exercises[0]).filter(k => k !== 'dbStatus');
+      const csvContent = [
+        headers.join(','),
+        ...exercises.map(ex => 
+          headers.map(h => {
+            let val = ex[h];
+            if (Array.isArray(val)) val = val.join('+');
+            if (val === null || val === undefined) val = "";
+            const strVal = String(val).replace(/"/g, '""');
+            return `"${strVal}"`;
+          }).join(',')
+        )
+      ].join('\n');
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `ai_generated_${qt.slug}_${Date.now()}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     };
 
     const saveToDB = async (index: number) => {
@@ -589,14 +652,63 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     };
 
     const saveAll = async () => {
-      setSavingAll(true);
-      for (let i = 0; i < exercises.length; i++) {
-        if (exercises[i].dbStatus !== 'saved') {
-          await saveToDB(i);
-        }
+      const unsavedIndices = exercises.map((ex, i) => ex.dbStatus !== 'saved' ? i : -1).filter(i => i !== -1);
+      if (unsavedIndices.length === 0) {
+        showToast(true, 'Nothing to save');
+        return;
       }
-      setSavingAll(false);
-      showToast(true, 'Completed database sync');
+
+      setSavingAll(true);
+      
+      setExercises(prev => {
+        const next = [...prev];
+        unsavedIndices.forEach(i => next[i].dbStatus = 'saving');
+        return next;
+      });
+
+      try {
+        const headers = Object.keys(exercises[unsavedIndices[0]]).filter(k => k !== 'dbStatus');
+        
+        const csvRows = [headers.join(',')];
+        unsavedIndices.forEach(i => {
+          const ex = exercises[i];
+          const rowValues = headers.map(h => {
+            let val = ex[h];
+            if (Array.isArray(val)) val = val.join('+');
+            if (val === null || val === undefined) val = "";
+            const strVal = String(val).replace(/"/g, '""');
+            return `"${strVal}"`;
+          });
+          csvRows.push(rowValues.join(','));
+        });
+        
+        const csvContent = csvRows.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const formData = new FormData();
+        formData.append('file', blob, 'bulk_exercises.csv');
+        formData.append('skill', category);
+        formData.append('type_slug', qt.slug);
+        formData.append('category', 'main');
+
+        await api.post('/admin/sync/exercises', formData);
+
+        setExercises(prev => {
+          const next = [...prev];
+          unsavedIndices.forEach(i => next[i].dbStatus = 'saved');
+          return next;
+        });
+        showToast(true, `Successfully bulk saved ${unsavedIndices.length} exercises to the database.`);
+      } catch (e: unknown) {
+        setExercises(prev => {
+          const next = [...prev];
+          unsavedIndices.forEach(i => next[i].dbStatus = 'error');
+          return next;
+        });
+        const err = e as { response?: { data?: { detail?: string } } };
+        showToast(false, err.response?.data?.detail || 'Bulk save failed');
+      } finally {
+        setSavingAll(false);
+      }
     };
 
     return (
@@ -618,15 +730,21 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               <input className="form-control" value={form.grammar} onChange={e => setForm({ ...form, grammar: e.target.value })} placeholder="e.g. Subjunctive" />
             </div>
             <div className="form-group">
-              <label className="form-label">Count</label>
-              <input type="number" className="form-control" value={form.count} onChange={e => setForm({ ...form, count: parseInt(e.target.value) })} min={1} max={10} />
+              <label className="form-label">Count (Total)</label>
+              <input type="number" className="form-control" value={form.count} onChange={e => setForm({ ...form, count: parseInt(e.target.value) || 1 })} min={1} max={1000} />
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginBottom: '2rem' }}>
-            <button className="btn btn-primary" onClick={handleGenerate} disabled={loading}>
-              {loading ? 'Generating...' : 'Generate Exercises'}
-            </button>
+          <div style={{ display: 'flex', gap: 8, marginBottom: '2rem', alignItems: 'center' }}>
+            {!loading ? (
+              <button className="btn btn-primary" onClick={handleGenerate}>
+                Generate Exercises
+              </button>
+            ) : (
+              <button className="btn btn-primary" onClick={stopBatch} style={{ background: '#ef4444' }}>
+                Stop Batch ({batchProgress.current}/{batchProgress.total})
+              </button>
+            )}
             {exercises.length > 0 && (
               <>
                 <button className="btn btn-secondary" onClick={() => { setPreviewExIndex(null); setShowDetailed(true); }} style={{ background: 'rgba(31,111,235,0.15)', color: 'var(--accent)', border: '1px solid rgba(31,111,235,0.3)' }}>
@@ -634,6 +752,9 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                 </button>
                 <button className="btn btn-secondary" onClick={saveAll} disabled={savingAll}>
                   {savingAll ? 'Saving...' : 'Save All to DB'}
+                </button>
+                <button className="btn btn-secondary" onClick={exportToCSV} style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }}>
+                  <Download size={18} className="inline mr-1" /> Export CSV
                 </button>
               </>
             )}
