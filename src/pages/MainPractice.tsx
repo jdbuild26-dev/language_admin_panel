@@ -402,7 +402,6 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     </div>
   );
 }
-
 // ─── AI Generator Modal ──────────────────────────────────────────────────────
 function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
   qt: QuestionType; level: string; category: string; onClose: () => void; showToast: (ok: boolean, msg: string) => void;
@@ -410,6 +409,8 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
   const [loading, setLoading] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [exercises, setExercises] = useState<any[]>([]);
+  const [lastExtId, setLastExtId] = useState<string | null>(null);
+  const [fetchingLastId, setFetchingLastId] = useState(false);
   const [form, setForm] = useState({
     topic: '',
     grammar: '',
@@ -418,6 +419,28 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
     targetLang: 'French',
     langCode: 'FR'
   });
+
+  useEffect(() => {
+    setFetchingLastId(true);
+    api.get('/admin/exercises', {
+      params: { type_slug: qt.slug, level: level, page: 1, page_size: 1 }
+    })
+    .then(res => {
+      const total = res.data.total;
+      if (total > 0) {
+        api.get('/admin/exercises', {
+          params: { type_slug: qt.slug, level: level, page: Math.ceil(total / 50), page_size: 50 }
+        }).then(res2 => {
+          const items = res2.data.items;
+          if (items && items.length > 0) {
+            const last = items[items.length - 1].external_id;
+            setLastExtId(last);
+          }
+        });
+      }
+    })
+    .finally(() => setFetchingLastId(false));
+  }, [qt.slug, level]);
 
   const handleGenerate = async () => {
     if (!form.topic) {
@@ -435,7 +458,9 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
           vocab_tag: form.topic,
           grammar_tag: form.grammar,
           count: form.count,
-          custom_instructions: form.custom
+          custom_instructions: form.custom,
+          exercise_type: qt.slug,
+          last_ext_id: lastExtId
         }
       });
       setExercises((res.data.exercises || []).map((ex: any) => ({ ...ex, dbStatus: 'ready' })));
@@ -454,19 +479,13 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
     setExercises(newExs);
 
     try {
-      const headers = [
-        "ExerciseID", "Question Type", "Exercise Tag", "Vocabulary Tag", "Grammar Tag", 
-        "Level", "Difficulty", "Shuffle Tokens", "Time Limit", "Token #", 
-        `Heading_${form.langCode}`, "Heading_EN", "Complete Sentence _EN", `Complete Sentence _${form.langCode}`, 
-        "BubbleTokens", "CorrectTokenOrder", "Distractor Tokens"
-      ];
-      
-      const values = [
-        ex.ExerciseID, "translate_bubbles", ex["Exercise Tag"], ex["Vocabulary Tag"], ex["Grammar Tag"] || "",
-        ex.Level, ex.Difficulty, ex["Shuffle Tokens"], ex["Time Limit"], ex["Token #"],
-        ex[`Heading_${form.langCode}`], ex.Heading_EN, ex["Complete Sentence _EN"], ex[`Complete Sentence _${form.langCode}`],
-        ex.BubbleTokens, ex.CorrectTokenOrder, ex["Distractor Tokens"]
-      ];
+      // Dynamically build CSV from AI response keys
+      const headers = Object.keys(ex).filter(k => k !== 'dbStatus');
+      const values = headers.map(h => {
+        const val = ex[h];
+        if (Array.isArray(val)) return val.join('+');
+        return val ?? "";
+      });
 
       const csvContent = headers.join(',') + '\n' + values.map(v => `"${v}"`).join(',');
       const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -541,32 +560,45 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.05)', borderBottom: '1px solid var(--border)' }}>
                   <th style={{ padding: '10px', textAlign: 'left' }}>ID</th>
-                  <th style={{ padding: '10px', textAlign: 'left' }}>English Sentence</th>
-                  <th style={{ padding: '10px', textAlign: 'left' }}>Target Sentence</th>
+                  <th style={{ padding: '10px', textAlign: 'left' }}>Content Preview</th>
                   <th style={{ padding: '10px', textAlign: 'center' }}>Status</th>
                   <th style={{ padding: '10px', textAlign: 'right' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {exercises.map((ex, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '10px', fontFamily: 'monospace' }}>{ex.ExerciseID}</td>
-                    <td style={{ padding: '10px' }}>{ex["Complete Sentence _EN"]}</td>
-                    <td style={{ padding: '10px' }}>{ex[`Complete Sentence _${form.langCode}`]}</td>
-                    <td style={{ padding: '10px', textAlign: 'center' }}>
-                      {ex.dbStatus === 'saving' && <span style={{ color: 'var(--accent)' }}>Saving...</span>}
-                      {ex.dbStatus === 'saved' && <Check size={16} style={{ color: '#10b981', margin: '0 auto' }} />}
-                      {ex.dbStatus === 'error' && <span style={{ color: '#ef4444' }}>Error</span>}
-                      {ex.dbStatus === 'ready' && <span style={{ color: 'var(--text-muted)' }}>Ready</span>}
-                    </td>
-                    <td style={{ padding: '10px', textAlign: 'right' }}>
-                      <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: 12 }} 
-                        onClick={() => saveToDB(i)} disabled={ex.dbStatus === 'saving' || ex.dbStatus === 'saved'}>
-                        {ex.dbStatus === 'saved' ? 'Saved' : 'Save'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {exercises.map((ex, i) => {
+                  // Find a good preview field (first one that looks like content)
+                  const previewKey = Object.keys(ex).find(k => 
+                    k.toLowerCase().includes('sentence') || 
+                    k.toLowerCase().includes('paragraph') || 
+                    k.toLowerCase().includes('question') ||
+                    k.toLowerCase().includes('text') ||
+                    k.toLowerCase().includes('pairs')
+                  );
+                  const preview = previewKey ? String(ex[previewKey]).substring(0, 100) + (String(ex[previewKey]).length > 100 ? '...' : '') : 'No preview';
+
+                  return (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '10px', fontFamily: 'monospace' }}>{ex.ExerciseID}</td>
+                      <td style={{ padding: '10px' }}>
+                        <div style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-muted)' }}>{previewKey || 'Content'}</div>
+                        <div>{preview}</div>
+                      </td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        {ex.dbStatus === 'saving' && <span style={{ color: 'var(--accent)' }}>Saving...</span>}
+                        {ex.dbStatus === 'saved' && <Check size={16} style={{ color: '#10b981', margin: '0 auto' }} />}
+                        {ex.dbStatus === 'error' && <span style={{ color: '#ef4444' }}>Error</span>}
+                        {ex.dbStatus === 'ready' && <span style={{ color: 'var(--text-muted)' }}>Ready</span>}
+                      </td>
+                      <td style={{ padding: '10px', textAlign: 'right' }}>
+                        <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: 12 }} 
+                          onClick={() => saveToDB(i)} disabled={ex.dbStatus === 'saving' || ex.dbStatus === 'saved'}>
+                          {ex.dbStatus === 'saved' ? 'Saved' : 'Save'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -718,11 +750,9 @@ function Slide1Main({
                         <MessageSquare size={15} />
                       </button>
                       {/* AI Generator */}
-                      {qt.slug === 'translate_bubbles' && (
-                        <button title="AI Generate" onClick={() => setAiGenQt(qt)} style={iconBtnStyle('#a855f7')}>
-                          <Sparkles size={15} />
-                        </button>
-                      )}
+                      <button title="AI Generate" onClick={() => setAiGenQt(qt)} style={iconBtnStyle('#a855f7')}>
+                        <Sparkles size={15} />
+                      </button>
                       {/* Edit - opens Slide 2 */}
                       <button title="Edit subtypes" onClick={() => onEdit(qt)} style={iconBtnStyle('#f59e0b')}>
                         <Pencil size={15} />
