@@ -3,7 +3,7 @@ import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, M
 import api from '../services/api';
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'] as const;
-const CATEGORIES = ['Reading', 'Listening', 'Writing', 'Speaking', 'Grammar', 'Vocabulary'] as const;
+const CATEGORIES = ['Reading', 'Listening', 'Writing', 'Speaking'] as const;
 type CefrLevel = typeof CEFR_LEVELS[number];
 type Category = typeof CATEGORIES[number];
 type Slide = 'main' | 'subtypes' | 'exercises' | 'create';
@@ -106,22 +106,6 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'speak_image',               // Speak About Image / Describe Image
     'speak_interactive',         // Interactive Speaking
     'speaking_conversation',     // Speaking Conversation (Running)
-  ],
-  Grammar: [
-    'grammar_mcq',               // Grammar MCQ
-    'grammar_fill_blanks',       // Grammar Fill in the Blanks
-    'grammar_correction',        // Grammar Correction
-    'grammar_transformation',    // Sentence Transformation
-    'grammar_matching',          // Grammar Matching
-    'grammar_reorder',           // Grammar Reorder
-  ],
-  Vocabulary: [
-    'vocab_mcq',                 // Vocabulary MCQ
-    'vocab_fill_blanks',         // Vocabulary Fill in the Blanks
-    'vocab_matching',            // Vocabulary Matching
-    'vocab_translation',         // Vocabulary Translation
-    'vocab_image',               // Vocabulary Image Match
-    'vocab_spelling',            // Vocabulary Spelling
   ],
 };
 
@@ -634,9 +618,6 @@ function Slide1Main({
   onAiGenerate: (qt: QuestionType) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
-  // Fetch available slugs — kept for potential future use but not used for filtering in admin
-  const [slugsLoading, setSlugsLoading] = useState(false);
-
   // Modal state
   const [analyticsQt, setAnalyticsQt] = useState<QuestionType | null>(null);
   const [promptsQt, setPromptsQt] = useState<QuestionType | null>(null);
@@ -646,7 +627,6 @@ function Slide1Main({
     setTogglingSlug(qt.slug);
     try {
       const r = await api.post(`/admin/question-types/${qt.slug}/toggle-active`);
-      // Use the is_active value returned by the backend
       setQuestionTypes(prev => prev.map(q => q.slug === qt.slug ? { ...q, is_active: r.data.is_active } : q));
     } catch {
       // silently fail — toast is in parent
@@ -654,12 +634,6 @@ function Slide1Main({
       setTogglingSlug(null);
     }
   };
-
-  useEffect(() => {
-    setSlugsLoading(true);
-    api.get('/tag-topics/available-types', { params: { level: level.toLowerCase(), language: 'fr' } })
-      .finally(() => setSlugsLoading(false));
-  }, [level]);
 
   // Filter: must be in this category's slug list
   // Note: we do NOT filter by availableSlugs here — that's for the student practice page.
@@ -682,45 +656,38 @@ function Slide1Main({
       {/* Filters row */}
       <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 80 }}>CEFR Level</span>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 100 }}>CEFR Level</span>
+          <select
+            value={level}
+            onChange={(e) => setLevel(e.target.value as CefrLevel)}
+            className="form-control"
+            style={{ width: 200, padding: '8px 12px', fontSize: 14 }}
+          >
             {CEFR_LEVELS.map(l => (
-              <button key={l} onClick={() => setLevel(l)}
-                style={{
-                  padding: '6px 18px', borderRadius: 8, border: '1px solid var(--border)',
-                  background: level === l ? 'var(--primary)' : 'var(--card-bg)',
-                  color: level === l ? '#fff' : 'var(--text)', cursor: 'pointer',
-                  fontWeight: level === l ? 700 : 400, fontSize: 14, transition: 'all 0.15s',
-                }}>
-                {l}
-              </button>
+              <option key={l} value={l}>{l}</option>
             ))}
-          </div>
+          </select>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 80 }}>Category</span>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 100 }}>Category</span>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as Category)}
+            className="form-control"
+            style={{ width: 200, padding: '8px 12px', fontSize: 14 }}
+          >
             {CATEGORIES.map(c => (
-              <button key={c} onClick={() => setCategory(c)}
-                style={{
-                  padding: '6px 18px', borderRadius: 8, border: '1px solid var(--border)',
-                  background: category === c ? 'var(--accent)' : 'var(--card-bg)',
-                  color: category === c ? '#fff' : 'var(--text)', cursor: 'pointer',
-                  fontWeight: category === c ? 700 : 400, fontSize: 14, transition: 'all 0.15s',
-                }}>
-                {c}
-              </button>
+              <option key={c} value={c}>{c}</option>
             ))}
-          </div>
+          </select>
         </div>
       </div>
 
       {/* Practice Exercises table */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.25rem' }}>
         <h2 style={{ margin: 0 }}>Practice Exercises</h2>
-        {slugsLoading && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading...</span>}
       </div>
-      <div className="card" style={{ padding: 0, overflow: 'hidden', opacity: slugsLoading ? 0.5 : 1, transition: 'opacity 0.2s' }}>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <thead>
             <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
