@@ -584,13 +584,11 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
               <tbody>
                 {exercises.map((ex, i) => {
                   // Find a good preview field (first one that looks like content)
-                  const previewKey = Object.keys(ex).find(k =>
-                    k.toLowerCase().includes('sentence') ||
-                    k.toLowerCase().includes('paragraph') ||
-                    k.toLowerCase().includes('question') ||
-                    k.toLowerCase().includes('text') ||
-                    k.toLowerCase().includes('pairs')
-                  );
+                  const previewKey = Object.keys(ex).find(k => {
+                    const lk = k.toLowerCase();
+                    if (lk.includes('type') || lk.includes('id') || lk.includes('tag') || lk.includes('level') || lk.includes('dbstatus')) return false;
+                    return lk.includes('sentence') || lk.includes('text') || lk.includes('paragraph') || lk.includes('passage') || lk.includes('prompt') || lk.includes('question') || lk.includes('pairs') || lk.includes('mapping');
+                  }) || Object.keys(ex).find(k => !['dbstatus', 'id', 'external_id', 'exerciseid'].includes(k.toLowerCase()));
                   const preview = previewKey ? String(ex[previewKey]).substring(0, 100) + (String(ex[previewKey]).length > 100 ? '...' : '') : 'No preview';
 
                   return (
