@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet, CloudUpload, Sparkles, Check } from 'lucide-react';
 import api from '../services/api';
 
@@ -29,6 +29,25 @@ interface ExerciseRow {
   category: string | null;
   type_slug: string | null;
   is_active: boolean;
+  image_url?: string;
+  content?: {
+    image_url?: string;
+    [key: string]: any;
+  };
+}
+
+interface Prompt {
+  id?: string;
+  topic?: string;
+  slug?: string;
+  ai_role?: string;
+  user_role?: string;
+  [key: string]: any;
+}
+
+interface AiExercise extends Record<string, any> {
+  ExerciseID: string;
+  dbStatus?: 'ready' | 'saving' | 'saved' | 'error';
 }
 
 interface ExcelRow { [key: string]: string | number | boolean | null; }
@@ -179,7 +198,7 @@ function AnalyticsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {LEVELS.map(lvl => {
+              {CEFR_LEVELS.map(lvl => {
                 const count = data.by_level[lvl] || 0;
                 const pct = Math.round((count / maxCount) * 100);
                 return (
@@ -202,16 +221,14 @@ function AnalyticsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void
 
 // ─── AI Prompts Modal (editable) ─────────────────────────────────────────────
 function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: () => void; showToast: (ok: boolean, msg: string) => void }) {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<{ prompt: Prompt } | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [openLevel, setOpenLevel] = useState<string>('A1');
 
-  const LEVELS = ['A1', 'A2', 'B1', 'B2'];
-
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     api.get(`/admin/question-types/${qt.slug}/prompt`)
       .then(r => {
@@ -224,7 +241,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             ai_role: p.ai_role || '',
             user_role: p.user_role || '',
           };
-          LEVELS.forEach(lvl => {
+          CEFR_LEVELS.forEach(lvl => {
             const k = lvl.toLowerCase();
             flat[`instruction_${k}`] = p[`instruction_${k}`] || '';
             flat[`ai_prompt_${k}`] = p[`ai_prompt_${k}`] || '';
@@ -234,9 +251,9 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       })
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  };
+  }, [qt.slug]);
 
-  useEffect(() => { load(); }, [qt.slug]);
+  useEffect(() => { load(); }, [qt.slug, load]);
 
   const prompt = data?.prompt;
 
@@ -253,8 +270,9 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       }
       setEditing(false);
       load();
-    } catch (e: any) {
-      showToast(false, e.response?.data?.detail || 'Save failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || 'Save failed');
     } finally {
       setSaving(false);
     }
@@ -262,7 +280,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
 
   const startCreate = () => {
     const flat: Record<string, string> = { topic: qt.name || qt.slug, slug: qt.slug, ai_role: '', user_role: '' };
-    LEVELS.forEach(lvl => {
+    CEFR_LEVELS.forEach(lvl => {
       const k = lvl.toLowerCase();
       flat[`instruction_${k}`] = '';
       flat[`ai_prompt_${k}`] = '';
@@ -320,7 +338,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>AI ROLE: </span>{prompt.ai_role}
               </div>
             )}
-            {LEVELS.map(lvl => {
+            {CEFR_LEVELS.map(lvl => {
               const key = lvl.toLowerCase();
               const inst = prompt[`instruction_${key}`];
               const aiP = prompt[`ai_prompt_${key}`];
@@ -351,7 +369,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             </div>
 
             {/* Per-level accordion */}
-            {LEVELS.map(lvl => {
+            {CEFR_LEVELS.map(lvl => {
               const k = lvl.toLowerCase();
               const isOpen = openLevel === lvl;
               return (
@@ -408,9 +426,8 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
 }) {
   const [loading, setLoading] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
-  const [exercises, setExercises] = useState<any[]>([]);
+  const [exercises, setExercises] = useState<AiExercise[]>([]);
   const [lastExtId, setLastExtId] = useState<string | null>(null);
-  const [fetchingLastId, setFetchingLastId] = useState(false);
   const [form, setForm] = useState({
     topic: '',
     grammar: '',
@@ -421,7 +438,6 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
   });
 
   useEffect(() => {
-    setFetchingLastId(true);
     api.get('/admin/exercises', {
       params: { type_slug: qt.slug, level: level, page: 1, page_size: 1 }
     })
@@ -438,8 +454,7 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
           }
         });
       }
-    })
-    .finally(() => setFetchingLastId(false));
+    });
   }, [qt.slug, level]);
 
   const handleGenerate = async () => {
@@ -463,10 +478,11 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
           last_ext_id: lastExtId
         }
       });
-      setExercises((res.data.exercises || []).map((ex: any) => ({ ...ex, dbStatus: 'ready' })));
+      setExercises((res.data.exercises || []).map((ex: Record<string, unknown>) => ({ ...ex, dbStatus: 'ready' })));
       showToast(true, `Generated ${res.data.exercises?.length || 0} exercises`);
-    } catch (e: any) {
-      showToast(false, e.response?.data?.detail || 'Generation failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || 'Generation failed');
     } finally {
       setLoading(false);
     }
@@ -500,11 +516,12 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
       const finalExs = [...exercises];
       finalExs[index].dbStatus = 'saved';
       setExercises(finalExs);
-    } catch (e: any) {
+    } catch (e: unknown) {
       const finalExs = [...exercises];
       finalExs[index].dbStatus = 'error';
       setExercises(finalExs);
-      showToast(false, e.response?.data?.detail || 'Save failed');
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || 'Save failed');
     }
   };
 
@@ -610,23 +627,22 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
 
 // ─── Slide 1: Main Practice ───────────────────────────────────────────────────
 function Slide1Main({
-  level, setLevel, category, setCategory, questionTypes, setQuestionTypes, onEdit, showToast,
+  level, setLevel, category, setCategory, questionTypes, setQuestionTypes, onEdit, onAiGenerate, showToast,
 }: {
   level: CefrLevel; setLevel: (l: CefrLevel) => void;
   category: Category; setCategory: (c: Category) => void;
   questionTypes: QuestionType[];
   setQuestionTypes: React.Dispatch<React.SetStateAction<QuestionType[]>>;
   onEdit: (qt: QuestionType) => void;
+  onAiGenerate: (qt: QuestionType) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
   // Fetch available slugs — kept for potential future use but not used for filtering in admin
-  const [_availableSlugs, setAvailableSlugs] = useState<string[] | null>(null);
   const [slugsLoading, setSlugsLoading] = useState(false);
 
   // Modal state
   const [analyticsQt, setAnalyticsQt] = useState<QuestionType | null>(null);
   const [promptsQt, setPromptsQt] = useState<QuestionType | null>(null);
-  const [aiGenQt, setAiGenQt] = useState<QuestionType | null>(null); // New state for AI Gen
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
 
   const handleToggleActive = async (qt: QuestionType) => {
@@ -645,8 +661,6 @@ function Slide1Main({
   useEffect(() => {
     setSlugsLoading(true);
     api.get('/tag-topics/available-types', { params: { level: level.toLowerCase(), language: 'fr' } })
-      .then(r => setAvailableSlugs(Array.isArray(r.data.slugs) ? r.data.slugs : null))
-      .catch(() => setAvailableSlugs(null))
       .finally(() => setSlugsLoading(false));
   }, [level]);
 
@@ -750,7 +764,7 @@ function Slide1Main({
                         <MessageSquare size={15} />
                       </button>
                       {/* AI Generator */}
-                      <button title="AI Generate" onClick={() => setAiGenQt(qt)} style={iconBtnStyle('#a855f7')}>
+                      <button title="AI Generate" onClick={() => onAiGenerate(qt)} style={iconBtnStyle('#a855f7')}>
                         <Sparkles size={15} />
                       </button>
                       {/* Edit - opens Slide 2 */}
@@ -780,15 +794,6 @@ function Slide1Main({
       {/* Modals */}
       {analyticsQt && <AnalyticsModal qt={analyticsQt} onClose={() => setAnalyticsQt(null)} />}
       {promptsQt && <PromptsModal qt={promptsQt} onClose={() => setPromptsQt(null)} showToast={showToast} />}
-      {aiGenQt && (
-        <AIGeneratorModal 
-          qt={aiGenQt} 
-          level={level} 
-          category={category} 
-          onClose={() => setAiGenQt(null)} 
-          showToast={showToast} 
-        />
-      )}
     </div>
   );
 }
@@ -804,12 +809,12 @@ function iconBtnStyle(color: string): React.CSSProperties {
 
 // ─── Write Image Upload Panel ─────────────────────────────────────────────────
 function WriteImageUploadPanel({
-  exerciseType, level, category: _category, showToast,
+  exerciseType, level, showToast,
 }: {
-  exerciseType: QuestionType; level: CefrLevel; category: Category;
+  exerciseType: QuestionType; level: CefrLevel;
   showToast: (ok: boolean, msg: string) => void;
 }) {
-  const [exercises, setExercises] = useState<any[]>([]);
+  const [exercises, setExercises] = useState<ExerciseRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null); // exerciseId being uploaded
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -856,8 +861,9 @@ function WriteImageUploadPanel({
         ex.external_id === exId ? { ...ex, image_url: imageUrl } : ex
       ));
       showToast(true, `Image uploaded for ${exId}`);
-    } catch (e: any) {
-      showToast(false, e.response?.data?.detail || 'Upload failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || 'Upload failed');
     } finally {
       setUploading(null);
       pendingExId.current = null;
@@ -925,9 +931,9 @@ function WriteImageUploadPanel({
 
 // ─── Direct CSV Upload (for exercise types like correct_spelling) ─────────────
 function DirectCsvUpload({
-  exerciseType, level: _level, category, showToast,
+  exerciseType, category, showToast,
 }: {
-  exerciseType: QuestionType; level: CefrLevel; category: Category;
+  exerciseType: QuestionType; category: Category;
   showToast: (ok: boolean, msg: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -949,8 +955,9 @@ function DirectCsvUpload({
       const count = result.data?.message?.match(/\d+/)?.[0] ?? '?';
       setProgress({ current: 1, total: 1 });
       showToast(true, `Uploaded ${count} exercises`);
-    } catch (e: any) {
-      showToast(false, e.response?.data?.detail || 'Upload failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || 'Upload failed');
     } finally {
       setUploading(false);
       setProgress(null);
@@ -988,11 +995,11 @@ function DirectCsvUpload({
 // ─── Slide 2: Subtypes List ───────────────────────────────────────────────────
 function Slide2Subtypes({
   level, category, exerciseType,
-  onBack, onView, onCreate,
+  onBack, onView, onCreate, onAiGenerate,
   showToast,
 }: {
   level: CefrLevel; category: Category; exerciseType: QuestionType;
-  onBack: () => void; onView: (sub: ExerciseSubtype) => void; onCreate: () => void;
+  onBack: () => void; onView: (sub: ExerciseSubtype) => void; onCreate: () => void; onAiGenerate: (qt: QuestionType) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
   const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
@@ -1024,8 +1031,9 @@ function Slide2Subtypes({
       await api.delete(`/admin/exercise-subtypes/${confirmDelete.id}`);
       showToast(true, `Deleted "${confirmDelete.name_en}"`);
       setSubtypes(prev => prev.filter(s => s.id !== confirmDelete.id));
-    } catch (e: any) {
-      showToast(false, e.response?.data?.detail || 'Delete failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || 'Delete failed');
     } finally {
       setDeleteLoading(false);
       setConfirmDelete(null);
@@ -1037,8 +1045,9 @@ function Slide2Subtypes({
       const r = await api.patch(`/admin/exercise-subtypes/${sub.id}/toggle-active`);
       setSubtypes(prev => prev.map(s => s.id === sub.id ? { ...s, is_active: r.data.is_active } : s));
       showToast(true, `${sub.is_active ? 'Deactivated' : 'Activated'} "${sub.name_en}"`);
-    } catch (e: any) {
-      showToast(false, e.response?.data?.detail || 'Update failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || 'Update failed');
     }
   };
 
@@ -1062,13 +1071,16 @@ function Slide2Subtypes({
           {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks' || exerciseType.slug === 'write_topic' || exerciseType.slug === 'write_image' || exerciseType.slug === 'summarise_audio' || exerciseType.slug === 'write_interactive' || exerciseType.slug === 'speak_interactive' || exerciseType.slug === 'writing_conversation' || exerciseType.slug === 'speaking_conversation') && (
             <DirectCsvUpload
               exerciseType={exerciseType}
-              level={level}
               category={category}
               showToast={showToast}
             />
           )}
+          <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate exercises"
+            style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.9 }}>
+            <Sparkles size={18} />
+          </button>
           <button onClick={onCreate} title="Create new subtype"
-            style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--primary)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Plus size={18} />
           </button>
         </div>
@@ -1143,7 +1155,6 @@ function Slide2Subtypes({
           <WriteImageUploadPanel
             exerciseType={exerciseType}
             level={level}
-            category={category}
             showToast={showToast}
           />
         </div>
@@ -1167,7 +1178,10 @@ function ExcelRowEditor({ externalId, onSaved }: { externalId: string; onSaved: 
     try {
       const r = await api.get(`/admin/exercises/${externalId.trim()}/excel-row`);
       setRow(r.data.row); setTypeSlug(r.data.type_slug || '');
-    } catch (e: any) { setError(e.response?.data?.detail || 'Failed to load'); }
+    } catch (e: unknown) { 
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err.response?.data?.detail || 'Failed to load'); 
+    }
     finally { setLoading(false); }
   }, [externalId]);
 
@@ -1183,7 +1197,10 @@ function ExcelRowEditor({ externalId, onSaved }: { externalId: string; onSaved: 
     try {
       await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, { row });
       setSaved(true); onSaved();
-    } catch (e: any) { setError(e.response?.data?.detail || 'Save failed'); }
+    } catch (e: unknown) { 
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err.response?.data?.detail || 'Save failed'); 
+    }
     finally { setSaving(false); }
   };
 
@@ -1251,10 +1268,11 @@ function ExcelRowEditor({ externalId, onSaved }: { externalId: string; onSaved: 
 
 function Slide3Exercises({
   level, category, exerciseType, subtype,
-  onBack, showToast,
+  onBack, onAiGenerate, showToast,
 }: {
   level: CefrLevel; category: Category; exerciseType: QuestionType; subtype: ExerciseSubtype;
   onBack: () => void;
+  onAiGenerate: (qt: QuestionType) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
   type ExTab = 'list' | 'detail';
@@ -1304,8 +1322,9 @@ function Slide3Exercises({
       await api.delete(`/admin/exercises/${confirmDelete.external_id}`);
       showToast(true, `Deleted ${confirmDelete.external_id}`);
       setExercises(prev => prev.filter(e => e.id !== confirmDelete.id));
-    } catch (e: any) {
-      showToast(false, e.response?.data?.detail || 'Delete failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || 'Delete failed');
     } finally {
       setDeleteLoading(false);
       setConfirmDelete(null);
@@ -1317,8 +1336,9 @@ function Slide3Exercises({
       const r = await api.patch(`/admin/exercises/${ex.external_id}/toggle-active`);
       setExercises(prev => prev.map(e => e.id === ex.id ? { ...e, is_active: r.data.is_active } : e));
       showToast(true, `${ex.is_active ? 'Deactivated' : 'Activated'} ${ex.external_id}`);
-    } catch (e: any) {
-      showToast(false, e.response?.data?.detail || 'Update failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || 'Update failed');
     }
   };
 
@@ -1362,15 +1382,26 @@ function Slide3Exercises({
           {exerciseType.name || exerciseType.slug} &gt;&gt; {subtypeIndex}. {subtype.name_en}
         </h2>
         {/* Download CSV — green, top right */}
-        <button onClick={handleDownloadCSV} title="Download CSV"
-          style={{
-            width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer',
-            background: '#2ea043', color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-          }}>
-          <Download size={18} />
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate more"
+            style={{
+              width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer',
+              background: 'var(--accent)', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+            <Sparkles size={18} />
+          </button>
+          <button onClick={handleDownloadCSV} title="Download CSV"
+            style={{
+              width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer',
+              background: '#2ea043', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+            <Download size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Tabs + deactivated toggle on same row */}
@@ -1588,8 +1619,9 @@ function Slide4Create({
 
       showToast(true, `Created "${form.name_en}" and synced exercises`);
       onCreated();
-    } catch (e: any) {
-      setError(e.response?.data?.detail || 'Save failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err.response?.data?.detail || 'Save failed');
     } finally {
       setSaving(false);
       setUploadProgress(null);
@@ -1725,8 +1757,9 @@ export default function MainPractice() {
   const [level, setLevel] = useState<CefrLevel>('A1');
   const [category, setCategory] = useState<Category>('Reading');
   const [questionTypes, setQuestionTypes] = useState<QuestionType[]>([]);
-  const [selectedType, setSelectedType] = useState<QuestionType | null>(null);
   const [selectedSubtype, setSelectedSubtype] = useState<ExerciseSubtype | null>(null);
+  const [selectedType, setSelectedType] = useState<QuestionType | null>(null);
+  const [aiGenQt, setAiGenQt] = useState<QuestionType | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
@@ -1765,6 +1798,7 @@ export default function MainPractice() {
           questionTypes={questionTypes}
           setQuestionTypes={setQuestionTypes}
           onEdit={handleEdit}
+          onAiGenerate={(qt) => setAiGenQt(qt)}
           showToast={showToast}
         />
       )}
@@ -1775,6 +1809,7 @@ export default function MainPractice() {
           onBack={() => setSlide('main')}
           onView={handleView}
           onCreate={handleCreate}
+          onAiGenerate={(qt) => setAiGenQt(qt)}
           showToast={showToast}
         />
       )}
@@ -1784,6 +1819,7 @@ export default function MainPractice() {
           level={level} category={category}
           exerciseType={selectedType} subtype={selectedSubtype}
           onBack={() => setSlide('subtypes')}
+          onAiGenerate={(qt) => setAiGenQt(qt)}
           showToast={showToast}
         />
       )}
@@ -1794,6 +1830,16 @@ export default function MainPractice() {
           onBack={() => setSlide('subtypes')}
           onCreated={() => setSlide('subtypes')}
           showToast={showToast}
+        />
+      )}
+
+      {aiGenQt && (
+        <AIGeneratorModal 
+          qt={aiGenQt} 
+          level={level} 
+          category={category} 
+          onClose={() => setAiGenQt(null)} 
+          showToast={showToast} 
         />
       )}
 
