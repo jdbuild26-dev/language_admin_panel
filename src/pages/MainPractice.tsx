@@ -173,7 +173,6 @@ function AnalyticsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void
       .finally(() => setLoading(false));
   }, [qt.slug]);
 
-  const LEVELS = ['A1', 'A2', 'B1', 'B2'];
   const maxCount = data ? Math.max(...Object.values(data.by_level), 1) : 1;
 
   return (
@@ -441,20 +440,20 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
     api.get('/admin/exercises', {
       params: { type_slug: qt.slug, level: level, page: 1, page_size: 1 }
     })
-    .then(res => {
-      const total = res.data.total;
-      if (total > 0) {
-        api.get('/admin/exercises', {
-          params: { type_slug: qt.slug, level: level, page: Math.ceil(total / 50), page_size: 50 }
-        }).then(res2 => {
-          const items = res2.data.items;
-          if (items && items.length > 0) {
-            const last = items[items.length - 1].external_id;
-            setLastExtId(last);
-          }
-        });
-      }
-    });
+      .then(res => {
+        const total = res.data.total;
+        if (total > 0) {
+          api.get('/admin/exercises', {
+            params: { type_slug: qt.slug, level: level, page: Math.ceil(total / 50), page_size: 50 }
+          }).then(res2 => {
+            const items = res2.data.items;
+            if (items && items.length > 0) {
+              const last = items[items.length - 1].external_id;
+              setLastExtId(last);
+            }
+          });
+        }
+      });
   }, [qt.slug, level]);
 
   const handleGenerate = async () => {
@@ -512,7 +511,7 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
       formData.append('category', 'main');
 
       await api.post('/admin/sync/exercises', formData);
-      
+
       const finalExs = [...exercises];
       finalExs[index].dbStatus = 'saved';
       setExercises(finalExs);
@@ -585,9 +584,9 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
               <tbody>
                 {exercises.map((ex, i) => {
                   // Find a good preview field (first one that looks like content)
-                  const previewKey = Object.keys(ex).find(k => 
-                    k.toLowerCase().includes('sentence') || 
-                    k.toLowerCase().includes('paragraph') || 
+                  const previewKey = Object.keys(ex).find(k =>
+                    k.toLowerCase().includes('sentence') ||
+                    k.toLowerCase().includes('paragraph') ||
                     k.toLowerCase().includes('question') ||
                     k.toLowerCase().includes('text') ||
                     k.toLowerCase().includes('pairs')
@@ -608,7 +607,7 @@ function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
                         {ex.dbStatus === 'ready' && <span style={{ color: 'var(--text-muted)' }}>Ready</span>}
                       </td>
                       <td style={{ padding: '10px', textAlign: 'right' }}>
-                        <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: 12 }} 
+                        <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: 12 }}
                           onClick={() => saveToDB(i)} disabled={ex.dbStatus === 'saving' || ex.dbStatus === 'saved'}>
                           {ex.dbStatus === 'saved' ? 'Saved' : 'Save'}
                         </button>
@@ -1178,9 +1177,9 @@ function ExcelRowEditor({ externalId, onSaved }: { externalId: string; onSaved: 
     try {
       const r = await api.get(`/admin/exercises/${externalId.trim()}/excel-row`);
       setRow(r.data.row); setTypeSlug(r.data.type_slug || '');
-    } catch (e: unknown) { 
+    } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
-      setError(err.response?.data?.detail || 'Failed to load'); 
+      setError(err.response?.data?.detail || 'Failed to load');
     }
     finally { setLoading(false); }
   }, [externalId]);
@@ -1197,9 +1196,9 @@ function ExcelRowEditor({ externalId, onSaved }: { externalId: string; onSaved: 
     try {
       await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, { row });
       setSaved(true); onSaved();
-    } catch (e: unknown) { 
+    } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
-      setError(err.response?.data?.detail || 'Save failed'); 
+      setError(err.response?.data?.detail || 'Save failed');
     }
     finally { setSaving(false); }
   };
@@ -1580,7 +1579,7 @@ function Slide4Create({
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [uploadProgress, setUploadProgress] = useState<{current: number, total: number} | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number, total: number } | null>(null);
 
   // Auto-generate subtype slug from exercise code + English name
   useEffect(() => {
@@ -1628,7 +1627,7 @@ function Slide4Create({
     }
   };
 
-    return (
+  return (
     <div style={{ position: 'relative' }}>
       {uploadProgress && (
         <div style={{
@@ -1655,97 +1654,97 @@ function Slide4Create({
         </div>
       )}
 
-    <div>
-      {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.5rem' }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14 }}>
-          <ChevronLeft size={16} /> Back
-        </button>
-        <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-          CEFR Level: <strong style={{ color: 'var(--white)' }}>{level}</strong>
-          &nbsp;&nbsp;Category: <strong style={{ color: 'var(--white)' }}>{category}</strong>
-        </span>
-      </div>
+      <div>
+        {/* Breadcrumb */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.5rem' }}>
+          <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14 }}>
+            <ChevronLeft size={16} /> Back
+          </button>
+          <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+            CEFR Level: <strong style={{ color: 'var(--white)' }}>{level}</strong>
+            &nbsp;&nbsp;Category: <strong style={{ color: 'var(--white)' }}>{category}</strong>
+          </span>
+        </div>
 
-      <h2 style={{ marginBottom: '1.5rem' }}>{exerciseType.name || exerciseType.slug}</h2>
+        <h2 style={{ marginBottom: '1.5rem' }}>{exerciseType.name || exerciseType.slug}</h2>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2rem', alignItems: 'start' }}>
-        <div>
-          {/* Exercise Name section */}
-          <div className="card" style={{ marginBottom: '1.5rem' }}>
-            <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Exercise Name</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.75rem', alignItems: 'center' }}>
-              {(['English', 'French', 'German', 'Spanish'] as const).map((lang, i) => {
-                const key = ['name_en', 'name_fr', 'name_de', 'name_es'][i] as keyof typeof form;
-                return (
-                  <>
-                    <label key={`lbl-${lang}`} style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>{lang}</label>
-                    <input key={`inp-${lang}`} className="form-control" value={form[key]} onChange={e => set(key, e.target.value)}
-                      placeholder={`Name in ${lang}`} style={{ marginBottom: 0 }} />
-                  </>
-                );
-              })}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2rem', alignItems: 'start' }}>
+          <div>
+            {/* Exercise Name section */}
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Exercise Name</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.75rem', alignItems: 'center' }}>
+                {(['English', 'French', 'German', 'Spanish'] as const).map((lang, i) => {
+                  const key = ['name_en', 'name_fr', 'name_de', 'name_es'][i] as keyof typeof form;
+                  return (
+                    <>
+                      <label key={`lbl-${lang}`} style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>{lang}</label>
+                      <input key={`inp-${lang}`} className="form-control" value={form[key]} onChange={e => set(key, e.target.value)}
+                        placeholder={`Name in ${lang}`} style={{ marginBottom: 0 }} />
+                    </>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Identifier & Slug */}
+            <div className="card">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Identifier Name</label>
+                  <input className="form-control" value={form.identifier_name} onChange={e => set('identifier_name', e.target.value)}
+                    placeholder="e.g. HTS001" />
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Exercise code used as identifier prefix</p>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ textDecoration: 'underline', textDecorationStyle: 'dotted' }}>SubType Slug</label>
+                  <input className="form-control" value={form.subtype_slug} onChange={e => set('subtype_slug', e.target.value)}
+                    placeholder="Auto-generated from code + name" />
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Default: ExerciseCode_EnglishName</p>
+                </div>
+              </div>
+            </div>
+
+            {error && <div className="alert alert-error" style={{ marginTop: '1rem' }}><AlertCircle size={16} className="inline mr-2" />{error}</div>}
+
+            <div style={{ display: 'flex', gap: 8, marginTop: '1.5rem' }}>
+              <button className="btn btn-secondary" onClick={onBack}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Create Subtype'}
+              </button>
             </div>
           </div>
 
-          {/* Identifier & Slug */}
-          <div className="card">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Identifier Name</label>
-                <input className="form-control" value={form.identifier_name} onChange={e => set('identifier_name', e.target.value)}
-                  placeholder="e.g. HTS001" />
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Exercise code used as identifier prefix</p>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ textDecoration: 'underline', textDecorationStyle: 'dotted' }}>SubType Slug</label>
-                <input className="form-control" value={form.subtype_slug} onChange={e => set('subtype_slug', e.target.value)}
-                  placeholder="Auto-generated from code + name" />
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Default: ExerciseCode_EnglishName</p>
-              </div>
+          {/* CSV Upload panel */}
+          <div style={{ width: 200 }}>
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
+              style={{
+                width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
+                background: 'var(--card-bg)', cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+                transition: 'border-color 0.2s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+              <Upload size={40} style={{ color: file ? 'var(--accent)' : 'var(--text-muted)', opacity: file ? 1 : 0.5 }} />
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
+                {file ? file.name : 'Upload CSV (optional)'}
+              </span>
+              {file && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
             </div>
-          </div>
-
-          {error && <div className="alert alert-error" style={{ marginTop: '1rem' }}><AlertCircle size={16} className="inline mr-2" />{error}</div>}
-
-          <div style={{ display: 'flex', gap: 8, marginTop: '1.5rem' }}>
-            <button className="btn btn-secondary" onClick={onBack}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Create Subtype'}
-            </button>
+            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
+            {file && (
+              <button onClick={() => setFile(null)}
+                style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <X size={12} /> Remove file
+              </button>
+            )}
           </div>
         </div>
-
-        {/* CSV Upload panel */}
-        <div style={{ width: 200 }}>
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
-            style={{
-              width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
-              background: 'var(--card-bg)', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-              transition: 'border-color 0.2s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
-            <Upload size={40} style={{ color: file ? 'var(--accent)' : 'var(--text-muted)', opacity: file ? 1 : 0.5 }} />
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
-              {file ? file.name : 'Upload CSV (optional)'}
-            </span>
-            {file && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
-          </div>
-          <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
-          {file && (
-            <button onClick={() => setFile(null)}
-              style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <X size={12} /> Remove file
-            </button>
-          )}
-        </div>
-      </div>
       </div>
     </div>
   );
@@ -1834,12 +1833,12 @@ export default function MainPractice() {
       )}
 
       {aiGenQt && (
-        <AIGeneratorModal 
-          qt={aiGenQt} 
-          level={level} 
-          category={category} 
-          onClose={() => setAiGenQt(null)} 
-          showToast={showToast} 
+        <AIGeneratorModal
+          qt={aiGenQt}
+          level={level}
+          category={category}
+          onClose={() => setAiGenQt(null)}
+          showToast={showToast}
         />
       )}
 
