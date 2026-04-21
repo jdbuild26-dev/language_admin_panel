@@ -1,7 +1,8 @@
 ﻿"use client";
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, Plus, Trash2, X, Save, Eye, Pencil, ExternalLink, Globe, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, X, Save, Eye, Pencil, ExternalLink, Globe, AlertCircle, CheckCircle2, Loader2, Moon, Sun } from 'lucide-react';
 import api from '../services/api';
+import 'react-quill-new/dist/quill.snow.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,15 @@ interface Note {
 }
 
 type View = 'topics' | 'subtopics' | 'notes' | 'editor';
+
+interface EditorState {
+  subtopicId: number;
+  subtopicName: string;
+  learningLang: string;
+  existingNote: Note | null;
+  translationFor: Note | null;
+  takenLangs: string[];
+}
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'];
 const LANGUAGES = [
@@ -103,11 +113,11 @@ const QUILL_FORMATS = [
   'blockquote', 'code-block', 'link', 'image', 'align',
 ];
 
-function NoteEditorModal({ subtopicId, learningLang, existingNote, translationFor, takenLangs, onClose, onSaved, showToast }: {
-  subtopicId: number; learningLang: string;
+function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, translationFor, takenLangs, onClose, onSaved, showToast }: {
+  subtopicId: number; subtopicName: string; learningLang: string;
   existingNote?: Note | null;
-  translationFor?: Note | null;  // when set: new translation of same concept
-  takenLangs?: string[];         // langs already used for this concept
+  translationFor?: Note | null;
+  takenLangs?: string[];
   onClose: () => void;
   onSaved: () => void;
   showToast: (ok: boolean, msg: string) => void;
@@ -136,6 +146,9 @@ function NoteEditorModal({ subtopicId, learningLang, existingNote, translationFo
   const [tab, setTab] = useState<'write' | 'preview'>('write');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Dark mode — persisted per editor session
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('editor_dark') === '1');
 
   // Dynamically import ReactQuill to avoid SSR issues
   const [ReactQuill, setReactQuill] = useState<any>(null);
@@ -212,224 +225,166 @@ function NoteEditorModal({ subtopicId, learningLang, existingNote, translationFo
     }
   };
 
+  const dm = darkMode;
+  const bg = dm ? '#0e1117' : '#ffffff';
+  const surface = dm ? '#161b22' : '#f8f9fa';
+  const border = dm ? '#30363d' : '#dee2e6';
+  const textPrimary = dm ? '#c9d1d9' : '#1a1a1a';
+  const textMuted = dm ? '#8b949e' : '#666';
+  const inputBg = dm ? '#0e1117' : '#ffffff';
+  const inputBorder = dm ? '#30363d' : '#dee2e6';
+  const previewBg = dm ? '#161b22' : '#f9f5f0';
+
   return (
-    <>
-      {/* Inject Quill CSS */}
-      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" />
-      <style>{`
-        .ql-toolbar { background: #f8f9fa; border-color: #dee2e6 !important; border-radius: 8px 8px 0 0; flex-shrink: 0; }
-        .ql-container { border-color: #dee2e6 !important; border-radius: 0 0 8px 8px; flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-        .ql-editor { flex: 1; overflow-y: auto; font-size: 15px; line-height: 1.7; color: #1a1a1a; min-height: 300px; }
-        /* Do NOT set a color on headings — let them inherit from .ql-editor so
-           Quill's inline color spans (style="color:X") can override via specificity */
-        .ql-editor h1 { font-size: 1.8em; font-weight: 700; margin: 0.5em 0; color: inherit; }
-        .ql-editor h2 { font-size: 1.4em; font-weight: 600; margin: 0.5em 0; color: inherit; }
-        .ql-editor h3 { font-size: 1.2em; font-weight: 600; margin: 0.5em 0; color: inherit; }
-        /* Quill preset color classes inside headings — needs higher specificity than h1/h2/h3 */
-        .ql-editor h1 .ql-color-red, .ql-editor h2 .ql-color-red, .ql-editor h3 .ql-color-red { color: #e60000; }
-        .ql-editor h1 .ql-color-orange, .ql-editor h2 .ql-color-orange, .ql-editor h3 .ql-color-orange { color: #f90; }
-        .ql-editor h1 .ql-color-yellow, .ql-editor h2 .ql-color-yellow, .ql-editor h3 .ql-color-yellow { color: #ff0; }
-        .ql-editor h1 .ql-color-green, .ql-editor h2 .ql-color-green, .ql-editor h3 .ql-color-green { color: #008a00; }
-        .ql-editor h1 .ql-color-blue, .ql-editor h2 .ql-color-blue, .ql-editor h3 .ql-color-blue { color: #06c; }
-        .ql-editor h1 .ql-color-purple, .ql-editor h2 .ql-color-purple, .ql-editor h3 .ql-color-purple { color: #93f; }
-        .ql-editor h1 .ql-color-white, .ql-editor h2 .ql-color-white, .ql-editor h3 .ql-color-white { color: #fff; }
-        .ql-editor table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-        .ql-editor td, .ql-editor th { border: 1px solid #ccc; padding: 8px 12px; }
-        .ql-editor th { background: #f0f0f0; font-weight: 600; }
-        .ql-editor blockquote { border-left: 4px solid #ccc; padding-left: 1em; color: #555; margin: 1em 0; }
-        .ql-editor pre { background: #f4f4f4; padding: 1em; border-radius: 6px; font-family: monospace; }
-        .note-preview { padding: 32px 40px; max-width: 860px; margin: 0 auto; font-size: 16px; line-height: 1.7; color: #3d2817; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9f5f0; }
-        .note-preview h1 { font-size: 2.2rem; font-weight: 600; letter-spacing: -0.02em; color: #3d2817; line-height: 1.2; margin-bottom: 12px; }
-        .note-preview h2 { font-size: 1.6rem; font-weight: 700; color: #5b342e; letter-spacing: -0.02em; position: relative; padding-bottom: 12px; margin-bottom: 28px; }
-        .note-preview h2::after { content: ""; position: absolute; bottom: 0; left: 0; width: 60px; height: 4px; background: #ffa90a; border-radius: 2px; }
-        .note-preview h3 { font-size: 1.2rem; font-weight: 600; color: #3d2817; letter-spacing: -0.01em; margin-bottom: 16px; }
-        .note-preview h4 { font-size: 0.85rem; font-weight: 600; color: #3d2817; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
-        .note-preview p { margin-bottom: 16px; color: #363639; line-height: 1.7; font-size: 1rem; }
-        .note-preview ul, .note-preview ol { margin-left: 24px; margin-bottom: 20px; }
-        .note-preview li { margin-bottom: 10px; color: #363639; line-height: 1.6; }
-        .note-preview em { font-style: italic; color: #363639; }
-        .note-preview strong { font-weight: 600; color: #3d2817; }
-        .note-preview code { background: #f3f4f6; color: #374151; padding: 2px 6px; border-radius: 4px; font-size: 0.875em; }
-        .note-preview pre { background: #1e293b; color: #e2e8f0; padding: 1.25rem; border-radius: 8px; overflow-x: auto; margin-bottom: 1rem; font-size: 0.875rem; }
-        .note-preview pre code { background: none; color: inherit; padding: 0; }
-        .note-preview blockquote { background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 16px; padding: 20px; margin: 0 0 28px 0; color: #363639; }
-        .note-preview blockquote p { margin: 0; color: #363639; }
-        .note-preview .tip-box { background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 16px; padding: 20px; margin-bottom: 28px; }
-        .note-preview .note-box { background: #ffffff; border-left: 4px solid #2563eb; border-radius: 16px; padding: 20px; margin-bottom: 28px; }
-        .note-preview .exception-box { background: #f4f7fa; border-left: 4px solid #ef4444; border-radius: 16px; padding: 20px; margin-bottom: 28px; }
-        .note-preview table { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.08); margin: 32px 0; }
-        .note-preview thead { background: hsl(39, 100%, 73%); }
-        .note-preview th { padding: 20px 24px; text-align: center; font-weight: 600; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.08em; color: #3d2817; border-right: 1px solid rgba(255,255,255,0.3); }
-        .note-preview th:last-child { border-right: none; }
-        .note-preview td { padding: 20px 24px; border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; color: #363639; font-size: 1rem; vertical-align: middle; text-align: center; }
-        .note-preview td:last-child { border-right: none; }
-        .note-preview tbody tr:last-child td { border-bottom: none; }
-        .note-preview tbody tr:nth-child(odd) { background: #fffbeb; }
-        .note-preview tbody tr:nth-child(even) { background: white; }
-        .note-preview .rule-badge { background: #3d2817; color: white; padding: 8px 20px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; margin-right: 12px; text-transform: uppercase; letter-spacing: 0.1em; display: inline-block; }
-        .note-preview .highlight { background: #fef3c7; padding: 12px 16px; font-weight: 500; border-radius: 12px; display: inline-block; border: 1px solid #fbbf24; }
-        .note-preview hr { border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0; }
-        .note-preview a { color: #3b82f6; text-decoration: none; }
-        .note-preview a:hover { color: #2563eb; text-decoration: underline; }
-      `}</style>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', background: bg, borderRadius: 12, border: `1px solid ${border}`, overflow: 'hidden' }}>
 
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'stretch', justifyContent: 'center', zIndex: 1000, padding: '1.5rem' }}>
-        <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 1000, display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #dee2e6' }}>
-
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', borderBottom: '1px solid #dee2e6', flexShrink: 0, background: '#f8f9fa' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: 18, color: '#1a1a1a' }}>
-                {existingNote ? 'Edit Note' : isTranslation ? 'Add Translation' : 'Create Note'}
-              </h2>
-              {isTranslation && (
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#0969da' }}>
-                  Adding a new language version of "{translationFor?.title || conceptId}"
-                </p>
-              )}
-            </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#666' }}><X size={20} /></button>
+      {/* ── Top bar ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.5rem', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0 }}>
+        {/* Left: back + title */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: textMuted, display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, padding: '4px 8px', borderRadius: 6 }}>
+            <ChevronLeft size={16} /> Back
+          </button>
+          <span style={{ color: border, fontSize: 16 }}>|</span>
+          <div>
+            <span style={{ fontSize: 13, color: textMuted }}>{subtopicName} / </span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: textPrimary }}>
+              {existingNote ? 'Edit Note' : isTranslation ? 'Add Translation' : 'Create Note'}
+            </span>
+            {isTranslation && <span style={{ marginLeft: 8, fontSize: 12, color: '#0969da', background: '#dbeafe', padding: '2px 8px', borderRadius: 4 }}>Translating: {conceptId}</span>}
           </div>
+        </div>
 
-          {/* Meta fields */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', padding: '1rem 1.5rem', borderBottom: '1px solid #dee2e6', flexShrink: 0, background: '#fff' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Title *</label>
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Perfect Nouns in French"
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #dee2e6', borderRadius: 6, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Concept ID *</label>
-              <input value={conceptId} onChange={e => setConceptId(e.target.value)}
-                placeholder="e.g. fr-a1-nouns-perfect" disabled={conceptLocked}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #dee2e6', borderRadius: 6, fontSize: 14, outline: 'none', boxSizing: 'border-box', opacity: conceptLocked ? 0.6 : 1, background: conceptLocked ? '#f8f9fa' : '#fff' }} />
-              {isTranslation && <p style={{ fontSize: 11, color: '#0969da', marginTop: 3 }}>Locked — translating concept: {conceptId}</p>}
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Explanation Language</label>
-              <select value={knownLang} onChange={e => setKnownLang(e.target.value)} disabled={!!existingNote}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #dee2e6', borderRadius: 6, fontSize: 14, outline: 'none', background: existingNote ? '#f8f9fa' : '#fff', opacity: existingNote ? 0.6 : 1 }}>
-                {KNOWN_LANGS.map(l => {
-                  const isTaken = isTranslation && (takenLangs || []).includes(l.code);
-                  return (
-                    <option key={l.code} value={l.code} disabled={isTaken}>
-                      {l.label}{isTaken ? ' (already exists)' : ''}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-          </div>
+        {/* Right: dark mode + save */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('editor_dark', next ? '1' : '0'); }}
+            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            style={{ width: 34, height: 34, borderRadius: 8, border: `1px solid ${border}`, background: 'transparent', cursor: 'pointer', color: textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {darkMode ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
+          <button onClick={onClose} style={{ padding: '6px 16px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', fontSize: 13, color: textMuted }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            style={{ padding: '6px 18px', border: 'none', borderRadius: 6, background: '#0969da', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Save size={13} />
+            {saving ? 'Saving…' : 'Save Note'}
+          </button>
+        </div>
+      </div>
 
-          {/* Tab bar */}
-          <div style={{ display: 'flex', borderBottom: '1px solid #dee2e6', flexShrink: 0, background: '#fff', alignItems: 'center' }}>
-            {(['write', 'preview'] as const).map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                style={{ padding: '10px 24px', background: 'none', border: 'none', cursor: 'pointer', color: tab === t ? '#0969da' : '#666', borderBottom: tab === t ? '2px solid #0969da' : '2px solid transparent', fontWeight: tab === t ? 600 : 400, fontSize: 14 }}>
-                {t === 'write' ? '✏️ Write' : '👁 Preview'}
+      {/* ── Meta fields ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', padding: '0.875rem 1.5rem', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0 }}>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Title *</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Perfect Nouns in French"
+            style={{ width: '100%', padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: inputBg, color: textPrimary }} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Concept ID *</label>
+          <input value={conceptId} onChange={e => setConceptId(e.target.value)}
+            placeholder="e.g. fr-a1-nouns-perfect" disabled={conceptLocked}
+            style={{ width: '100%', padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: conceptLocked ? (dm ? '#1c2128' : '#f8f9fa') : inputBg, color: textPrimary, opacity: conceptLocked ? 0.7 : 1 }} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Explanation Language</label>
+          <select value={knownLang} onChange={e => setKnownLang(e.target.value)} disabled={!!existingNote}
+            style={{ width: '100%', padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', background: existingNote ? (dm ? '#1c2128' : '#f8f9fa') : inputBg, color: textPrimary, opacity: existingNote ? 0.7 : 1 }}>
+            {KNOWN_LANGS.map(l => {
+              const isTaken = isTranslation && (takenLangs || []).includes(l.code);
+              return <option key={l.code} value={l.code} disabled={isTaken}>{l.label}{isTaken ? ' (exists)' : ''}</option>;
+            })}
+          </select>
+        </div>
+      </div>
+
+      {/* ── Tab bar + Paste HTML button ── */}
+      <div style={{ display: 'flex', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0, alignItems: 'center' }}>
+        {(['write', 'preview'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            style={{ padding: '9px 22px', background: 'none', border: 'none', cursor: 'pointer', color: tab === t ? '#0969da' : textMuted, borderBottom: tab === t ? '2px solid #0969da' : '2px solid transparent', fontWeight: tab === t ? 600 : 400, fontSize: 13 }}>
+            {t === 'write' ? '✏️ Write' : '👁 Preview'}
+          </button>
+        ))}
+        <button
+          onClick={() => setShowRawHtmlPanel(p => !p)}
+          style={{ marginLeft: 'auto', marginRight: 12, padding: '5px 12px', border: `1px solid ${border}`, borderRadius: 6, background: showRawHtmlPanel ? '#0969da' : 'transparent', color: showRawHtmlPanel ? '#fff' : textMuted, cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>
+          {'</>'} Paste HTML
+        </button>
+      </div>
+
+      {/* ── Paste HTML panel ── */}
+      {showRawHtmlPanel && (
+        <div style={{ padding: '10px 1.5rem', borderBottom: `1px solid ${border}`, background: dm ? '#1c2128' : '#f0f6ff', flexShrink: 0 }}>
+          <p style={{ fontSize: 12, color: textMuted, marginBottom: 6 }}>Paste raw HTML — click <strong>Inject</strong> to load into editor.</p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <textarea value={rawHtmlInput} onChange={e => setRawHtmlInput(e.target.value)}
+              placeholder="<h1>Title</h1><p>Content...</p>" rows={3}
+              style={{ flex: 1, padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 12, fontFamily: 'monospace', resize: 'vertical', outline: 'none', background: inputBg, color: textPrimary }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <button onClick={handleInjectRawHtml} disabled={!rawHtmlInput.trim()}
+                style={{ padding: '7px 14px', border: 'none', borderRadius: 6, background: '#0969da', color: '#fff', cursor: rawHtmlInput.trim() ? 'pointer' : 'not-allowed', fontSize: 12, fontWeight: 600, opacity: rawHtmlInput.trim() ? 1 : 0.5 }}>
+                Inject
               </button>
-            ))}
-            {/* Paste HTML button — right side of tab bar */}
-            <button
-              onClick={() => setShowRawHtmlPanel(p => !p)}
-              title="Paste raw HTML into editor"
-              style={{ marginLeft: 'auto', marginRight: 12, padding: '6px 14px', border: '1px solid #dee2e6', borderRadius: 6, background: showRawHtmlPanel ? '#0969da' : '#f8f9fa', color: showRawHtmlPanel ? '#fff' : '#444', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>
-              {'</>'} Paste HTML
-            </button>
-          </div>
-
-          {/* Raw HTML paste panel */}
-          {showRawHtmlPanel && (
-            <div style={{ padding: '12px 1.5rem', borderBottom: '1px solid #dee2e6', background: '#f8f9fa', flexShrink: 0 }}>
-              <p style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>
-                Paste your raw HTML below and click <strong>Inject</strong> — it will be parsed and loaded into the rich text editor.
-              </p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <textarea
-                  value={rawHtmlInput}
-                  onChange={e => setRawHtmlInput(e.target.value)}
-                  placeholder="<h1>Title</h1><p>Content...</p>"
-                  rows={4}
-                  style={{ flex: 1, padding: '8px 12px', border: '1px solid #dee2e6', borderRadius: 6, fontSize: 13, fontFamily: 'monospace', resize: 'vertical', outline: 'none' }}
-                />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <button onClick={handleInjectRawHtml} disabled={!rawHtmlInput.trim()}
-                    style={{ padding: '8px 16px', border: 'none', borderRadius: 6, background: '#0969da', color: '#fff', cursor: rawHtmlInput.trim() ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: rawHtmlInput.trim() ? 1 : 0.5 }}>
-                    Inject
-                  </button>
-                  <button onClick={() => { setRawHtmlInput(''); setShowRawHtmlPanel(false); }}
-                    style={{ padding: '8px 16px', border: '1px solid #dee2e6', borderRadius: 6, background: '#fff', color: '#444', cursor: 'pointer', fontSize: 13 }}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
+              <button onClick={() => { setRawHtmlInput(''); setShowRawHtmlPanel(false); }}
+                style={{ padding: '7px 14px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', color: textMuted, cursor: 'pointer', fontSize: 12 }}>
+                Cancel
+              </button>
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
-          {/* Editor / Preview */}
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            {loading ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 12, color: '#666' }}>
-                <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
-                <span>Loading content…</span>
-              </div>
-            ) : tab === 'write' ? (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '0 1.5rem 1rem' }}>
-                {ReactQuill ? (
-                  <ReactQuill
-                    theme="snow"
-                    value={htmlContent}
-                    onChange={setHtmlContent}
-                    modules={QUILL_MODULES}
-                    formats={QUILL_FORMATS}
-                    placeholder="Start writing your note here… Use the toolbar above for formatting."
-                    style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', marginTop: '1rem' }}
-                  />
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: '#666' }}>
-                    <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', marginRight: 8 }} />
-                    Loading editor…
-                  </div>
-                )}
-              </div>
+      {/* ── Editor / Preview ── */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {loading ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 12, color: textMuted }}>
+            <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
+            <span>Loading content…</span>
+          </div>
+        ) : tab === 'write' ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '0 1.5rem 1rem' }}>
+            {/* Quill dark mode override */}
+            {dm && <style>{`.ql-toolbar { background: #161b22 !important; border-color: #30363d !important; } .ql-container { border-color: #30363d !important; background: #0e1117; } .ql-editor { color: #c9d1d9 !important; background: #0e1117; } .ql-editor.ql-blank::before { color: #8b949e !important; } .ql-stroke { stroke: #8b949e !important; } .ql-fill { fill: #8b949e !important; } .ql-picker { color: #8b949e !important; } .ql-picker-options { background: #161b22 !important; border-color: #30363d !important; } .ql-picker-item { color: #c9d1d9 !important; }`}</style>}
+            {ReactQuill ? (
+              <ReactQuill
+                theme="snow"
+                value={htmlContent}
+                onChange={setHtmlContent}
+                modules={QUILL_MODULES}
+                formats={QUILL_FORMATS}
+                placeholder="Start writing your note here… Use the toolbar above for formatting."
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', marginTop: '1rem' }}
+              />
             ) : (
-              <div style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
-                {isEmpty(htmlContent) ? (
-                  <div style={{ textAlign: 'center', padding: '3rem', color: '#999' }}>Nothing to preview yet — write something first.</div>
-                ) : (
-                  <div className="note-preview" dangerouslySetInnerHTML={{ __html: htmlContent }} />
-                )}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: textMuted }}>
+                <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', marginRight: 8 }} />
+                Loading editor…
               </div>
             )}
           </div>
-
-          {/* Footer */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '1rem 1.5rem', borderTop: '1px solid #dee2e6', flexShrink: 0, background: '#f8f9fa', gap: 8 }}>
-            <button onClick={onClose} style={{ padding: '8px 20px', border: '1px solid #dee2e6', borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 14, color: '#333' }}>Cancel</button>
-            <button onClick={handleSave} disabled={saving}
-              style={{ padding: '8px 20px', border: 'none', borderRadius: 6, background: '#0969da', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Save size={14} />
-              {saving ? 'Saving…' : 'Save Note'}
-            </button>
+        ) : (
+          <div style={{ flex: 1, overflowY: 'auto', background: previewBg }}>
+            {isEmpty(htmlContent) ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: textMuted }}>Nothing to preview yet — write something first.</div>
+            ) : (
+              <div className="note-preview" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+            )}
           </div>
-        </div>
+        )}
       </div>
-    </>
+    </div>
   );
 }
-
 // ─── Notes View ───────────────────────────────────────────────────────────────
 
-function NotesView({ subtopic, learningLang, onBack, showToast }: {
-  subtopic: Subtopic; learningLang: string;
-  onBack: () => void; showToast: (ok: boolean, msg: string) => void;
+function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
+  subtopic: Subtopic;
+  onBack: () => void;
+  onOpenEditor: (state: { existingNote: Note | null; translationFor: Note | null; takenLangs: string[] }) => void;
+  showToast: (ok: boolean, msg: string) => void;
 }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingNote, setEditingNote] = useState<Note | null>(null);
-  const [addTranslationFor, setAddTranslationFor] = useState<Note | null>(null);
-  const [takenLangs, setTakenLangs] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<Note | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -485,7 +440,7 @@ function NotesView({ subtopic, learningLang, onBack, showToast }: {
           <h2 style={{ margin: 0 }}>{subtopic.name_en}</h2>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>Notes & Translations</p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setEditingNote(null); setAddTranslationFor(null); setEditorOpen(true); }}>
+        <button className="btn btn-primary" onClick={() => onOpenEditor({ existingNote: null, translationFor: null, takenLangs: [] })}>
           <Plus size={16} style={{ display: 'inline', marginRight: 6 }} /> Create Note
         </button>
       </div>
@@ -500,7 +455,7 @@ function NotesView({ subtopic, learningLang, onBack, showToast }: {
           <Globe size={40} style={{ opacity: 0.3, margin: '0 auto 12px', display: 'block' }} />
           <p style={{ fontWeight: 600, marginBottom: 8 }}>No notes yet</p>
           <p style={{ fontSize: 13, marginBottom: 16 }}>Create the first note for this subtopic.</p>
-          <button className="btn btn-primary" onClick={() => { setEditingNote(null); setEditorOpen(true); }}>
+          <button className="btn btn-primary" onClick={() => onOpenEditor({ existingNote: null, translationFor: null, takenLangs: [] })}>
             <Plus size={14} style={{ display: 'inline', marginRight: 6 }} /> Create Note
           </button>
         </div>
@@ -515,12 +470,7 @@ function NotesView({ subtopic, learningLang, onBack, showToast }: {
                   <code style={{ fontSize: 12, color: 'var(--text-muted)' }}>{conceptId}</code>
                 </div>
                 <button
-                  onClick={() => {
-                    setAddTranslationFor(conceptNotes[0]);
-                    setTakenLangs(conceptNotes.map(n => n.known_lang));
-                    setEditingNote(null);
-                    setEditorOpen(true);
-                  }}
+                  onClick={() => onOpenEditor({ existingNote: null, translationFor: conceptNotes[0], takenLangs: conceptNotes.map(n => n.known_lang) })}
                   style={{ ...iconBtn('#1f6feb'), width: 'auto', padding: '0 12px', gap: 6, fontSize: 13 }}>
                   <Plus size={14} /> Add Translation
                 </button>
@@ -551,7 +501,7 @@ function NotesView({ subtopic, learningLang, onBack, showToast }: {
                         <ExternalLink size={14} />
                       </a>
                       {/* Edit */}
-                      <button title="Edit" onClick={() => { setEditingNote(note); setAddTranslationFor(null); setEditorOpen(true); }} style={iconBtn('#f59e0b')}>
+                      <button title="Edit" onClick={() => onOpenEditor({ existingNote: note, translationFor: null, takenLangs: [] })} style={iconBtn('#f59e0b')}>
                         <Pencil size={14} />
                       </button>
                       {/* Delete */}
@@ -565,20 +515,6 @@ function NotesView({ subtopic, learningLang, onBack, showToast }: {
             </div>
           ))}
         </div>
-      )}
-
-      {/* Markdown editor modal */}
-      {editorOpen && (
-        <NoteEditorModal
-          subtopicId={subtopic.id}
-          learningLang={learningLang}
-          existingNote={editingNote}
-          translationFor={addTranslationFor}
-          takenLangs={takenLangs}
-          onClose={() => { setEditorOpen(false); setEditingNote(null); setAddTranslationFor(null); setTakenLangs([]); }}
-          onSaved={load}
-          showToast={showToast}
-        />
       )}
 
       {confirmDelete && (
@@ -906,6 +842,7 @@ export default function ContentManager({ pageTitle, pageDescription }: ContentMa
   const [view, setView] = useState<View>('topics');
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [selectedSubtopic, setSelectedSubtopic] = useState<Subtopic | null>(null);
+  const [editorState, setEditorState] = useState<EditorState | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const showToast = useCallback((ok: boolean, msg: string) => {
@@ -947,25 +884,36 @@ export default function ContentManager({ pageTitle, pageDescription }: ContentMa
         </div>
 
         {/* Breadcrumb trail */}
-        {(view === 'subtopics' || view === 'notes') && (
+        {(view === 'subtopics' || view === 'notes' || view === 'editor') && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-            <button onClick={() => { setView('topics'); setSelectedTopic(null); setSelectedSubtopic(null); }}
+            <button onClick={() => { setView('topics'); setSelectedTopic(null); setSelectedSubtopic(null); setEditorState(null); }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 13, padding: 0 }}>
               Topics
             </button>
             {selectedTopic && (
               <>
                 <span>/</span>
-                <button onClick={() => { setView('subtopics'); setSelectedSubtopic(null); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: view === 'notes' ? 'var(--accent)' : 'var(--white)', fontSize: 13, padding: 0 }}>
+                <button onClick={() => { setView('subtopics'); setSelectedSubtopic(null); setEditorState(null); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: (view === 'notes' || view === 'editor') ? 'var(--accent)' : 'var(--white)', fontSize: 13, padding: 0 }}>
                   {selectedTopic.name_en}
                 </button>
               </>
             )}
-            {selectedSubtopic && view === 'notes' && (
+            {selectedSubtopic && (view === 'notes' || view === 'editor') && (
               <>
                 <span>/</span>
-                <span style={{ color: 'var(--white)' }}>{selectedSubtopic.name_en}</span>
+                <button onClick={() => { setView('notes'); setEditorState(null); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: view === 'editor' ? 'var(--accent)' : 'var(--white)', fontSize: 13, padding: 0 }}>
+                  {selectedSubtopic.name_en}
+                </button>
+              </>
+            )}
+            {view === 'editor' && editorState && (
+              <>
+                <span>/</span>
+                <span style={{ color: 'var(--white)' }}>
+                  {editorState.existingNote ? 'Edit' : editorState.translationFor ? 'Translate' : 'Create'}
+                </span>
               </>
             )}
           </div>
@@ -995,8 +943,24 @@ export default function ContentManager({ pageTitle, pageDescription }: ContentMa
       {view === 'notes' && selectedSubtopic && selectedTopic && (
         <NotesView
           subtopic={selectedSubtopic}
-          learningLang={learningLang}
           onBack={() => { setView('subtopics'); setSelectedSubtopic(null); }}
+          onOpenEditor={({ existingNote, translationFor, takenLangs }) => {
+            setEditorState({ subtopicId: selectedSubtopic.id, subtopicName: selectedSubtopic.name_en, learningLang, existingNote, translationFor, takenLangs });
+            setView('editor');
+          }}
+          showToast={showToast}
+        />
+      )}
+      {view === 'editor' && editorState && selectedSubtopic && (
+        <NoteEditorView
+          subtopicId={editorState.subtopicId}
+          subtopicName={editorState.subtopicName}
+          learningLang={editorState.learningLang}
+          existingNote={editorState.existingNote}
+          translationFor={editorState.translationFor}
+          takenLangs={editorState.takenLangs}
+          onClose={() => { setView('notes'); setEditorState(null); }}
+          onSaved={() => { setView('notes'); setEditorState(null); }}
           showToast={showToast}
         />
       )}
