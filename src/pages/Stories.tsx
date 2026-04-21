@@ -5,6 +5,7 @@ export default function Stories() {
     <ContentManager
       pageTitle="Stories"
       pageDescription="Manage story topics, chapters, and content. Select a language and CEFR level to get started."
+      apiPrefix="stories"
     />
   );
 }

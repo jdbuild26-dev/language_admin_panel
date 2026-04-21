@@ -1,8 +1,12 @@
 ﻿"use client";
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext, createContext } from 'react';
 import { ChevronLeft, Plus, Trash2, X, Save, Eye, Pencil, ExternalLink, Globe, AlertCircle, CheckCircle2, Loader2, Moon, Sun } from 'lucide-react';
 import api from '../services/api';
 import 'react-quill-new/dist/quill.snow.css';
+
+// ─── API Prefix Context ───────────────────────────────────────────────────────
+// Allows sub-views to call the correct endpoint (grammar vs stories) without prop-drilling.
+const ApiPrefixContext = createContext<'grammar' | 'stories'>('grammar');
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -159,10 +163,11 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   }, []);
 
   // Load existing content when editing
+  const apiPrefix = useContext(ApiPrefixContext);
   useEffect(() => {
     if (existingNote) {
       setLoading(true);
-      api.get(`/admin/grammar/notes/${existingNote.id}/markdown`)
+      api.get(`/admin/${apiPrefix}/notes/${existingNote.id}/markdown`)
         .then(r => {
           // markdown_source holds the raw HTML from Quill
           setHtmlContent(r.data.markdown_source || '');
@@ -170,7 +175,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
         .catch(() => setHtmlContent(''))
         .finally(() => setLoading(false));
     }
-  }, [existingNote]);
+  }, [existingNote, apiPrefix]);
 
   const isEmpty = (html: string) => {
     const stripped = html.replace(/<[^>]*>/g, '').trim();
@@ -200,13 +205,13 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
     try {
       // We send the Quill HTML as markdown_source — the backend wraps it in the full page template
       if (existingNote) {
-        await api.put(`/admin/grammar/notes/${existingNote.id}`, {
+        await api.put(`/admin/${apiPrefix}/notes/${existingNote.id}`, {
           markdown_source: htmlContent,
           title,
         });
         showToast(true, 'Note updated');
       } else {
-        await api.post('/admin/grammar/notes', {
+        await api.post(`/admin/${apiPrefix}/notes`, {
           subtopic_id: subtopicId,
           concept_id: conceptId,
           known_lang: knownLang,
@@ -383,6 +388,7 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
   onOpenEditor: (state: { existingNote: Note | null; translationFor: Note | null; takenLangs: string[] }) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
+  const apiPrefix = useContext(ApiPrefixContext);
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<Note | null>(null);
@@ -391,14 +397,14 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get('/admin/grammar/notes', { params: { subtopic_id: subtopic.id } });
+      const r = await api.get(`/admin/${apiPrefix}/notes`, { params: { subtopic_id: subtopic.id } });
       setNotes(r.data.notes || []);
     } catch {
       setNotes([]);
     } finally {
       setLoading(false);
     }
-  }, [subtopic.id]);
+  }, [subtopic.id, apiPrefix]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -413,7 +419,7 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
     if (!confirmDelete) return;
     setDeleteLoading(true);
     try {
-      await api.delete(`/admin/grammar/notes/${confirmDelete.id}`);
+      await api.delete(`/admin/${apiPrefix}/notes/${confirmDelete.id}`);
       showToast(true, 'Note deleted');
       load();
     } catch (e: any) {
@@ -492,7 +498,7 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       {/* Preview link — always available via the serve endpoint */}
                       <a
-                        href={`${(api.defaults as any).baseURL || 'http://localhost:8000/api'}/admin/grammar/notes/${note.id}/html`}
+                        href={`${(api.defaults as any).baseURL || 'http://localhost:8000/api'}/admin/${apiPrefix}/notes/${note.id}/html`}
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{ ...iconBtn('#2ea043'), textDecoration: 'none' }}
@@ -537,6 +543,7 @@ function SubtopicsView({ topic, onBack, onSelectSubtopic, showToast }: {
   onSelectSubtopic: (s: Subtopic) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
+  const apiPrefix = useContext(ApiPrefixContext);
   const [subtopics, setSubtopics] = useState<Subtopic[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -548,14 +555,14 @@ function SubtopicsView({ topic, onBack, onSelectSubtopic, showToast }: {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get('/admin/grammar/subtopics', { params: { topic_id: topic.id } });
+      const r = await api.get(`/admin/${apiPrefix}/subtopics`, { params: { topic_id: topic.id } });
       setSubtopics(r.data.subtopics || []);
     } catch {
       setSubtopics([]);
     } finally {
       setLoading(false);
     }
-  }, [topic.id]);
+  }, [topic.id, apiPrefix]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -563,7 +570,7 @@ function SubtopicsView({ topic, onBack, onSelectSubtopic, showToast }: {
     if (!newName.trim()) return;
     setSaving(true);
     try {
-      await api.post('/admin/grammar/subtopics', { topic_id: topic.id, name_en: newName.trim() });
+      await api.post(`/admin/${apiPrefix}/subtopics`, { topic_id: topic.id, name_en: newName.trim() });
       showToast(true, `Created "${newName}"`);
       setNewName(''); setCreating(false); load();
     } catch (e: any) {
@@ -577,7 +584,7 @@ function SubtopicsView({ topic, onBack, onSelectSubtopic, showToast }: {
     if (!confirmDelete) return;
     setDeleteLoading(true);
     try {
-      await api.delete(`/admin/grammar/subtopics/${confirmDelete.id}`);
+      await api.delete(`/admin/${apiPrefix}/subtopics/${confirmDelete.id}`);
       showToast(true, `Deleted "${confirmDelete.name_en}"`);
       load();
     } catch (e: any) {
@@ -689,6 +696,7 @@ function TopicsView({ learningLang, levelCode, onSelectTopic, showToast }: {
   onSelectTopic: (t: Topic) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
+  const apiPrefix = useContext(ApiPrefixContext);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -700,14 +708,14 @@ function TopicsView({ learningLang, levelCode, onSelectTopic, showToast }: {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get('/admin/grammar/topics', { params: { learning_lang: learningLang, level_code: levelCode } });
+      const r = await api.get(`/admin/${apiPrefix}/topics`, { params: { learning_lang: learningLang, level_code: levelCode } });
       setTopics(r.data.topics || []);
     } catch {
       setTopics([]);
     } finally {
       setLoading(false);
     }
-  }, [learningLang, levelCode]);
+  }, [learningLang, levelCode, apiPrefix]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -715,7 +723,7 @@ function TopicsView({ learningLang, levelCode, onSelectTopic, showToast }: {
     if (!newName.trim()) return;
     setSaving(true);
     try {
-      await api.post('/admin/grammar/topics', { name_en: newName.trim(), learning_lang: learningLang, level_code: levelCode });
+      await api.post(`/admin/${apiPrefix}/topics`, { name_en: newName.trim(), learning_lang: learningLang, level_code: levelCode });
       showToast(true, `Created "${newName}"`);
       setNewName(''); setCreating(false); load();
     } catch (e: any) {
@@ -729,7 +737,7 @@ function TopicsView({ learningLang, levelCode, onSelectTopic, showToast }: {
     if (!confirmDelete) return;
     setDeleteLoading(true);
     try {
-      await api.delete(`/admin/grammar/topics/${confirmDelete.id}`);
+      await api.delete(`/admin/${apiPrefix}/topics/${confirmDelete.id}`);
       showToast(true, `Deleted "${confirmDelete.name_en}"`);
       load();
     } catch (e: any) {
@@ -834,9 +842,11 @@ function TopicsView({ learningLang, levelCode, onSelectTopic, showToast }: {
 interface ContentManagerProps {
   pageTitle: string;
   pageDescription: string;
+  /** API prefix for CRUD operations. Defaults to 'grammar'. Pass 'stories' for the stories admin. */
+  apiPrefix?: 'grammar' | 'stories';
 }
 
-export default function ContentManager({ pageTitle, pageDescription }: ContentManagerProps) {
+export default function ContentManager({ pageTitle, pageDescription, apiPrefix = 'grammar' }: ContentManagerProps) {
   const [learningLang, setLearningLang] = useState('fr');
   const [levelCode, setLevelCode] = useState('A1');
   const [view, setView] = useState<View>('topics');
@@ -864,6 +874,7 @@ export default function ContentManager({ pageTitle, pageDescription }: ContentMa
   };
 
   return (
+    <ApiPrefixContext.Provider value={apiPrefix}>
     <div>
       <h1>{pageTitle}</h1>
       <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: 15 }}>{pageDescription}</p>
@@ -967,6 +978,7 @@ export default function ContentManager({ pageTitle, pageDescription }: ContentMa
 
       {toast && <Toast ok={toast.ok} msg={toast.msg} onDone={() => setToast(null)} />}
     </div>
+    </ApiPrefixContext.Provider>
   );
 }
 
