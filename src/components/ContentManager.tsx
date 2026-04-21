@@ -238,19 +238,39 @@ function NoteEditorModal({ subtopicId, learningLang, existingNote, translationFo
         .ql-editor th { background: #f0f0f0; font-weight: 600; }
         .ql-editor blockquote { border-left: 4px solid #ccc; padding-left: 1em; color: #555; margin: 1em 0; }
         .ql-editor pre { background: #f4f4f4; padding: 1em; border-radius: 6px; font-family: monospace; }
-        .note-preview { padding: 32px 40px; max-width: 860px; margin: 0 auto; font-size: 15px; line-height: 1.7; color: #1a1a1a; }
-        .note-preview h1 { font-size: 1.8em; font-weight: 700; margin: 0.5em 0 0.3em; }
-        .note-preview h2 { font-size: 1.4em; font-weight: 600; margin: 0.8em 0 0.3em; border-bottom: 1px solid #eee; padding-bottom: 4px; }
-        .note-preview h3 { font-size: 1.2em; font-weight: 600; margin: 0.6em 0 0.2em; }
-        .note-preview table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-        .note-preview td, .note-preview th { border: 1px solid #d0d7de; padding: 8px 12px; }
-        .note-preview th { background: #f6f8fa; font-weight: 600; }
-        .note-preview ul, .note-preview ol { padding-left: 1.5em; margin: 0.5em 0; }
-        .note-preview li { margin: 0.25em 0; }
-        .note-preview blockquote { border-left: 4px solid #0969da; padding-left: 1em; color: #555; margin: 1em 0; background: #f6f8fa; border-radius: 0 6px 6px 0; }
-        .note-preview pre { background: #f4f4f4; padding: 1em; border-radius: 6px; font-family: monospace; overflow-x: auto; }
-        .note-preview code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
-        .note-preview .note-box { border: 1px solid #ccc; padding: 15px; background-color: #f9f9f9; border-radius: 6px; margin: 1em 0; }
+        .note-preview { padding: 32px 40px; max-width: 860px; margin: 0 auto; font-size: 16px; line-height: 1.7; color: #3d2817; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9f5f0; }
+        .note-preview h1 { font-size: 2.2rem; font-weight: 600; letter-spacing: -0.02em; color: #3d2817; line-height: 1.2; margin-bottom: 12px; }
+        .note-preview h2 { font-size: 1.6rem; font-weight: 700; color: #5b342e; letter-spacing: -0.02em; position: relative; padding-bottom: 12px; margin-bottom: 28px; }
+        .note-preview h2::after { content: ""; position: absolute; bottom: 0; left: 0; width: 60px; height: 4px; background: #ffa90a; border-radius: 2px; }
+        .note-preview h3 { font-size: 1.2rem; font-weight: 600; color: #3d2817; letter-spacing: -0.01em; margin-bottom: 16px; }
+        .note-preview h4 { font-size: 0.85rem; font-weight: 600; color: #3d2817; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+        .note-preview p { margin-bottom: 16px; color: #363639; line-height: 1.7; font-size: 1rem; }
+        .note-preview ul, .note-preview ol { margin-left: 24px; margin-bottom: 20px; }
+        .note-preview li { margin-bottom: 10px; color: #363639; line-height: 1.6; }
+        .note-preview em { font-style: italic; color: #363639; }
+        .note-preview strong { font-weight: 600; color: #3d2817; }
+        .note-preview code { background: #f3f4f6; color: #374151; padding: 2px 6px; border-radius: 4px; font-size: 0.875em; }
+        .note-preview pre { background: #1e293b; color: #e2e8f0; padding: 1.25rem; border-radius: 8px; overflow-x: auto; margin-bottom: 1rem; font-size: 0.875rem; }
+        .note-preview pre code { background: none; color: inherit; padding: 0; }
+        .note-preview blockquote { background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 16px; padding: 20px; margin: 0 0 28px 0; color: #363639; }
+        .note-preview blockquote p { margin: 0; color: #363639; }
+        .note-preview .tip-box { background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 16px; padding: 20px; margin-bottom: 28px; }
+        .note-preview .note-box { background: #ffffff; border-left: 4px solid #2563eb; border-radius: 16px; padding: 20px; margin-bottom: 28px; }
+        .note-preview .exception-box { background: #f4f7fa; border-left: 4px solid #ef4444; border-radius: 16px; padding: 20px; margin-bottom: 28px; }
+        .note-preview table { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.08); margin: 32px 0; }
+        .note-preview thead { background: hsl(39, 100%, 73%); }
+        .note-preview th { padding: 20px 24px; text-align: center; font-weight: 600; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.08em; color: #3d2817; border-right: 1px solid rgba(255,255,255,0.3); }
+        .note-preview th:last-child { border-right: none; }
+        .note-preview td { padding: 20px 24px; border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; color: #363639; font-size: 1rem; vertical-align: middle; text-align: center; }
+        .note-preview td:last-child { border-right: none; }
+        .note-preview tbody tr:last-child td { border-bottom: none; }
+        .note-preview tbody tr:nth-child(odd) { background: #fffbeb; }
+        .note-preview tbody tr:nth-child(even) { background: white; }
+        .note-preview .rule-badge { background: #3d2817; color: white; padding: 8px 20px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; margin-right: 12px; text-transform: uppercase; letter-spacing: 0.1em; display: inline-block; }
+        .note-preview .highlight { background: #fef3c7; padding: 12px 16px; font-weight: 500; border-radius: 12px; display: inline-block; border: 1px solid #fbbf24; }
+        .note-preview hr { border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0; }
+        .note-preview a { color: #3b82f6; text-decoration: none; }
+        .note-preview a:hover { color: #2563eb; text-decoration: underline; }
       `}</style>
 
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'stretch', justifyContent: 'center', zIndex: 1000, padding: '1.5rem' }}>
