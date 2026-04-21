@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS grammar_notes (
     known_lang       VARCHAR(10)  NOT NULL REFERENCES languages(code),
     learning_lang    VARCHAR(10)  NOT NULL REFERENCES languages(code),
     markdown_source  TEXT,
-    html_url         TEXT         NOT NULL,
+    html_content     TEXT,                    -- compiled HTML stored directly in DB
+    html_url         TEXT,                    -- optional: Supabase URL or /api/admin/grammar/notes/{id}/html
     title            VARCHAR(500),
     description      TEXT,
     order_index      INTEGER      NOT NULL DEFAULT 0,
@@ -94,6 +95,10 @@ CREATE INDEX IF NOT EXISTS idx_grammar_notes_concept
 ALTER TABLE grammar_notes
     ADD CONSTRAINT uq_grammar_notes_concept_lang
     UNIQUE (concept_id, known_lang);
+
+-- If you already ran the old migration (html_url was NOT NULL), run this to fix it:
+ALTER TABLE grammar_notes ALTER COLUMN html_url DROP NOT NULL;
+ALTER TABLE grammar_notes ADD COLUMN IF NOT EXISTS html_content TEXT;
 ```
 
 ### Verify the migration ran correctly

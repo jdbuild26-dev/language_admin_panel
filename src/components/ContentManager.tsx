@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, Plus, Trash2, X, Save, Eye, Pencil, ExternalLink, Globe, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import api from '../services/api';
@@ -78,59 +78,128 @@ function iconBtn(color: string): React.CSSProperties {
   return { width: 32, height: 32, borderRadius: 6, border: 'none', cursor: 'pointer', background: `${color}22`, color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' };
 }
 
-// ─── Markdown Editor Modal ────────────────────────────────────────────────────
+// ─── Preview helper ───────────────────────────────────────────────────────────
+// The backend returns a full <!DOCTYPE html> page. We only need the body content
+// ─── Rich Text Editor Modal (Quill-based) ────────────────────────────────────
 
-function MarkdownEditorModal({ subtopicId, learningLang, existingNote, onClose, onSaved, showToast }: {
+// Quill toolbar config — comprehensive but not overwhelming
+const QUILL_MODULES = {
+  toolbar: [
+    [{ header: [1, 2, 3, false] }],
+    ['bold', 'italic', 'underline', 'strike'],
+    [{ color: [] }, { background: [] }],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    [{ indent: '-1' }, { indent: '+1' }],
+    ['blockquote', 'code-block'],
+    ['link', 'image'],
+    [{ align: [] }],
+    ['clean'],
+  ],
+};
+
+const QUILL_FORMATS = [
+  'header', 'bold', 'italic', 'underline', 'strike',
+  'color', 'background', 'list', 'indent',
+  'blockquote', 'code-block', 'link', 'image', 'align',
+];
+
+function NoteEditorModal({ subtopicId, learningLang, existingNote, translationFor, takenLangs, onClose, onSaved, showToast }: {
   subtopicId: number; learningLang: string;
   existingNote?: Note | null;
+  translationFor?: Note | null;  // when set: new translation of same concept
+  takenLangs?: string[];         // langs already used for this concept
   onClose: () => void;
   onSaved: () => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
-  const [title, setTitle] = useState(existingNote?.title || '');
-  const [knownLang, setKnownLang] = useState(existingNote?.known_lang || 'en');
-  const [conceptId, setConceptId] = useState(existingNote?.concept_id || '');
-  const [markdown, setMarkdown] = useState('');
-  const [previewHtml, setPreviewHtml] = useState('');
+  const [title, setTitle] = useState(existingNote?.title || translationFor?.title || '');
+  const [knownLang, setKnownLang] = useState(() => {
+    if (existingNote) return existingNote.known_lang;
+    if (translationFor) {
+      // Pick the first language not already taken
+      const taken = new Set(takenLangs || [translationFor.known_lang]);
+      const next = KNOWN_LANGS.find(l => !taken.has(l.code));
+      return next?.code || 'en';
+    }
+    return 'en';
+  });
+  // For translations: lock concept_id to the source note's concept_id
+  const [conceptId, setConceptId] = useState(
+    existingNote?.concept_id || translationFor?.concept_id || ''
+  );
+  const isTranslation = !!translationFor && !existingNote;
+  const conceptLocked = !!existingNote || isTranslation;
+
+  const [htmlContent, setHtmlContent] = useState('');
+  const [rawHtmlInput, setRawHtmlInput] = useState('');
+  const [showRawHtmlPanel, setShowRawHtmlPanel] = useState(false);
   const [tab, setTab] = useState<'write' | 'preview'>('write');
   const [saving, setSaving] = useState(false);
-  const [loadingMd, setLoadingMd] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Load existing markdown if editing
+  // Dynamically import ReactQuill to avoid SSR issues
+  const [ReactQuill, setReactQuill] = useState<any>(null);
+  useEffect(() => {
+    import('react-quill-new').then(mod => {
+      setReactQuill(() => mod.default);
+    });
+  }, []);
+
+  // Load existing content when editing
   useEffect(() => {
     if (existingNote) {
-      setLoadingMd(true);
+      setLoading(true);
       api.get(`/admin/grammar/notes/${existingNote.id}/markdown`)
-        .then(r => setMarkdown(r.data.markdown_source || ''))
-        .catch(() => setMarkdown(''))
-        .finally(() => setLoadingMd(false));
+        .then(r => {
+          // markdown_source holds the raw HTML from Quill
+          setHtmlContent(r.data.markdown_source || '');
+        })
+        .catch(() => setHtmlContent(''))
+        .finally(() => setLoading(false));
     }
   }, [existingNote]);
 
-  const handlePreview = async () => {
-    try {
-      const r = await api.post('/admin/grammar/preview-markdown', { markdown_text: markdown });
-      setPreviewHtml(r.data.html || '');
-      setTab('preview');
-    } catch {
-      showToast(false, 'Preview failed — is the backend running?');
-    }
+  const isEmpty = (html: string) => {
+    const stripped = html.replace(/<[^>]*>/g, '').trim();
+    return !stripped || stripped === '<br>';
+  };
+
+  // Inject raw HTML directly into Quill by setting it as the editor value
+  const handleInjectRawHtml = () => {
+    if (!rawHtmlInput.trim()) return;
+    // Strip full HTML document wrapper if pasted (keep only body content)
+    let html = rawHtmlInput.trim();
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (bodyMatch) html = bodyMatch[1].trim();
+    // Set directly — Quill's controlled value prop parses HTML correctly
+    setHtmlContent(html);
+    setRawHtmlInput('');
+    setShowRawHtmlPanel(false);
+    setTab('write');
+    showToast(true, 'HTML loaded into editor');
   };
 
   const handleSave = async () => {
     if (!title.trim()) { showToast(false, 'Title is required'); return; }
     if (!conceptId.trim()) { showToast(false, 'Concept ID is required'); return; }
-    if (!markdown.trim()) { showToast(false, 'Content cannot be empty'); return; }
+    if (isEmpty(htmlContent)) { showToast(false, 'Content cannot be empty'); return; }
     setSaving(true);
     try {
+      // We send the Quill HTML as markdown_source — the backend wraps it in the full page template
       if (existingNote) {
-        await api.put(`/admin/grammar/notes/${existingNote.id}`, { markdown_source: markdown, title });
+        await api.put(`/admin/grammar/notes/${existingNote.id}`, {
+          markdown_source: htmlContent,
+          title,
+        });
         showToast(true, 'Note updated');
       } else {
         await api.post('/admin/grammar/notes', {
-          subtopic_id: subtopicId, concept_id: conceptId,
-          known_lang: knownLang, learning_lang: learningLang,
-          markdown_source: markdown, title,
+          subtopic_id: subtopicId,
+          concept_id: conceptId,
+          known_lang: knownLang,
+          learning_lang: learningLang,
+          markdown_source: htmlContent,
+          title,
         });
         showToast(true, 'Note created');
       }
@@ -143,109 +212,189 @@ function MarkdownEditorModal({ subtopicId, learningLang, existingNote, onClose, 
     }
   };
 
-  const PLACEHOLDER = `# ${title || 'Note Title'}
-
-Write your grammar explanation here. You can use:
-
-## Headings
-
-**Bold text**, *italic text*, \`inline code\`
-
-## Tables
-
-| French | English |
-|--------|---------|
-| le chat | the cat |
-| la maison | the house |
-
-## Code blocks
-
-\`\`\`
-Example sentence here
-\`\`\`
-
-## Lists
-
-- Point one
-- Point two
-  - Sub-point
-`;
-
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'stretch', justifyContent: 'center', zIndex: 1000, padding: '1.5rem' }}>
-      <div style={{ background: 'var(--sidebar-bg)', borderRadius: 16, width: '100%', maxWidth: 1100, display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border)' }}>
+    <>
+      {/* Inject Quill CSS */}
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" />
+      <style>{`
+        .ql-toolbar { background: #f8f9fa; border-color: #dee2e6 !important; border-radius: 8px 8px 0 0; flex-shrink: 0; }
+        .ql-container { border-color: #dee2e6 !important; border-radius: 0 0 8px 8px; flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+        .ql-editor { flex: 1; overflow-y: auto; font-size: 15px; line-height: 1.7; color: #1a1a1a; min-height: 300px; }
+        /* Do NOT set a color on headings — let them inherit from .ql-editor so
+           Quill's inline color spans (style="color:X") can override via specificity */
+        .ql-editor h1 { font-size: 1.8em; font-weight: 700; margin: 0.5em 0; color: inherit; }
+        .ql-editor h2 { font-size: 1.4em; font-weight: 600; margin: 0.5em 0; color: inherit; }
+        .ql-editor h3 { font-size: 1.2em; font-weight: 600; margin: 0.5em 0; color: inherit; }
+        /* Quill preset color classes inside headings — needs higher specificity than h1/h2/h3 */
+        .ql-editor h1 .ql-color-red, .ql-editor h2 .ql-color-red, .ql-editor h3 .ql-color-red { color: #e60000; }
+        .ql-editor h1 .ql-color-orange, .ql-editor h2 .ql-color-orange, .ql-editor h3 .ql-color-orange { color: #f90; }
+        .ql-editor h1 .ql-color-yellow, .ql-editor h2 .ql-color-yellow, .ql-editor h3 .ql-color-yellow { color: #ff0; }
+        .ql-editor h1 .ql-color-green, .ql-editor h2 .ql-color-green, .ql-editor h3 .ql-color-green { color: #008a00; }
+        .ql-editor h1 .ql-color-blue, .ql-editor h2 .ql-color-blue, .ql-editor h3 .ql-color-blue { color: #06c; }
+        .ql-editor h1 .ql-color-purple, .ql-editor h2 .ql-color-purple, .ql-editor h3 .ql-color-purple { color: #93f; }
+        .ql-editor h1 .ql-color-white, .ql-editor h2 .ql-color-white, .ql-editor h3 .ql-color-white { color: #fff; }
+        .ql-editor table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+        .ql-editor td, .ql-editor th { border: 1px solid #ccc; padding: 8px 12px; }
+        .ql-editor th { background: #f0f0f0; font-weight: 600; }
+        .ql-editor blockquote { border-left: 4px solid #ccc; padding-left: 1em; color: #555; margin: 1em 0; }
+        .ql-editor pre { background: #f4f4f4; padding: 1em; border-radius: 6px; font-family: monospace; }
+        .note-preview { padding: 32px 40px; max-width: 860px; margin: 0 auto; font-size: 15px; line-height: 1.7; color: #1a1a1a; }
+        .note-preview h1 { font-size: 1.8em; font-weight: 700; margin: 0.5em 0 0.3em; }
+        .note-preview h2 { font-size: 1.4em; font-weight: 600; margin: 0.8em 0 0.3em; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+        .note-preview h3 { font-size: 1.2em; font-weight: 600; margin: 0.6em 0 0.2em; }
+        .note-preview table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+        .note-preview td, .note-preview th { border: 1px solid #d0d7de; padding: 8px 12px; }
+        .note-preview th { background: #f6f8fa; font-weight: 600; }
+        .note-preview ul, .note-preview ol { padding-left: 1.5em; margin: 0.5em 0; }
+        .note-preview li { margin: 0.25em 0; }
+        .note-preview blockquote { border-left: 4px solid #0969da; padding-left: 1em; color: #555; margin: 1em 0; background: #f6f8fa; border-radius: 0 6px 6px 0; }
+        .note-preview pre { background: #f4f4f4; padding: 1em; border-radius: 6px; font-family: monospace; overflow-x: auto; }
+        .note-preview code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
+        .note-preview .note-box { border: 1px solid #ccc; padding: 15px; background-color: #f9f9f9; border-radius: 6px; margin: 1em 0; }
+      `}</style>
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>{existingNote ? 'Edit Note' : 'Create Note'}</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={20} /></button>
-        </div>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'stretch', justifyContent: 'center', zIndex: 1000, padding: '1.5rem' }}>
+        <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 1000, display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #dee2e6' }}>
 
-        {/* Meta fields */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          <div>
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Title *</label>
-            <input className="form-control" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Perfect Nouns in French" style={{ fontSize: 14 }} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Concept ID *</label>
-            <input className="form-control" value={conceptId} onChange={e => setConceptId(e.target.value)}
-              placeholder="e.g. fr-a1-nouns-perfect" disabled={!!existingNote}
-              style={{ fontSize: 14, opacity: existingNote ? 0.6 : 1 }} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Explanation Language</label>
-            <select className="form-control" value={knownLang} onChange={e => setKnownLang(e.target.value)} disabled={!!existingNote} style={{ fontSize: 14 }}>
-              {KNOWN_LANGS.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* Tab bar */}
-        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          {(['write', 'preview'] as const).map(t => (
-            <button key={t} onClick={() => t === 'preview' ? handlePreview() : setTab('write')}
-              style={{ padding: '10px 24px', background: 'none', border: 'none', cursor: 'pointer', color: tab === t ? 'var(--white)' : 'var(--text-muted)', borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent', fontWeight: tab === t ? 600 : 400, fontSize: 14 }}>
-              {t === 'write' ? '✏️ Write' : '👁 Preview'}
-            </button>
-          ))}
-        </div>
-
-        {/* Editor / Preview */}
-        <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-          {loadingMd ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)' }}>
-              <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', borderBottom: '1px solid #dee2e6', flexShrink: 0, background: '#f8f9fa' }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#1a1a1a' }}>
+                {existingNote ? 'Edit Note' : isTranslation ? 'Add Translation' : 'Create Note'}
+              </h2>
+              {isTranslation && (
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#0969da' }}>
+                  Adding a new language version of "{translationFor?.title || conceptId}"
+                </p>
+              )}
             </div>
-          ) : tab === 'write' ? (
-            <textarea
-              value={markdown}
-              onChange={e => setMarkdown(e.target.value)}
-              placeholder={PLACEHOLDER}
-              style={{ width: '100%', height: '100%', background: 'var(--bg)', border: 'none', outline: 'none', padding: '1.5rem', color: 'var(--text)', fontFamily: '"Fira Code", "Cascadia Code", monospace', fontSize: 14, lineHeight: 1.7, resize: 'none', boxSizing: 'border-box' }}
-            />
-          ) : (
-            <iframe
-              srcDoc={previewHtml}
-              style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }}
-              title="Preview"
-            />
-          )}
-        </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#666' }}><X size={20} /></button>
+          </div>
 
-        {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{markdown.length} chars · {markdown.split('\n').length} lines</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn" style={{ background: 'var(--card-bg)', color: 'var(--text)', border: '1px solid var(--border)' }} onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-              <Save size={14} style={{ display: 'inline', marginRight: 6 }} />
-              {saving ? 'Saving...' : 'Save Note'}
+          {/* Meta fields */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', padding: '1rem 1.5rem', borderBottom: '1px solid #dee2e6', flexShrink: 0, background: '#fff' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Title *</label>
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Perfect Nouns in French"
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid #dee2e6', borderRadius: 6, fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Concept ID *</label>
+              <input value={conceptId} onChange={e => setConceptId(e.target.value)}
+                placeholder="e.g. fr-a1-nouns-perfect" disabled={conceptLocked}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid #dee2e6', borderRadius: 6, fontSize: 14, outline: 'none', boxSizing: 'border-box', opacity: conceptLocked ? 0.6 : 1, background: conceptLocked ? '#f8f9fa' : '#fff' }} />
+              {isTranslation && <p style={{ fontSize: 11, color: '#0969da', marginTop: 3 }}>Locked — translating concept: {conceptId}</p>}
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: '#666', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Explanation Language</label>
+              <select value={knownLang} onChange={e => setKnownLang(e.target.value)} disabled={!!existingNote}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid #dee2e6', borderRadius: 6, fontSize: 14, outline: 'none', background: existingNote ? '#f8f9fa' : '#fff', opacity: existingNote ? 0.6 : 1 }}>
+                {KNOWN_LANGS.map(l => {
+                  const isTaken = isTranslation && (takenLangs || []).includes(l.code);
+                  return (
+                    <option key={l.code} value={l.code} disabled={isTaken}>
+                      {l.label}{isTaken ? ' (already exists)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {/* Tab bar */}
+          <div style={{ display: 'flex', borderBottom: '1px solid #dee2e6', flexShrink: 0, background: '#fff', alignItems: 'center' }}>
+            {(['write', 'preview'] as const).map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                style={{ padding: '10px 24px', background: 'none', border: 'none', cursor: 'pointer', color: tab === t ? '#0969da' : '#666', borderBottom: tab === t ? '2px solid #0969da' : '2px solid transparent', fontWeight: tab === t ? 600 : 400, fontSize: 14 }}>
+                {t === 'write' ? '✏️ Write' : '👁 Preview'}
+              </button>
+            ))}
+            {/* Paste HTML button — right side of tab bar */}
+            <button
+              onClick={() => setShowRawHtmlPanel(p => !p)}
+              title="Paste raw HTML into editor"
+              style={{ marginLeft: 'auto', marginRight: 12, padding: '6px 14px', border: '1px solid #dee2e6', borderRadius: 6, background: showRawHtmlPanel ? '#0969da' : '#f8f9fa', color: showRawHtmlPanel ? '#fff' : '#444', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>
+              {'</>'} Paste HTML
+            </button>
+          </div>
+
+          {/* Raw HTML paste panel */}
+          {showRawHtmlPanel && (
+            <div style={{ padding: '12px 1.5rem', borderBottom: '1px solid #dee2e6', background: '#f8f9fa', flexShrink: 0 }}>
+              <p style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>
+                Paste your raw HTML below and click <strong>Inject</strong> — it will be parsed and loaded into the rich text editor.
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <textarea
+                  value={rawHtmlInput}
+                  onChange={e => setRawHtmlInput(e.target.value)}
+                  placeholder="<h1>Title</h1><p>Content...</p>"
+                  rows={4}
+                  style={{ flex: 1, padding: '8px 12px', border: '1px solid #dee2e6', borderRadius: 6, fontSize: 13, fontFamily: 'monospace', resize: 'vertical', outline: 'none' }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <button onClick={handleInjectRawHtml} disabled={!rawHtmlInput.trim()}
+                    style={{ padding: '8px 16px', border: 'none', borderRadius: 6, background: '#0969da', color: '#fff', cursor: rawHtmlInput.trim() ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: rawHtmlInput.trim() ? 1 : 0.5 }}>
+                    Inject
+                  </button>
+                  <button onClick={() => { setRawHtmlInput(''); setShowRawHtmlPanel(false); }}
+                    style={{ padding: '8px 16px', border: '1px solid #dee2e6', borderRadius: 6, background: '#fff', color: '#444', cursor: 'pointer', fontSize: 13 }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Editor / Preview */}
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            {loading ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 12, color: '#666' }}>
+                <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
+                <span>Loading content…</span>
+              </div>
+            ) : tab === 'write' ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '0 1.5rem 1rem' }}>
+                {ReactQuill ? (
+                  <ReactQuill
+                    theme="snow"
+                    value={htmlContent}
+                    onChange={setHtmlContent}
+                    modules={QUILL_MODULES}
+                    formats={QUILL_FORMATS}
+                    placeholder="Start writing your note here… Use the toolbar above for formatting."
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', marginTop: '1rem' }}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: '#666' }}>
+                    <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', marginRight: 8 }} />
+                    Loading editor…
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
+                {isEmpty(htmlContent) ? (
+                  <div style={{ textAlign: 'center', padding: '3rem', color: '#999' }}>Nothing to preview yet — write something first.</div>
+                ) : (
+                  <div className="note-preview" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '1rem 1.5rem', borderTop: '1px solid #dee2e6', flexShrink: 0, background: '#f8f9fa', gap: 8 }}>
+            <button onClick={onClose} style={{ padding: '8px 20px', border: '1px solid #dee2e6', borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 14, color: '#333' }}>Cancel</button>
+            <button onClick={handleSave} disabled={saving}
+              style={{ padding: '8px 20px', border: 'none', borderRadius: 6, background: '#0969da', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Save size={14} />
+              {saving ? 'Saving…' : 'Save Note'}
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -259,7 +408,8 @@ function NotesView({ subtopic, learningLang, onBack, showToast }: {
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
-  const [_addTranslationFor, setAddTranslationFor] = useState<Note | null>(null);
+  const [addTranslationFor, setAddTranslationFor] = useState<Note | null>(null);
+  const [takenLangs, setTakenLangs] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<Note | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -345,7 +495,12 @@ function NotesView({ subtopic, learningLang, onBack, showToast }: {
                   <code style={{ fontSize: 12, color: 'var(--text-muted)' }}>{conceptId}</code>
                 </div>
                 <button
-                  onClick={() => { setAddTranslationFor(conceptNotes[0]); setEditingNote(null); setEditorOpen(true); }}
+                  onClick={() => {
+                    setAddTranslationFor(conceptNotes[0]);
+                    setTakenLangs(conceptNotes.map(n => n.known_lang));
+                    setEditingNote(null);
+                    setEditorOpen(true);
+                  }}
                   style={{ ...iconBtn('#1f6feb'), width: 'auto', padding: '0 12px', gap: 6, fontSize: 13 }}>
                   <Plus size={14} /> Add Translation
                 </button>
@@ -365,16 +520,16 @@ function NotesView({ subtopic, learningLang, onBack, showToast }: {
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      {/* Preview link */}
-                      {note.html_url && !note.html_url.startsWith('__pending__') && (
-                        <a href={note.html_url} target="_blank" rel="noopener noreferrer"
-                          style={{ ...iconBtn('#2ea043'), textDecoration: 'none' }} title="Preview compiled note">
-                          <ExternalLink size={14} />
-                        </a>
-                      )}
-                      {note.html_url?.startsWith('__pending__') && (
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>pending upload</span>
-                      )}
+                      {/* Preview link — always available via the serve endpoint */}
+                      <a
+                        href={`${(api.defaults as any).baseURL || 'http://localhost:8000/api'}/admin/grammar/notes/${note.id}/html`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ ...iconBtn('#2ea043'), textDecoration: 'none' }}
+                        title="Preview compiled note"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
                       {/* Edit */}
                       <button title="Edit" onClick={() => { setEditingNote(note); setAddTranslationFor(null); setEditorOpen(true); }} style={iconBtn('#f59e0b')}>
                         <Pencil size={14} />
@@ -394,11 +549,13 @@ function NotesView({ subtopic, learningLang, onBack, showToast }: {
 
       {/* Markdown editor modal */}
       {editorOpen && (
-        <MarkdownEditorModal
+        <NoteEditorModal
           subtopicId={subtopic.id}
           learningLang={learningLang}
           existingNote={editingNote}
-          onClose={() => { setEditorOpen(false); setEditingNote(null); setAddTranslationFor(null); }}
+          translationFor={addTranslationFor}
+          takenLangs={takenLangs}
+          onClose={() => { setEditorOpen(false); setEditingNote(null); setAddTranslationFor(null); setTakenLangs([]); }}
           onSaved={load}
           showToast={showToast}
         />
@@ -828,3 +985,5 @@ export default function ContentManager({ pageTitle, pageDescription }: ContentMa
     </div>
   );
 }
+
+
