@@ -1110,87 +1110,10 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           </div>
         )}
       </div>
-    </div>
   );
 }
 
-// ─── Slide 1: Main Practice ───────────────────────────────────────────────────
-function Slide1Main({
-  level, setLevel, category, setCategory, questionTypes, setQuestionTypes, onEdit, onAiGenerate, showToast,
-}: {
-  level: CefrLevel; setLevel: (l: CefrLevel) => void;
-  category: Category; setCategory: (c: Category) => void;
-  questionTypes: QuestionType[];
-  setQuestionTypes: React.Dispatch<React.SetStateAction<QuestionType[]>>;
-  onEdit: (qt: QuestionType) => void;
-  onAiGenerate: (qt: QuestionType) => void;
-  showToast: (ok: boolean, msg: string) => void;
-}) {
-  // Modal state
-  const [analyticsQt, setAnalyticsQt] = useState<QuestionType | null>(null);
-  const [promptsQt, setPromptsQt] = useState<QuestionType | null>(null);
-  const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
 
-  const handleToggleActive = async (qt: QuestionType) => {
-    setTogglingSlug(qt.slug);
-    try {
-      const r = await api.post(`/admin/question-types/${qt.slug}/toggle-active`);
-      setQuestionTypes(prev => prev.map(q => q.slug === qt.slug ? { ...q, is_active: r.data.is_active } : q));
-    } catch {
-      // silently fail — toast is in parent
-    } finally {
-      setTogglingSlug(null);
-    }
-  };
-
-  // Filter: must be in this category's slug list
-  // Note: we do NOT filter by availableSlugs here — that's for the student practice page.
-  // The admin panel should show all configured exercise types so admins can upload content.
-  // Merge DB types with SKILL_SLUGS so types not yet in DB still appear.
-  const dbSlugs = new Set(questionTypes.map(qt => qt.slug));
-  const allSlugsForCategory = SKILL_SLUGS[category] || [];
-  const mergedTypes: QuestionType[] = [
-    // DB types that are in this category
-    ...questionTypes.filter(qt => allSlugsForCategory.includes(qt.slug)),
-    // Slugs in SKILL_SLUGS but not yet in DB — show as placeholder
-    ...allSlugsForCategory
-      .filter(slug => !dbSlugs.has(slug))
-      .map(slug => ({ slug, name: slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), is_active: true })),
-  ];
-  const visibleTypes = mergedTypes;
-
-  return (
-    <div>
-      {/* Filters row */}
-      <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 100 }}>CEFR Level</span>
-          <select
-            value={level}
-            onChange={(e) => setLevel(e.target.value as CefrLevel)}
-            className="form-control"
-            style={{ width: 200, padding: '8px 12px', fontSize: 14 }}
-          >
-            {CEFR_LEVELS.map(l => (
-              <option key={l} value={l}>{l}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 100 }}>Category</span>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value as Category)}
-            className="form-control"
-            style={{ width: 200, padding: '8px 12px', fontSize: 14 }}
-          >
-            {CATEGORIES.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-=======
-    );
-  }
 
   // ─── Direct CSV Upload (for exercise types like correct_spelling) ─────────────
   function DirectCsvUpload({
@@ -1328,73 +1251,7 @@ function Slide1Main({
         </div>
 
 
-      {/* Practice Exercises table */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.25rem' }}>
-        <h2 style={{ margin: 0 }}>Practice Exercises</h2>
-      </div>
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
-              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', width: 60 }}>Sl No</th>
-              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>Exercise</th>
-              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>Main Type - slug</th>
-              <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', width: 180 }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleTypes.length === 0 ? (
-              <tr><td colSpan={4} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No exercise types found for {category}.</td></tr>
-            ) : (
-              visibleTypes.map((qt, idx) => (
-                <tr key={qt.slug} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.1s', opacity: qt.is_active ? 1 : 0.45 }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{idx + 1}</td>
-                  <td style={{ padding: '12px 16px', fontWeight: 600 }}>
-                    {qt.name || qt.slug}
-                    {!qt.is_active && (
-                      <span style={{ marginLeft: 8, fontSize: 11, background: '#ef444422', color: '#ef4444', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>
-                        DEACTIVATED
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 13, color: 'var(--text-muted)' }}>
-                    {level}_{qt.slug}
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                      {/* Analytics */}
-                      <button title="Analytics" onClick={() => setAnalyticsQt(qt)} style={iconBtnStyle('#1f6feb')}>
-                        <BarChart3 size={15} />
-                      </button>
-                      {/* AI Prompts */}
-                      <button title="AI Prompts" onClick={() => setPromptsQt(qt)} style={iconBtnStyle('#2ea043')}>
-                        <MessageSquare size={15} />
-                      </button>
-                      {/* AI Generator */}
-                      <button title="AI Generate" onClick={() => onAiGenerate(qt)} style={iconBtnStyle('#a855f7')}>
-                        <Sparkles size={15} />
-                      </button>
-                      {/* Edit - opens Slide 2 */}
-                      <button title="Edit subtypes" onClick={() => onEdit(qt)} style={iconBtnStyle('#f59e0b')}>
-                        <Pencil size={15} />
-                      </button>
-                      {/* Activate / Deactivate */}
-                      <button
-                        title={qt.is_active ? 'Deactivate (hides from practice page)' : 'Activate (shows on practice page)'}
-                        onClick={() => handleToggleActive(qt)}
-                        disabled={togglingSlug === qt.slug}
-                        style={{
-                          ...iconBtnStyle(qt.is_active ? '#ef4444' : '#2ea043'),
-                          opacity: togglingSlug === qt.slug ? 0.5 : 1,
-                        }}>
-                        <Power size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2174,7 +2031,7 @@ function Slide1Main({
           />
         )}
 
-    {toast && <Toast ok={toast.ok} msg={toast.msg} onDone={() => setToast(null)} />}
-  </div>
-  );
-}
+        {toast && <Toast ok={toast.ok} msg={toast.msg} onDone={() => setToast(null)} />}
+      </div>
+    );
+  }
