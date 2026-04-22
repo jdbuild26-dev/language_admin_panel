@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
-import { LayoutDashboard, BookOpen, ScrollText, Rocket, MessageSquare, ImageIcon, BookMarked, Filter, Dumbbell, Table2 } from 'lucide-react';
+import { LayoutDashboard, BookOpen, BookText, Dumbbell, BookMarked, MessageSquare, FileText } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import UploadVocabulary from './pages/UploadVocabulary';
 import UploadExercises from './pages/UploadExercises';
@@ -9,15 +9,13 @@ import ReadingExercises from './pages/ReadingExercises';
 import TagTopics from './pages/TagTopics';
 import MainPractice from './pages/MainPractice';
 import VocabularyEditor from './pages/VocabularyEditor';
+import Grammar from './pages/Grammar';
+import Stories from './pages/Stories';
 
 function App() {
   return (
     <Router>
       <div className="sidebar">
-        <div className="logo">
-          <Rocket size={32} strokeWidth={2.5} />
-          <span>Langlearn</span>
-        </div>
         <nav className="nav-links">
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <LayoutDashboard size={20} />
@@ -27,33 +25,25 @@ function App() {
             <BookOpen size={20} />
             Vocabulary
           </NavLink>
-          <NavLink to="/vocabulary-editor" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Table2 size={20} />
-            Vocab Editor
+          <NavLink to="/grammar" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <BookText size={20} />
+            Grammar
           </NavLink>
           <NavLink to="/main-practice" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <Dumbbell size={20} />
             Main Practice
           </NavLink>
-          <NavLink to="/exercises" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <ScrollText size={20} />
-            Exercises
-          </NavLink>
-          <NavLink to="/reading-exercises" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/stories" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <BookMarked size={20} />
-            Reading Exercises
+            Stories
           </NavLink>
-          <NavLink to="/tag-topics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Filter size={20} />
-            Tag Topics
-          </NavLink>
-          <NavLink to="/image-exercises" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <ImageIcon size={20} />
-            Image Exercises
-          </NavLink>
-          <NavLink to="/prompts" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/ai-practice" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <MessageSquare size={20} />
-            AI Prompts
+            AI Practice
+          </NavLink>
+          <NavLink to="/blog" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <FileText size={20} />
+            Blog
           </NavLink>
         </nav>
       </div>
@@ -62,12 +52,16 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/vocabulary" element={<UploadVocabulary />} />
           <Route path="/vocabulary-editor" element={<VocabularyEditor />} />
+          <Route path="/grammar" element={<Grammar />} />
           <Route path="/main-practice" element={<MainPractice />} />
           <Route path="/exercises" element={<UploadExercises />} />
           <Route path="/reading-exercises" element={<ReadingExercises />} />
+          <Route path="/stories" element={<Stories />} />
           <Route path="/tag-topics" element={<TagTopics />} />
           <Route path="/image-exercises" element={<ImageExercises />} />
+          <Route path="/ai-practice" element={<PromptsEditor />} />
           <Route path="/prompts" element={<PromptsEditor />} />
+          <Route path="/blog" element={<Dashboard />} />
         </Routes>
       </main>
     </Router>

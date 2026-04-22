@@ -3,7 +3,7 @@ import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, M
 import api from '../services/api';
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'] as const;
-const CATEGORIES = ['Reading', 'Listening', 'Writing', 'Speaking', 'Grammar', 'Vocabulary'] as const;
+const CATEGORIES = ['Reading', 'Listening', 'Writing', 'Speaking'] as const;
 type CefrLevel = typeof CEFR_LEVELS[number];
 type Category = typeof CATEGORIES[number];
 type Slide = 'main' | 'subtypes' | 'exercises' | 'create';
@@ -106,22 +106,6 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'speak_image',               // Speak About Image / Describe Image
     'speak_interactive',         // Interactive Speaking
     'speaking_conversation',     // Speaking Conversation (Running)
-  ],
-  Grammar: [
-    'grammar_mcq',               // Grammar MCQ
-    'grammar_fill_blanks',       // Grammar Fill in the Blanks
-    'grammar_correction',        // Grammar Correction
-    'grammar_transformation',    // Sentence Transformation
-    'grammar_matching',          // Grammar Matching
-    'grammar_reorder',           // Grammar Reorder
-  ],
-  Vocabulary: [
-    'vocab_mcq',                 // Vocabulary MCQ
-    'vocab_fill_blanks',         // Vocabulary Fill in the Blanks
-    'vocab_matching',            // Vocabulary Matching
-    'vocab_translation',         // Vocabulary Translation
-    'vocab_image',               // Vocabulary Image Match
-    'vocab_spelling',            // Vocabulary Spelling
   ],
 };
 
@@ -1126,8 +1110,10 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           </div>
         )}
       </div>
-    );
-  }
+  );
+}
+
+
 
   // ─── Direct CSV Upload (for exercise types like correct_spelling) ─────────────
   function DirectCsvUpload({
@@ -1263,6 +1249,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             &nbsp;&nbsp;Category: <strong style={{ color: 'var(--white)' }}>{category}</strong>
           </span>
         </div>
+
+
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
@@ -2043,7 +2031,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           />
         )}
 
-    {toast && <Toast ok={toast.ok} msg={toast.msg} onDone={() => setToast(null)} />}
-  </div>
-  );
-}
+        {toast && <Toast ok={toast.ok} msg={toast.msg} onDone={() => setToast(null)} />}
+      </div>
+    );
+  }
