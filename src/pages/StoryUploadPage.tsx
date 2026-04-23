@@ -340,7 +340,7 @@ function StepBadge({ n, active, done, label }: { n: number; active: boolean; don
 interface FileInputProps {
   label: string;
   file: File | null;
-  inputRef: React.RefObject<HTMLInputElement>;
+  inputRef: React.RefObject<HTMLInputElement | null>;
   onChange: (f: File | null) => void;
 }
 
