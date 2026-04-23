@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
-import { LayoutDashboard, BookOpen, BookText, Dumbbell, BookMarked, MessageSquare, FileText } from 'lucide-react';
+import { LayoutDashboard, BookOpen, BookText, Dumbbell, BookMarked, MessageSquare, FileText, Upload } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import UploadVocabulary from './pages/UploadVocabulary';
 import UploadExercises from './pages/UploadExercises';
@@ -11,6 +11,7 @@ import MainPractice from './pages/MainPractice';
 import VocabularyEditor from './pages/VocabularyEditor';
 import Grammar from './pages/Grammar';
 import Stories from './pages/Stories';
+import StoryUploadPage from './pages/StoryUploadPage';
 
 function App() {
   return (
@@ -37,6 +38,10 @@ function App() {
             <BookMarked size={20} />
             Stories
           </NavLink>
+          <NavLink to="/stories/upload" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Upload size={20} />
+            Story Upload
+          </NavLink>
           <NavLink to="/ai-practice" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <MessageSquare size={20} />
             AI Practice
@@ -57,6 +62,7 @@ function App() {
           <Route path="/exercises" element={<UploadExercises />} />
           <Route path="/reading-exercises" element={<ReadingExercises />} />
           <Route path="/stories" element={<Stories />} />
+          <Route path="/stories/upload" element={<StoryUploadPage />} />
           <Route path="/tag-topics" element={<TagTopics />} />
           <Route path="/image-exercises" element={<ImageExercises />} />
           <Route path="/ai-practice" element={<PromptsEditor />} />
