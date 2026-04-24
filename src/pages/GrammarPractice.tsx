@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Power,
-  AlertCircle, CheckCircle2, Upload, CloudUpload, ChevronRight,
+  AlertCircle, CheckCircle2, CloudUpload, ChevronRight,
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -389,7 +389,7 @@ function Slide2Subtopics({
 
 // ─── Slide 3: Choose Exercise Type ───────────────────────────────────────────
 function Slide3ExerciseTypes({
-  topic, subtopic, level, onBack, onSelect, showToast,
+  topic, subtopic, level, onBack, onSelect,
 }: {
   topic: GrammarTopic; subtopic: GrammarSubtopic; level: CefrLevel;
   onBack: () => void;

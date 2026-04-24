@@ -1377,7 +1377,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   }
 
   /** Group row keys into: masterKeys, pairedGroups (base → langs present), unpaired */
-  function groupRowKeys(row: ExcelRow, visibleLanguages: LangSuffix[]): {
+  function groupRowKeys(row: ExcelRow, visibleLanguages: readonly LangSuffix[] | LangSuffix[]): {
     masterKeys: string[];
     pairedGroups: { base: string; langs: LangSuffix[] }[];
     unpaired: string[];
@@ -1733,109 +1733,6 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           </>
         )}
       </>
-    );
-  }
-
-  // ─── ExcelRowEditor (used in Detail/Search tab — keeps edit-always mode there) ─
-  function ExcelRowEditor({ externalId, onSaved }: { externalId: string; onSaved: () => void }) {
-    const [row, setRow] = useState<ExcelRow | null>(null);
-    const [typeSlug, setTypeSlug] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const [saved, setSaved] = useState(false);
-
-    const load = useCallback(async () => {
-      if (!externalId.trim()) return;
-      setLoading(true); setError(''); setRow(null); setSaved(false);
-      try {
-        const r = await api.get(`/admin/exercises/${externalId.trim()}/excel-row`);
-        setRow(r.data.row); setTypeSlug(r.data.type_slug || '');
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        setError(err.response?.data?.detail || 'Failed to load');
-      }
-      finally { setLoading(false); }
-    }, [externalId]);
-
-    useEffect(() => { load(); }, [load]);
-
-    const handleChange = (key: string, value: string) => {
-      setRow(prev => prev ? { ...prev, [key]: value } : prev); setSaved(false);
-    };
-
-    const handleSave = async () => {
-      if (!row) return;
-      setSaving(true); setError('');
-      try {
-        await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, { row });
-        setSaved(true); onSaved();
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        setError(err.response?.data?.detail || 'Save failed');
-      }
-      finally { setSaving(false); }
-    };
-
-    if (loading) return <p style={{ color: 'var(--text-muted)', padding: '1rem' }}>Loading row data...</p>;
-    if (error) return <div className="alert alert-error"><AlertCircle size={16} className="inline mr-2" />{error}</div>;
-    if (!row) return null;
-
-    const META_KEYS = ['ExerciseID', 'Level', 'Category', 'QuestionType', 'Difficulty', 'Exercise Tag', 'TimeLimitSeconds'];
-    const INST_KEYS = ['Instruction_EN', 'Instruction_FR'];
-    const metaEntries = META_KEYS.filter(k => k in row);
-    const instEntries = INST_KEYS.filter(k => k in row);
-    const otherEntries = Object.keys(row).filter(k => !META_KEYS.includes(k) && !INST_KEYS.includes(k));
-
-    const renderField = (key: string) => {
-      const val = String(row[key] ?? '');
-      const isLong = val.length > 80 || key.toLowerCase().includes('paragraph') || key.toLowerCase().includes('passage');
-      return (
-        <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
-          <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 220 }}>{key}</td>
-          <td style={{ padding: '6px 8px' }}>
-            {isLong ? (
-              <textarea value={val} onChange={e => handleChange(key, e.target.value)} rows={3}
-                style={{ width: '100%', resize: 'vertical', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '6px 8px', color: 'var(--text)', fontFamily: 'inherit' }} />
-            ) : (
-              <input type="text" value={val} onChange={e => handleChange(key, e.target.value)}
-                style={{ width: '100%', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '5px 8px', color: 'var(--text)' }} />
-            )}
-          </td>
-        </tr>
-      );
-    };
-
-    const SectionHeader = ({ label }: { label: string }) => (
-      <tr><td colSpan={2} style={{ padding: '10px 12px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.06em', background: 'var(--card-bg)' }}>{label}</td></tr>
-    );
-
-    return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div>
-            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{externalId}</span>
-            {typeSlug && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{typeSlug}</span>}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {saved && <span style={{ fontSize: 12, color: '#4ade80' }}><CheckCircle2 size={14} className="inline mr-1" />Saved</span>}
-            <button className="btn btn-secondary" style={{ padding: '5px 10px', fontSize: 13 }} onClick={load}>Reload</button>
-            <button className="btn btn-primary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={handleSave} disabled={saving}>
-              <Save size={14} className="inline mr-1" />{saving ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
-        </div>
-        {error && <div className="alert alert-error mb-8"><AlertCircle size={16} className="inline mr-2" />{error}</div>}
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <tbody>
-              {metaEntries.length > 0 && <><SectionHeader label="Metadata" />{metaEntries.map(renderField)}</>}
-              {instEntries.length > 0 && <><SectionHeader label="Instructions" />{instEntries.map(renderField)}</>}
-              {otherEntries.length > 0 && <><SectionHeader label="Content" />{otherEntries.map(renderField)}</>}
-            </tbody>
-          </table>
-        </div>
-      </div>
     );
   }
 

@@ -99,31 +99,6 @@ function iconBtn(color: string): React.CSSProperties {
 // The backend returns a full <!DOCTYPE html> page. We only need the body content
 // ─── Rich Text Editor Modal (Quill-based) ────────────────────────────────────
 
-// Quill toolbar config — comprehensive but not overwhelming
-const QUILL_MODULES = {
-  toolbar: [
-    [{ header: [1, 2, 3, false] }],
-    ['bold', 'italic', 'underline', 'strike'],
-    [{ color: [] }, { background: [] }],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    [{ indent: '-1' }, { indent: '+1' }],
-    ['blockquote', 'code-block'],
-    ['link', 'image'],
-    [{ align: [] }],
-    [{ 'table': 'insert-table' }],
-    ['clean'],
-  ],
-  table: false,           // disable built-in table (replaced by better-table)
-  'better-table': {
-    operationMenu: {
-      items: {
-        unmergeCells: { text: 'Unmerge Cells' },
-      },
-    },
-  },
-  keyboard: { bindings: {} as Record<string, unknown> },
-};
-
 const QUILL_FORMATS = [
   'header', 'bold', 'italic', 'underline', 'strike',
   'color', 'background', 'list', 'indent',
