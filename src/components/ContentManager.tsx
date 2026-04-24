@@ -187,17 +187,40 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
 
   // Dynamically import ReactQuill to avoid SSR issues
   const [ReactQuill, setReactQuill] = useState<any>(null);
+  const [quillRef, setQuillRef] = useState<any>(null);
   const [quillModules, setQuillModules] = useState<any>(null);
-  useEffect(() => {
-    Promise.all([
-      import('react-quill-new'),
-      import('quill-better-table'),
-    ]).then(([quillMod, betterTableMod]) => {
-      const Quill = (quillMod.default as any).Quill ?? (quillMod as any).Quill;
-      if (Quill && betterTableMod.default) {
-        try { Quill.register({ 'modules/better-table': betterTableMod.default }, true); } catch { /* already registered */ }
-      }
 
+  // Insert a plain HTML table at the current cursor position
+  const insertTable = useCallback((rows = 3, cols = 3) => {
+    if (!quillRef) return;
+    const quill = quillRef.getEditor ? quillRef.getEditor() : quillRef;
+    if (!quill) return;
+
+    // Build a plain HTML table with placeholder text
+    const headerCells = Array.from({ length: cols }, (_, c) =>
+      `<td style="border:1px solid #adb5bd;padding:6px 10px;min-width:80px;font-weight:600;background:#f0f0f0;">Header ${c + 1}</td>`
+    ).join('');
+    const bodyRows = Array.from({ length: rows - 1 }, (_, r) =>
+      `<tr>${Array.from({ length: cols }, (_, c) =>
+        `<td style="border:1px solid #adb5bd;padding:6px 10px;min-width:80px;">Row ${r + 1}, Col ${c + 1}</td>`
+      ).join('')}</tr>`
+    ).join('');
+
+    const tableHtml = `<table style="border-collapse:collapse;width:100%;margin:10px 0;table-layout:fixed;">
+      <thead><tr>${headerCells}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table><p><br></p>`;
+
+    // Get cursor position and insert HTML
+    const range = quill.getSelection(true);
+    const index = range ? range.index : quill.getLength();
+    quill.clipboard.dangerouslyPasteHTML(index, tableHtml);
+    // Move cursor after the table
+    quill.setSelection(index + 1, 0);
+  }, [quillRef]);
+
+  useEffect(() => {
+    import('react-quill-new').then(mod => {
       const modules = {
         toolbar: {
           container: [
@@ -209,39 +232,18 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
             ['blockquote', 'code-block'],
             ['link', 'image'],
             [{ align: [] }],
-            ['table'],   // custom button — handler below
+            ['table'],
             ['clean'],
           ],
           handlers: {
-            table: function (this: any) {
-              const tableModule = this.quill.getModule('better-table');
-              if (tableModule) {
-                tableModule.insertTable(3, 3);
-              }
-            },
+            table: () => insertTable(3, 3),
           },
         },
-        table: false,
-        'better-table': {
-          operationMenu: {
-            items: {
-              unmergeCells: { text: 'Unmerge Cells' },
-            },
-          },
-        },
-        keyboard: { bindings: {} as Record<string, unknown> },
       };
-
       setQuillModules(modules);
-      setReactQuill(() => quillMod.default);
-    }).catch(() => {
-      // Fallback without table
-      import('react-quill-new').then(mod => {
-        setQuillModules(QUILL_MODULES);
-        setReactQuill(() => mod.default);
-      });
+      setReactQuill(() => mod.default);
     });
-  }, []);
+  }, [insertTable]);
 
   // Load existing content when editing
   const apiPrefix = useContext(ApiPrefixContext);
@@ -461,6 +463,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
             `}</style>
             {ReactQuill && quillModules ? (
               <ReactQuill
+                ref={(el: any) => { if (el && el !== quillRef) setQuillRef(el); }}
                 theme="snow"
                 value={htmlContent}
                 onChange={setHtmlContent}
