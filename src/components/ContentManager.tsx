@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 import React, { useState, useEffect, useCallback, useContext, createContext } from 'react';
 import { ChevronLeft, Plus, Trash2, X, Save, Eye, Pencil, ExternalLink, Globe, AlertCircle, CheckCircle2, Loader2, Moon, Sun } from 'lucide-react';
 import api from '../services/api';
 import 'react-quill-new/dist/quill.snow.css';
+import StoryEditor from './StoryEditor';
 
 // ─── API Prefix Context ───────────────────────────────────────────────────────
 // Allows sub-views to call the correct endpoint (grammar vs stories) without prop-drilling.
@@ -24,6 +25,7 @@ interface Note {
   id: number; subtopic_id: number; concept_id: string;
   known_lang: string; learning_lang: string;
   title: string | null; html_url: string;
+  s3_key: string | null;
   order_index: number; is_active: boolean;
 }
 
@@ -963,17 +965,26 @@ export default function ContentManager({ pageTitle, pageDescription, apiPrefix =
         />
       )}
       {view === 'editor' && editorState && selectedSubtopic && (
-        <NoteEditorView
-          subtopicId={editorState.subtopicId}
-          subtopicName={editorState.subtopicName}
-          learningLang={editorState.learningLang}
-          existingNote={editorState.existingNote}
-          translationFor={editorState.translationFor}
-          takenLangs={editorState.takenLangs}
-          onClose={() => { setView('notes'); setEditorState(null); }}
-          onSaved={() => { setView('notes'); setEditorState(null); }}
-          showToast={showToast}
-        />
+        apiPrefix === 'stories' && (editorState.existingNote?.s3_key === null) ? (
+          <StoryEditor
+            exerciseId={editorState.existingNote.concept_id}
+            onClose={() => { setView('notes'); setEditorState(null); }}
+            onSaved={() => { setView('notes'); setEditorState(null); }}
+            showToast={showToast}
+          />
+        ) : (
+          <NoteEditorView
+            subtopicId={editorState.subtopicId}
+            subtopicName={editorState.subtopicName}
+            learningLang={editorState.learningLang}
+            existingNote={editorState.existingNote}
+            translationFor={editorState.translationFor}
+            takenLangs={editorState.takenLangs}
+            onClose={() => { setView('notes'); setEditorState(null); }}
+            onSaved={() => { setView('notes'); setEditorState(null); }}
+            showToast={showToast}
+          />
+        )
       )}
 
       {toast && <Toast ok={toast.ok} msg={toast.msg} onDone={() => setToast(null)} />}
