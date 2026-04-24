@@ -1352,6 +1352,228 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   }
 
   // ─── Slide 3: Exercise List (View) ────────────────────────────────────────────
+  // ─── View/Edit Modal ──────────────────────────────────────────────────────────
+  function ViewEditModal({ externalId, onClose, onSaved }: { externalId: string; onClose: () => void; onSaved: () => void }) {
+    const [row, setRow] = useState<ExcelRow | null>(null);
+    const [originalRow, setOriginalRow] = useState<ExcelRow | null>(null);
+    const [typeSlug, setTypeSlug] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+    const [saved, setSaved] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+    const [isDirty, setIsDirty] = useState(false);
+
+    const load = useCallback(async () => {
+      if (!externalId.trim()) return;
+      setLoading(true); setError(''); setRow(null); setSaved(false); setIsDirty(false);
+      try {
+        const r = await api.get(`/admin/exercises/${externalId.trim()}/excel-row`);
+        setRow(r.data.row);
+        setOriginalRow(r.data.row);
+        setTypeSlug(r.data.type_slug || '');
+      } catch (e: unknown) {
+        const err = e as { response?: { data?: { detail?: string } } };
+        setError(err.response?.data?.detail || 'Failed to load');
+      } finally { setLoading(false); }
+    }, [externalId]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const handleChange = (key: string, value: string) => {
+      setRow(prev => prev ? { ...prev, [key]: value } : prev);
+      setSaved(false);
+      setIsDirty(true);
+    };
+
+    const handleSave = async () => {
+      if (!row) return;
+      setSaving(true); setError('');
+      try {
+        await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, { row });
+        setOriginalRow(row);
+        setSaved(true);
+        setIsDirty(false);
+        setIsEditMode(false);
+        onSaved();
+      } catch (e: unknown) {
+        const err = e as { response?: { data?: { detail?: string } } };
+        setError(err.response?.data?.detail || 'Save failed');
+      } finally { setSaving(false); }
+    };
+
+    const handleCloseRequest = () => {
+      if (isEditMode && isDirty) {
+        setShowUnsavedWarning(true);
+      } else {
+        onClose();
+      }
+    };
+
+    const handleDiscardAndClose = () => {
+      setRow(originalRow);
+      setIsDirty(false);
+      setIsEditMode(false);
+      onClose();
+    };
+
+    const META_KEYS = ['ExerciseID', 'Level', 'Category', 'QuestionType', 'Difficulty', 'Exercise Tag', 'TimeLimitSeconds'];
+    const INST_KEYS = ['Instruction_EN', 'Instruction_FR'];
+    const metaEntries = row ? META_KEYS.filter(k => k in row) : [];
+    const instEntries = row ? INST_KEYS.filter(k => k in row) : [];
+    const otherEntries = row ? Object.keys(row).filter(k => !META_KEYS.includes(k) && !INST_KEYS.includes(k)) : [];
+
+    const renderField = (key: string) => {
+      const val = String(row![key] ?? '');
+      const isLong = val.length > 80 || key.toLowerCase().includes('paragraph') || key.toLowerCase().includes('passage');
+      return (
+        <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
+          <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 220 }}>{key}</td>
+          <td style={{ padding: '6px 8px' }}>
+            {isEditMode ? (
+              isLong ? (
+                <textarea value={val} onChange={e => handleChange(key, e.target.value)} rows={3}
+                  style={{ width: '100%', resize: 'vertical', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '6px 8px', color: 'var(--text)', fontFamily: 'inherit' }} />
+              ) : (
+                <input type="text" value={val} onChange={e => handleChange(key, e.target.value)}
+                  style={{ width: '100%', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '5px 8px', color: 'var(--text)' }} />
+              )
+            ) : (
+              <span style={{ fontSize: 13, color: 'var(--text)', display: 'block', padding: '5px 8px', wordBreak: 'break-word' }}>{val || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}</span>
+            )}
+          </td>
+        </tr>
+      );
+    };
+
+    const SectionHeader = ({ label }: { label: string }) => (
+      <tr><td colSpan={2} style={{ padding: '10px 12px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.06em', background: 'rgba(255,255,255,0.02)' }}>{label}</td></tr>
+    );
+
+    return (
+      <>
+        {/* Backdrop */}
+        <div onClick={handleCloseRequest}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
+
+        {/* Modal */}
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          zIndex: 1001, width: 'min(780px, 95vw)', maxHeight: '88vh',
+          background: 'var(--card-bg)', borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          border: '1px solid var(--border)',
+        }}>
+          {/* Header */}
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }}>{externalId}</span>
+              {typeSlug && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{typeSlug}</span>}
+              {/* VIEW / EDIT MODE badge */}
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                background: isEditMode ? 'rgba(245,158,11,0.15)' : 'rgba(96,165,250,0.12)',
+                color: isEditMode ? '#f59e0b' : '#60a5fa',
+                border: `1px solid ${isEditMode ? 'rgba(245,158,11,0.35)' : 'rgba(96,165,250,0.3)'}`,
+                letterSpacing: '0.05em',
+              }}>
+                {isEditMode ? '✏️ EDIT MODE' : '👁 VIEW MODE'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {saved && !isEditMode && (
+                <span style={{ fontSize: 12, color: '#4ade80', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <CheckCircle2 size={14} />Saved
+                </span>
+              )}
+              {!isEditMode && (
+                <button onClick={load} title="Reload"
+                  style={{ padding: '5px 12px', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', cursor: 'pointer' }}>
+                  Reload
+                </button>
+              )}
+              {isEditMode ? (
+                <button className="btn btn-primary" style={{ padding: '5px 14px', fontSize: 13 }} onClick={handleSave} disabled={saving}>
+                  <Save size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} />
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              ) : (
+                <button onClick={() => setIsEditMode(true)}
+                  style={{ padding: '5px 14px', fontSize: 13, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, color: '#f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                  <Pencil size={13} /> Edit
+                </button>
+              )}
+              <button onClick={handleCloseRequest}
+                style={{ width: 30, height: 30, borderRadius: 6, border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={15} />
+              </button>
+            </div>
+          </div>
+
+          {/* Body — scrollable */}
+          <div style={{ overflowY: 'auto', flex: 1, padding: '0 0 16px' }}>
+            {loading && <p style={{ color: 'var(--text-muted)', padding: '2rem', textAlign: 'center' }}>Loading...</p>}
+            {error && <div style={{ margin: '1rem', padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#f87171', fontSize: 13 }}><AlertCircle size={14} style={{ display: 'inline', marginRight: 6 }} />{error}</div>}
+            {row && (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <tbody>
+                  {metaEntries.length > 0 && <><SectionHeader label="Metadata" />{metaEntries.map(renderField)}</>}
+                  {instEntries.length > 0 && <><SectionHeader label="Instructions" />{instEntries.map(renderField)}</>}
+                  {otherEntries.length > 0 && <><SectionHeader label="Content" />{otherEntries.map(renderField)}</>}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Edit mode bottom bar */}
+          {isEditMode && (
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', background: 'rgba(245,158,11,0.05)', display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
+              <button onClick={() => { setRow(originalRow); setIsDirty(false); setIsEditMode(false); }}
+                style={{ padding: '6px 14px', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 13 }} onClick={handleSave} disabled={saving}>
+                <Save size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} />
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Unsaved changes warning */}
+        {showUnsavedWarning && (
+          <>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.4)' }} />
+            <div style={{
+              position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+              zIndex: 1101, background: 'var(--card-bg)', borderRadius: 10, padding: '24px 28px',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.5)', border: '1px solid var(--border)',
+              width: 'min(400px, 90vw)', textAlign: 'center',
+            }}>
+              <p style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Unsaved Changes</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>You have unsaved edits. Save before closing?</p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                <button onClick={handleDiscardAndClose}
+                  style={{ padding: '7px 16px', fontSize: 13, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#f87171', cursor: 'pointer' }}>
+                  Discard & Close
+                </button>
+                <button onClick={() => setShowUnsavedWarning(false)}
+                  style={{ padding: '7px 16px', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', cursor: 'pointer' }}>
+                  Keep Editing
+                </button>
+                <button className="btn btn-primary" style={{ padding: '7px 16px', fontSize: 13 }} onClick={async () => { setShowUnsavedWarning(false); await handleSave(); }}>
+                  Save & Close
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </>
+    );
+  }
+
+  // ─── ExcelRowEditor (used in Detail/Search tab — keeps edit-always mode there) ─
   function ExcelRowEditor({ externalId, onSaved }: { externalId: string; onSaved: () => void }) {
     const [row, setRow] = useState<ExcelRow | null>(null);
     const [typeSlug, setTypeSlug] = useState('');
@@ -1471,8 +1693,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const pageSize = 50;
     const [loading, setLoading] = useState(true);
     const [showDeactivatedOnly, setShowDeactivatedOnly] = useState(false);
-    // editingId: which row is in edit mode (null = none)
-    const [editingId, setEditingId] = useState<string | null>(null);
+    // viewingId: which row's modal is open (null = none)
+    const [viewingId, setViewingId] = useState<string | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<ExerciseRow | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [searchId, setSearchId] = useState('');
@@ -1649,12 +1871,12 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                                 {/* Actions — LEFT side, matching design */}
                                 <td style={{ padding: '9px 14px' }}>
                                   <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                                    {/* Edit / Save toggle */}
+                                    {/* View button */}
                                     <button
-                                      title={editingId === ex.external_id ? 'Close editor' : 'Edit'}
-                                      onClick={() => setEditingId(editingId === ex.external_id ? null : ex.external_id)}
-                                      style={iconBtnStyle(editingId === ex.external_id ? '#f59e0b' : '#60a5fa')}>
-                                      <Pencil size={13} />
+                                      title="View"
+                                      onClick={() => setViewingId(ex.external_id)}
+                                      style={iconBtnStyle('#60a5fa')}>
+                                      <Eye size={13} />
                                     </button>
                                     {/* Delete */}
                                     <button title="Delete" onClick={() => setConfirmDelete(ex)} style={iconBtnStyle('#ef4444')}>
@@ -1679,21 +1901,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                                 <td style={{ padding: '9px 14px', color: 'var(--text-muted)' }}>{ex.type_slug ?? '—'}</td>
                                 <td style={{ padding: '9px 14px' }}>{ex.level ?? '—'}</td>
                               </tr>
-                              {/* Inline editor — expands below the row when pencil clicked */}
-                              {editingId === ex.external_id && (
-                                <tr key={`editor-${ex.external_id}`}>
-                                  <td colSpan={4} style={{ padding: '1rem 1.5rem', background: 'rgba(31,111,235,0.04)', borderBottom: '2px solid var(--accent)' }}>
-                                    <ExcelRowEditor
-                                      key={ex.external_id}
-                                      externalId={ex.external_id}
-                                      onSaved={() => {
-                                        showToast(true, `Saved ${ex.external_id}`);
-                                        load(page);
-                                      }}
-                                    />
-                                  </td>
-                                </tr>
-                              )}
+                              {/* View/Edit Modal — rendered outside table via portal-like pattern */}
                             </>
                           ))}
                         </tbody>
@@ -1701,6 +1909,19 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                     </div>
                   </div>
                 </div>
+
+                {/* View/Edit Modals — outside table to avoid invalid HTML */}
+                {exercises.map(ex => viewingId === ex.external_id && (
+                  <ViewEditModal
+                    key={ex.external_id}
+                    externalId={ex.external_id}
+                    onClose={() => setViewingId(null)}
+                    onSaved={() => {
+                      showToast(true, `Saved ${ex.external_id}`);
+                      load(page);
+                    }}
+                  />
+                ))}
 
                 {totalPages > 1 && (
                   <div style={{ display: 'flex', gap: 8, marginTop: 16, alignItems: 'center' }}>
