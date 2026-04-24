@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, X, Plus, Trash2, Loader2, MessageSquare, HelpCircle, Settings } from 'lucide-react';
+import { Save, Plus, Trash2, Loader2, MessageSquare, HelpCircle, Settings } from 'lucide-react';
 import api from '../services/api';
 
 interface DialogueLine {
