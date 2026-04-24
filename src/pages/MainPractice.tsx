@@ -1352,6 +1352,63 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   }
 
   // ─── Slide 3: Exercise List (View) ────────────────────────────────────────────
+
+  // Language config — order determines display order in paired rows
+  const LANG_SUFFIXES = ['_EN', '_FR', '_DE', '_ES'] as const;
+  type LangSuffix = typeof LANG_SUFFIXES[number];
+  const LANG_LABELS: Record<LangSuffix, string> = { _EN: 'EN', _FR: 'FR', _DE: 'DE', _ES: 'ES' };
+  const LANG_COLORS: Record<LangSuffix, string> = {
+    _EN: '#60a5fa', _FR: '#a78bfa', _DE: '#34d399', _ES: '#fb923c',
+  };
+
+  // Keys that are language-agnostic (Part 1: Data Master)
+  const DATA_MASTER_KEYS = [
+    'ExerciseID', 'Question Type', 'Level', 'Category', 'QuestionType',
+    'Difficulty', 'Exercise Tag', 'TimeLimitSeconds', 'Time', 'Character Limit',
+    'Min_Words_1', 'Min_Words_2', 'Min_Words_3', 'Min_Words_4', 'Min_Words_5',
+  ];
+
+  /** Strip language suffix from a key, return { base, lang } or null if no suffix */
+  function parseLangKey(key: string): { base: string; lang: LangSuffix } | null {
+    for (const suffix of LANG_SUFFIXES) {
+      if (key.endsWith(suffix)) return { base: key.slice(0, -suffix.length), lang: suffix };
+    }
+    return null;
+  }
+
+  /** Group row keys into: masterKeys, pairedGroups (base → langs present), unpaired */
+  function groupRowKeys(row: ExcelRow, visibleLanguages: LangSuffix[]): {
+    masterKeys: string[];
+    pairedGroups: { base: string; langs: LangSuffix[] }[];
+    unpaired: string[];
+  } {
+    const masterKeys = DATA_MASTER_KEYS.filter(k => k in row);
+    const remaining = Object.keys(row).filter(k => !DATA_MASTER_KEYS.includes(k));
+
+    const baseMap = new Map<string, LangSuffix[]>();
+    const unpaired: string[] = [];
+
+    for (const key of remaining) {
+      const parsed = parseLangKey(key);
+      if (parsed && visibleLanguages.includes(parsed.lang)) {
+        const existing = baseMap.get(parsed.base) ?? [];
+        existing.push(parsed.lang);
+        baseMap.set(parsed.base, existing);
+      } else if (!parsed) {
+        unpaired.push(key);
+      }
+      // Skip keys with languages not visible to this user
+    }
+
+    // Sort langs within each group by visibleLanguages order (EN first, then target)
+    const pairedGroups = Array.from(baseMap.entries()).map(([base, langs]) => ({
+      base,
+      langs: visibleLanguages.filter(l => langs.includes(l)),
+    })).filter(group => group.langs.length > 0); // Only show groups with visible languages
+
+    return { masterKeys, pairedGroups, unpaired };
+  }
+
   // ─── View/Edit Modal ──────────────────────────────────────────────────────────
   function ViewEditModal({ externalId, onClose, onSaved }: { externalId: string; onClose: () => void; onSaved: () => void }) {
     const [row, setRow] = useState<ExcelRow | null>(null);
@@ -1364,6 +1421,21 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [isEditMode, setIsEditMode] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
+
+    // TODO: Get from user auth context - for now simulate different teacher roles
+    // This would come from your auth system: const { userRole, userLanguage } = useAuth();
+    const [testRole, setTestRole] = useState<'admin' | 'teacher'>('admin');
+    const [testLang, setTestLang] = useState<LangSuffix | null>(null);
+    
+    const userRole = testRole;
+    const userLanguage = testLang;
+    
+    // Filter languages based on user role
+    const visibleLanguages = userRole === 'admin' 
+      ? LANG_SUFFIXES 
+      : userLanguage 
+        ? ['_EN', userLanguage] as LangSuffix[]
+        : ['_EN'] as LangSuffix[];
 
     const load = useCallback(async () => {
       if (!externalId.trim()) return;
@@ -1418,38 +1490,74 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       onClose();
     };
 
-    const META_KEYS = ['ExerciseID', 'Level', 'Category', 'QuestionType', 'Difficulty', 'Exercise Tag', 'TimeLimitSeconds'];
-    const INST_KEYS = ['Instruction_EN', 'Instruction_FR'];
-    const metaEntries = row ? META_KEYS.filter(k => k in row) : [];
-    const instEntries = row ? INST_KEYS.filter(k => k in row) : [];
-    const otherEntries = row ? Object.keys(row).filter(k => !META_KEYS.includes(k) && !INST_KEYS.includes(k)) : [];
+    // ── Render helpers ──────────────────────────────────────────────────────────
 
-    const renderField = (key: string) => {
+    const renderCell = (key: string, editable: boolean) => {
       const val = String(row![key] ?? '');
-      const isLong = val.length > 80 || key.toLowerCase().includes('paragraph') || key.toLowerCase().includes('passage');
-      return (
-        <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
-          <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 220 }}>{key}</td>
-          <td style={{ padding: '6px 8px' }}>
-            {isEditMode ? (
-              isLong ? (
-                <textarea value={val} onChange={e => handleChange(key, e.target.value)} rows={3}
-                  style={{ width: '100%', resize: 'vertical', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '6px 8px', color: 'var(--text)', fontFamily: 'inherit' }} />
-              ) : (
-                <input type="text" value={val} onChange={e => handleChange(key, e.target.value)}
-                  style={{ width: '100%', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '5px 8px', color: 'var(--text)' }} />
-              )
-            ) : (
-              <span style={{ fontSize: 13, color: 'var(--text)', display: 'block', padding: '5px 8px', wordBreak: 'break-word' }}>{val || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}</span>
-            )}
-          </td>
-        </tr>
-      );
+      const isLong = val.length > 60 || key.toLowerCase().includes('paragraph') || key.toLowerCase().includes('passage') || key.toLowerCase().includes('scenario') || key.toLowerCase().includes('sample');
+      if (editable) {
+        return isLong
+          ? <textarea value={val} onChange={e => handleChange(key, e.target.value)} rows={3}
+              style={{ width: '100%', resize: 'vertical', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '6px 8px', color: 'var(--text)', fontFamily: 'inherit' }} />
+          : <input type="text" value={val} onChange={e => handleChange(key, e.target.value)}
+              style={{ width: '100%', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '5px 8px', color: 'var(--text)' }} />;
+      }
+      return <span style={{ fontSize: 13, color: 'var(--text)', display: 'block', padding: '4px 0', wordBreak: 'break-word', lineHeight: 1.5 }}>{val || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}</span>;
     };
 
-    const SectionHeader = ({ label }: { label: string }) => (
-      <tr><td colSpan={2} style={{ padding: '10px 12px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.06em', background: 'rgba(255,255,255,0.02)' }}>{label}</td></tr>
+    /** Single key row (Data Master / unpaired) */
+    const renderSingleRow = (key: string) => (
+      <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
+        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 200 }}>{key}</td>
+        <td style={{ padding: '6px 8px' }}>{renderCell(key, isEditMode)}</td>
+      </tr>
     );
+
+    /** Paired language row — base label on left, then one column per visible language */
+    const renderPairedRow = (base: string, langs: LangSuffix[]) => (
+      <tr key={base} style={{ borderBottom: '1px solid var(--border)' }}>
+        {/* Base field name */}
+        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 160 }}>{base}</td>
+        {/* One cell per visible language */}
+        {langs.map(lang => {
+          const key = `${base}${lang}`;
+          const canEdit = isEditMode && (userRole === 'admin' || lang !== '_EN'); // Teachers can't edit EN
+          return (
+            <td key={lang} style={{ padding: '6px 8px', verticalAlign: 'top', borderLeft: '1px solid var(--border)' }}>
+              {/* Language badge */}
+              <span style={{
+                display: 'inline-block', fontSize: 10, fontWeight: 700, padding: '1px 7px',
+                borderRadius: 10, marginBottom: 4,
+                background: `${LANG_COLORS[lang]}20`,
+                color: LANG_COLORS[lang],
+                border: `1px solid ${LANG_COLORS[lang]}40`,
+                letterSpacing: '0.05em',
+              }}>{LANG_LABELS[lang]}</span>
+              {renderCell(key, canEdit)}
+            </td>
+          );
+        })}
+        {/* Fill empty columns if fewer than maxLangs visible languages */}
+        {Array.from({ length: maxLangs - langs.length }).map((_, i) => (
+          <td key={`empty-${i}`} style={{ padding: '6px 8px', borderLeft: '1px solid var(--border)' }} />
+        ))}
+      </tr>
+    );
+
+    const SectionHeader = ({ label, colSpan = 2 }: { label: string; colSpan?: number }) => (
+      <tr>
+        <td colSpan={colSpan} style={{
+          padding: '10px 12px 4px', fontSize: 11, fontWeight: 700,
+          textTransform: 'uppercase', color: 'var(--text-muted)',
+          letterSpacing: '0.06em', background: 'rgba(255,255,255,0.02)',
+        }}>{label}</td>
+      </tr>
+    );
+
+    const { masterKeys, pairedGroups, unpaired } = row ? groupRowKeys(row, visibleLanguages) : { masterKeys: [], pairedGroups: [], unpaired: [] };
+    // How many lang columns to span (based on visible languages, min 2)
+    const maxLangs = Math.max(visibleLanguages.length, 2);
+    const totalCols = 1 + maxLangs; // base label + lang columns
 
     return (
       <>
@@ -1457,10 +1565,10 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         <div onClick={handleCloseRequest}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
 
-        {/* Modal */}
+        {/* Modal — wider to accommodate side-by-side language columns */}
         <div style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          zIndex: 1001, width: 'min(780px, 95vw)', maxHeight: '88vh',
+          zIndex: 1001, width: 'min(960px, 97vw)', maxHeight: '90vh',
           background: 'var(--card-bg)', borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
           border: '1px solid var(--border)',
@@ -1480,6 +1588,23 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               }}>
                 {isEditMode ? '✏️ EDIT MODE' : '👁 VIEW MODE'}
               </span>
+              {/* TEST: Role switcher */}
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 11 }}>
+                <select value={testRole} onChange={e => setTestRole(e.target.value as 'admin' | 'teacher')}
+                  style={{ fontSize: 11, padding: '2px 6px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)' }}>
+                  <option value="admin">Admin</option>
+                  <option value="teacher">Teacher</option>
+                </select>
+                {testRole === 'teacher' && (
+                  <select value={testLang || ''} onChange={e => setTestLang(e.target.value as LangSuffix || null)}
+                    style={{ fontSize: 11, padding: '2px 6px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)' }}>
+                    <option value="">Select Language</option>
+                    <option value="_FR">French Teacher</option>
+                    <option value="_DE">German Teacher</option>
+                    <option value="_ES">Spanish Teacher</option>
+                  </select>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {saved && !isEditMode && (
@@ -1518,9 +1643,47 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             {row && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <tbody>
-                  {metaEntries.length > 0 && <><SectionHeader label="Metadata" />{metaEntries.map(renderField)}</>}
-                  {instEntries.length > 0 && <><SectionHeader label="Instructions" />{instEntries.map(renderField)}</>}
-                  {otherEntries.length > 0 && <><SectionHeader label="Content" />{otherEntries.map(renderField)}</>}
+                  {/* ── Part 1: Data Master ── */}
+                  {masterKeys.length > 0 && (
+                    <>
+                      <SectionHeader label="Part 1 · Data Master" colSpan={totalCols} />
+                      <tr style={{ background: 'rgba(255,255,255,0.01)' }}>
+                        <td colSpan={totalCols} style={{ padding: '4px 12px 8px', fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          Language-agnostic settings — same for all languages
+                        </td>
+                      </tr>
+                      {masterKeys.map(renderSingleRow)}
+                    </>
+                  )}
+
+                  {/* ── Part 2: Teacher Check (paired language columns) ── */}
+                  {pairedGroups.length > 0 && (
+                    <>
+                      <SectionHeader label="Part 2 · Teacher Check — Translations" colSpan={totalCols} />
+                      <tr style={{ background: 'rgba(255,255,255,0.01)' }}>
+                        <td colSpan={totalCols} style={{ padding: '4px 12px 8px', fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          {userRole === 'admin' 
+                            ? 'Each row shows all language versions side by side for easy comparison'
+                            : `Showing ${userLanguage ? `English and ${LANG_LABELS[userLanguage]}` : 'English only'} for comparison`}
+                          {isEditMode && (
+                            <span style={{ color: '#f59e0b', marginLeft: 8 }}>
+                              · EN is read-only (source of truth)
+                              {userRole === 'teacher' && ' · Teachers edit target language only'}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                      {pairedGroups.map(({ base, langs }) => renderPairedRow(base, langs))}
+                    </>
+                  )}
+
+                  {/* ── Unpaired / other keys ── */}
+                  {unpaired.length > 0 && (
+                    <>
+                      <SectionHeader label="Other" colSpan={totalCols} />
+                      {unpaired.map(renderSingleRow)}
+                    </>
+                  )}
                 </tbody>
               </table>
             )}
