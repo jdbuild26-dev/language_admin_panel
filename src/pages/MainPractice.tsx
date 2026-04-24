@@ -2112,9 +2112,10 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               </button>
             </div>
             {detailId && (
-              <ExcelRowEditor
+              <ViewEditModal
                 key={detailId}
                 externalId={detailId}
+                onClose={() => setDetailId('')}
                 onSaved={() => showToast(true, `Saved ${detailId}`)}
               />
             )}

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useContext, createContext } fr
 import { ChevronLeft, Plus, Trash2, X, Save, Eye, Pencil, ExternalLink, Globe, AlertCircle, CheckCircle2, Loader2, Moon, Sun } from 'lucide-react';
 import api from '../services/api';
 import 'react-quill-new/dist/quill.snow.css';
+import 'quill-better-table/dist/quill-better-table.css';
 import StoryEditor from './StoryEditor';
 
 // ─── API Prefix Context ───────────────────────────────────────────────────────
@@ -109,14 +110,25 @@ const QUILL_MODULES = {
     ['blockquote', 'code-block'],
     ['link', 'image'],
     [{ align: [] }],
+    [{ 'table': 'insert-table' }],
     ['clean'],
   ],
+  table: false,           // disable built-in table (replaced by better-table)
+  'better-table': {
+    operationMenu: {
+      items: {
+        unmergeCells: { text: 'Unmerge Cells' },
+      },
+    },
+  },
+  keyboard: { bindings: {} as Record<string, unknown> },
 };
 
 const QUILL_FORMATS = [
   'header', 'bold', 'italic', 'underline', 'strike',
   'color', 'background', 'list', 'indent',
   'blockquote', 'code-block', 'link', 'image', 'align',
+  'table', 'td', 'tr', 'tbody', 'thead', 'th',
 ];
 
 function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, translationFor, takenLangs, onClose, onSaved, showToast }: {
@@ -154,13 +166,80 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const [loading, setLoading] = useState(false);
 
   // Dark mode — persisted per editor session
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('editor_dark') === '1');
+  const [darkMode, setDarkMode] = useState(() => {
+    try { return localStorage.getItem('editor_dark') === '1'; } catch { return false; }
+  });
+
+  // Inject global table styles once on mount — scoped styles don't reach Quill's DOM
+  useEffect(() => {
+    const id = 'quill-table-styles';
+    if (document.getElementById(id)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = `
+      table.quill-better-table { width: 100% !important; border-collapse: collapse !important; margin: 10px 0 !important; table-layout: fixed !important; }
+      table.quill-better-table td { border: 1px solid #adb5bd !important; padding: 6px 10px !important; min-width: 60px !important; min-height: 28px !important; word-break: break-word !important; vertical-align: top !important; }
+      .quill-better-table-wrapper { overflow-x: auto !important; margin: 8px 0 !important; }
+    `;
+    document.head.appendChild(style);
+    return () => { document.getElementById(id)?.remove(); };
+  }, []);
 
   // Dynamically import ReactQuill to avoid SSR issues
   const [ReactQuill, setReactQuill] = useState<any>(null);
+  const [quillModules, setQuillModules] = useState<any>(null);
   useEffect(() => {
-    import('react-quill-new').then(mod => {
-      setReactQuill(() => mod.default);
+    Promise.all([
+      import('react-quill-new'),
+      import('quill-better-table'),
+    ]).then(([quillMod, betterTableMod]) => {
+      const Quill = (quillMod.default as any).Quill ?? (quillMod as any).Quill;
+      if (Quill && betterTableMod.default) {
+        try { Quill.register({ 'modules/better-table': betterTableMod.default }, true); } catch { /* already registered */ }
+      }
+
+      const modules = {
+        toolbar: {
+          container: [
+            [{ header: [1, 2, 3, false] }],
+            ['bold', 'italic', 'underline', 'strike'],
+            [{ color: [] }, { background: [] }],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            [{ indent: '-1' }, { indent: '+1' }],
+            ['blockquote', 'code-block'],
+            ['link', 'image'],
+            [{ align: [] }],
+            ['table'],   // custom button — handler below
+            ['clean'],
+          ],
+          handlers: {
+            table: function (this: any) {
+              const tableModule = this.quill.getModule('better-table');
+              if (tableModule) {
+                tableModule.insertTable(3, 3);
+              }
+            },
+          },
+        },
+        table: false,
+        'better-table': {
+          operationMenu: {
+            items: {
+              unmergeCells: { text: 'Unmerge Cells' },
+            },
+          },
+        },
+        keyboard: { bindings: {} as Record<string, unknown> },
+      };
+
+      setQuillModules(modules);
+      setReactQuill(() => quillMod.default);
+    }).catch(() => {
+      // Fallback without table
+      import('react-quill-new').then(mod => {
+        setQuillModules(QUILL_MODULES);
+        setReactQuill(() => mod.default);
+      });
     });
   }, []);
 
@@ -352,12 +431,40 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '0 1.5rem 1rem' }}>
             {/* Quill dark mode override */}
             {dm && <style>{`.ql-toolbar { background: #161b22 !important; border-color: #30363d !important; } .ql-container { border-color: #30363d !important; background: #0e1117; } .ql-editor { color: #c9d1d9 !important; background: #0e1117; } .ql-editor.ql-blank::before { color: #8b949e !important; } .ql-stroke { stroke: #8b949e !important; } .ql-fill { fill: #8b949e !important; } .ql-picker { color: #8b949e !important; } .ql-picker-options { background: #161b22 !important; border-color: #30363d !important; } .ql-picker-item { color: #c9d1d9 !important; }`}</style>}
-            {ReactQuill ? (
+            {/* Table styles — always injected so tables are visible in both modes */}
+            <style>{`
+              table.quill-better-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 10px 0;
+                table-layout: fixed;
+              }
+              table.quill-better-table td {
+                border: 1px solid ${dm ? '#555e6b' : '#adb5bd'} !important;
+                padding: 6px 10px !important;
+                min-width: 60px !important;
+                min-height: 28px !important;
+                word-break: break-word;
+                vertical-align: top;
+                color: ${dm ? '#c9d1d9' : '#1a1a1a'};
+                background: ${dm ? '#0e1117' : '#ffffff'};
+              }
+              table.quill-better-table td:focus,
+              table.quill-better-table td.qlbt-cell-selected {
+                outline: 2px solid #0969da !important;
+                background: ${dm ? '#1c2d4a' : '#e8f0fe'} !important;
+              }
+              .quill-better-table-wrapper {
+                overflow-x: auto;
+                margin: 8px 0;
+              }
+            `}</style>
+            {ReactQuill && quillModules ? (
               <ReactQuill
                 theme="snow"
                 value={htmlContent}
                 onChange={setHtmlContent}
-                modules={QUILL_MODULES}
+                modules={quillModules}
                 formats={QUILL_FORMATS}
                 placeholder="Start writing your note here… Use the toolbar above for formatting."
                 style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', marginTop: '1rem' }}
@@ -367,8 +474,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                 <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', marginRight: 8 }} />
                 Loading editor…
               </div>
-            )}
-          </div>
+            )}          </div>
         ) : (
           <div style={{ flex: 1, overflowY: 'auto', background: previewBg }}>
             {isEmpty(htmlContent) ? (
