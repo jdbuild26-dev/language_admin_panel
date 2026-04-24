@@ -9,6 +9,7 @@ import ReadingExercises from './pages/ReadingExercises';
 import TagTopics from './pages/TagTopics';
 import MainPractice from './pages/MainPractice';
 import VocabularyEditor from './pages/VocabularyEditor';
+import GrammarPractice from './pages/GrammarPractice';
 import Grammar from './pages/Grammar';
 import Stories from './pages/Stories';
 import StoryUploadPage from './pages/StoryUploadPage';
@@ -29,6 +30,10 @@ function App() {
           <NavLink to="/grammar" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <BookText size={20} />
             Grammar
+          </NavLink>
+          <NavLink to="/grammar-practice" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Dumbbell size={20} />
+            Grammar Practice
           </NavLink>
           <NavLink to="/main-practice" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <Dumbbell size={20} />
@@ -58,6 +63,7 @@ function App() {
           <Route path="/vocabulary" element={<UploadVocabulary />} />
           <Route path="/vocabulary-editor" element={<VocabularyEditor />} />
           <Route path="/grammar" element={<Grammar />} />
+          <Route path="/grammar-practice" element={<GrammarPractice />} />
           <Route path="/main-practice" element={<MainPractice />} />
           <Route path="/exercises" element={<UploadExercises />} />
           <Route path="/reading-exercises" element={<ReadingExercises />} />
