@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useContext, createContext } fr
 import { ChevronLeft, Plus, Trash2, X, Save, Eye, Pencil, ExternalLink, Globe, AlertCircle, CheckCircle2, Loader2, Moon, Sun } from 'lucide-react';
 import api from '../services/api';
 import 'react-quill-new/dist/quill.snow.css';
+import 'quill-better-table/dist/quill-better-table.css';
 import StoryEditor from './StoryEditor';
 
 // ─── API Prefix Context ───────────────────────────────────────────────────────
@@ -98,25 +99,11 @@ function iconBtn(color: string): React.CSSProperties {
 // The backend returns a full <!DOCTYPE html> page. We only need the body content
 // ─── Rich Text Editor Modal (Quill-based) ────────────────────────────────────
 
-// Quill toolbar config — comprehensive but not overwhelming
-const QUILL_MODULES = {
-  toolbar: [
-    [{ header: [1, 2, 3, false] }],
-    ['bold', 'italic', 'underline', 'strike'],
-    [{ color: [] }, { background: [] }],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    [{ indent: '-1' }, { indent: '+1' }],
-    ['blockquote', 'code-block'],
-    ['link', 'image'],
-    [{ align: [] }],
-    ['clean'],
-  ],
-};
-
 const QUILL_FORMATS = [
   'header', 'bold', 'italic', 'underline', 'strike',
   'color', 'background', 'list', 'indent',
   'blockquote', 'code-block', 'link', 'image', 'align',
+  'table', 'td', 'tr', 'tbody', 'thead', 'th',
 ];
 
 function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, translationFor, takenLangs, onClose, onSaved, showToast }: {
@@ -154,15 +141,84 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const [loading, setLoading] = useState(false);
 
   // Dark mode — persisted per editor session
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('editor_dark') === '1');
+  const [darkMode, setDarkMode] = useState(() => {
+    try { return localStorage.getItem('editor_dark') === '1'; } catch { return false; }
+  });
+
+  // Inject global table styles once on mount — scoped styles don't reach Quill's DOM
+  useEffect(() => {
+    const id = 'quill-table-styles';
+    if (document.getElementById(id)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = `
+      table.quill-better-table { width: 100% !important; border-collapse: collapse !important; margin: 10px 0 !important; table-layout: fixed !important; }
+      table.quill-better-table td { border: 1px solid #adb5bd !important; padding: 6px 10px !important; min-width: 60px !important; min-height: 28px !important; word-break: break-word !important; vertical-align: top !important; }
+      .quill-better-table-wrapper { overflow-x: auto !important; margin: 8px 0 !important; }
+    `;
+    document.head.appendChild(style);
+    return () => { document.getElementById(id)?.remove(); };
+  }, []);
 
   // Dynamically import ReactQuill to avoid SSR issues
   const [ReactQuill, setReactQuill] = useState<any>(null);
+  const [quillRef, setQuillRef] = useState<any>(null);
+  const [quillModules, setQuillModules] = useState<any>(null);
+
+  // Insert a plain HTML table at the current cursor position
+  const insertTable = useCallback((rows = 3, cols = 3) => {
+    if (!quillRef) return;
+    const quill = quillRef.getEditor ? quillRef.getEditor() : quillRef;
+    if (!quill) return;
+
+    // Build a plain HTML table with placeholder text
+    const headerCells = Array.from({ length: cols }, (_, c) =>
+      `<td style="border:1px solid #adb5bd;padding:6px 10px;min-width:80px;font-weight:600;background:#f0f0f0;">Header ${c + 1}</td>`
+    ).join('');
+    const bodyRows = Array.from({ length: rows - 1 }, (_, r) =>
+      `<tr>${Array.from({ length: cols }, (_, c) =>
+        `<td style="border:1px solid #adb5bd;padding:6px 10px;min-width:80px;">Row ${r + 1}, Col ${c + 1}</td>`
+      ).join('')}</tr>`
+    ).join('');
+
+    const tableHtml = `<table style="border-collapse:collapse;width:100%;margin:10px 0;table-layout:fixed;">
+      <thead><tr>${headerCells}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table><p><br></p>`;
+
+    // Get cursor position and insert HTML
+    const range = quill.getSelection(true);
+    const index = range ? range.index : quill.getLength();
+    quill.clipboard.dangerouslyPasteHTML(index, tableHtml);
+    // Move cursor after the table
+    quill.setSelection(index + 1, 0);
+  }, [quillRef]);
+
   useEffect(() => {
     import('react-quill-new').then(mod => {
+      const modules = {
+        toolbar: {
+          container: [
+            [{ header: [1, 2, 3, false] }],
+            ['bold', 'italic', 'underline', 'strike'],
+            [{ color: [] }, { background: [] }],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            [{ indent: '-1' }, { indent: '+1' }],
+            ['blockquote', 'code-block'],
+            ['link', 'image'],
+            [{ align: [] }],
+            ['table'],
+            ['clean'],
+          ],
+          handlers: {
+            table: () => insertTable(3, 3),
+          },
+        },
+      };
+      setQuillModules(modules);
       setReactQuill(() => mod.default);
     });
-  }, []);
+  }, [insertTable]);
 
   // Load existing content when editing
   const apiPrefix = useContext(ApiPrefixContext);
@@ -352,12 +408,41 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '0 1.5rem 1rem' }}>
             {/* Quill dark mode override */}
             {dm && <style>{`.ql-toolbar { background: #161b22 !important; border-color: #30363d !important; } .ql-container { border-color: #30363d !important; background: #0e1117; } .ql-editor { color: #c9d1d9 !important; background: #0e1117; } .ql-editor.ql-blank::before { color: #8b949e !important; } .ql-stroke { stroke: #8b949e !important; } .ql-fill { fill: #8b949e !important; } .ql-picker { color: #8b949e !important; } .ql-picker-options { background: #161b22 !important; border-color: #30363d !important; } .ql-picker-item { color: #c9d1d9 !important; }`}</style>}
-            {ReactQuill ? (
+            {/* Table styles — always injected so tables are visible in both modes */}
+            <style>{`
+              table.quill-better-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 10px 0;
+                table-layout: fixed;
+              }
+              table.quill-better-table td {
+                border: 1px solid ${dm ? '#555e6b' : '#adb5bd'} !important;
+                padding: 6px 10px !important;
+                min-width: 60px !important;
+                min-height: 28px !important;
+                word-break: break-word;
+                vertical-align: top;
+                color: ${dm ? '#c9d1d9' : '#1a1a1a'};
+                background: ${dm ? '#0e1117' : '#ffffff'};
+              }
+              table.quill-better-table td:focus,
+              table.quill-better-table td.qlbt-cell-selected {
+                outline: 2px solid #0969da !important;
+                background: ${dm ? '#1c2d4a' : '#e8f0fe'} !important;
+              }
+              .quill-better-table-wrapper {
+                overflow-x: auto;
+                margin: 8px 0;
+              }
+            `}</style>
+            {ReactQuill && quillModules ? (
               <ReactQuill
+                ref={(el: any) => { if (el && el !== quillRef) setQuillRef(el); }}
                 theme="snow"
                 value={htmlContent}
                 onChange={setHtmlContent}
-                modules={QUILL_MODULES}
+                modules={quillModules}
                 formats={QUILL_FORMATS}
                 placeholder="Start writing your note here… Use the toolbar above for formatting."
                 style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', marginTop: '1rem' }}
@@ -367,8 +452,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                 <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', marginRight: 8 }} />
                 Loading editor…
               </div>
-            )}
-          </div>
+            )}          </div>
         ) : (
           <div style={{ flex: 1, overflowY: 'auto', background: previewBg }}>
             {isEmpty(htmlContent) ? (

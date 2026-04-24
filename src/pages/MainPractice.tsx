@@ -1352,31 +1352,111 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   }
 
   // ─── Slide 3: Exercise List (View) ────────────────────────────────────────────
-  function ExcelRowEditor({ externalId, onSaved }: { externalId: string; onSaved: () => void }) {
+
+  // Language config — order determines display order in paired rows
+  const LANG_SUFFIXES = ['_EN', '_FR', '_DE', '_ES'] as const;
+  type LangSuffix = typeof LANG_SUFFIXES[number];
+  const LANG_LABELS: Record<LangSuffix, string> = { _EN: 'EN', _FR: 'FR', _DE: 'DE', _ES: 'ES' };
+  const LANG_COLORS: Record<LangSuffix, string> = {
+    _EN: '#60a5fa', _FR: '#a78bfa', _DE: '#34d399', _ES: '#fb923c',
+  };
+
+  // Keys that are language-agnostic (Part 1: Data Master)
+  const DATA_MASTER_KEYS = [
+    'ExerciseID', 'Question Type', 'Level', 'Category', 'QuestionType',
+    'Difficulty', 'Exercise Tag', 'TimeLimitSeconds', 'Time', 'Character Limit',
+    'Min_Words_1', 'Min_Words_2', 'Min_Words_3', 'Min_Words_4', 'Min_Words_5',
+  ];
+
+  /** Strip language suffix from a key, return { base, lang } or null if no suffix */
+  function parseLangKey(key: string): { base: string; lang: LangSuffix } | null {
+    for (const suffix of LANG_SUFFIXES) {
+      if (key.endsWith(suffix)) return { base: key.slice(0, -suffix.length), lang: suffix };
+    }
+    return null;
+  }
+
+  /** Group row keys into: masterKeys, pairedGroups (base → langs present), unpaired */
+  function groupRowKeys(row: ExcelRow, visibleLanguages: readonly LangSuffix[] | LangSuffix[]): {
+    masterKeys: string[];
+    pairedGroups: { base: string; langs: LangSuffix[] }[];
+    unpaired: string[];
+  } {
+    const masterKeys = DATA_MASTER_KEYS.filter(k => k in row);
+    const remaining = Object.keys(row).filter(k => !DATA_MASTER_KEYS.includes(k));
+
+    const baseMap = new Map<string, LangSuffix[]>();
+    const unpaired: string[] = [];
+
+    for (const key of remaining) {
+      const parsed = parseLangKey(key);
+      if (parsed && visibleLanguages.includes(parsed.lang)) {
+        const existing = baseMap.get(parsed.base) ?? [];
+        existing.push(parsed.lang);
+        baseMap.set(parsed.base, existing);
+      } else if (!parsed) {
+        unpaired.push(key);
+      }
+      // Skip keys with languages not visible to this user
+    }
+
+    // Sort langs within each group by visibleLanguages order (EN first, then target)
+    const pairedGroups = Array.from(baseMap.entries()).map(([base, langs]) => ({
+      base,
+      langs: visibleLanguages.filter(l => langs.includes(l)),
+    })).filter(group => group.langs.length > 0); // Only show groups with visible languages
+
+    return { masterKeys, pairedGroups, unpaired };
+  }
+
+  // ─── View/Edit Modal ──────────────────────────────────────────────────────────
+  function ViewEditModal({ externalId, onClose, onSaved }: { externalId: string; onClose: () => void; onSaved: () => void }) {
     const [row, setRow] = useState<ExcelRow | null>(null);
+    const [originalRow, setOriginalRow] = useState<ExcelRow | null>(null);
     const [typeSlug, setTypeSlug] = useState('');
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [saved, setSaved] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+    const [isDirty, setIsDirty] = useState(false);
+
+    // TODO: Get from user auth context - for now simulate different teacher roles
+    // This would come from your auth system: const { userRole, userLanguage } = useAuth();
+    const [testRole, setTestRole] = useState<'admin' | 'teacher'>('admin');
+    const [testLang, setTestLang] = useState<LangSuffix | null>(null);
+    
+    const userRole = testRole;
+    const userLanguage = testLang;
+    
+    // Filter languages based on user role
+    const visibleLanguages = userRole === 'admin' 
+      ? LANG_SUFFIXES 
+      : userLanguage 
+        ? ['_EN', userLanguage] as LangSuffix[]
+        : ['_EN'] as LangSuffix[];
 
     const load = useCallback(async () => {
       if (!externalId.trim()) return;
-      setLoading(true); setError(''); setRow(null); setSaved(false);
+      setLoading(true); setError(''); setRow(null); setSaved(false); setIsDirty(false);
       try {
         const r = await api.get(`/admin/exercises/${externalId.trim()}/excel-row`);
-        setRow(r.data.row); setTypeSlug(r.data.type_slug || '');
+        setRow(r.data.row);
+        setOriginalRow(r.data.row);
+        setTypeSlug(r.data.type_slug || '');
       } catch (e: unknown) {
         const err = e as { response?: { data?: { detail?: string } } };
         setError(err.response?.data?.detail || 'Failed to load');
-      }
-      finally { setLoading(false); }
+      } finally { setLoading(false); }
     }, [externalId]);
 
     useEffect(() => { load(); }, [load]);
 
     const handleChange = (key: string, value: string) => {
-      setRow(prev => prev ? { ...prev, [key]: value } : prev); setSaved(false);
+      setRow(prev => prev ? { ...prev, [key]: value } : prev);
+      setSaved(false);
+      setIsDirty(true);
     };
 
     const handleSave = async () => {
@@ -1384,73 +1464,275 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       setSaving(true); setError('');
       try {
         await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, { row });
-        setSaved(true); onSaved();
+        setOriginalRow(row);
+        setSaved(true);
+        setIsDirty(false);
+        setIsEditMode(false);
+        onSaved();
       } catch (e: unknown) {
         const err = e as { response?: { data?: { detail?: string } } };
         setError(err.response?.data?.detail || 'Save failed');
+      } finally { setSaving(false); }
+    };
+
+    const handleCloseRequest = () => {
+      if (isEditMode && isDirty) {
+        setShowUnsavedWarning(true);
+      } else {
+        onClose();
       }
-      finally { setSaving(false); }
     };
 
-    if (loading) return <p style={{ color: 'var(--text-muted)', padding: '1rem' }}>Loading row data...</p>;
-    if (error) return <div className="alert alert-error"><AlertCircle size={16} className="inline mr-2" />{error}</div>;
-    if (!row) return null;
-
-    const META_KEYS = ['ExerciseID', 'Level', 'Category', 'QuestionType', 'Difficulty', 'Exercise Tag', 'TimeLimitSeconds'];
-    const INST_KEYS = ['Instruction_EN', 'Instruction_FR'];
-    const metaEntries = META_KEYS.filter(k => k in row);
-    const instEntries = INST_KEYS.filter(k => k in row);
-    const otherEntries = Object.keys(row).filter(k => !META_KEYS.includes(k) && !INST_KEYS.includes(k));
-
-    const renderField = (key: string) => {
-      const val = String(row[key] ?? '');
-      const isLong = val.length > 80 || key.toLowerCase().includes('paragraph') || key.toLowerCase().includes('passage');
-      return (
-        <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
-          <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 220 }}>{key}</td>
-          <td style={{ padding: '6px 8px' }}>
-            {isLong ? (
-              <textarea value={val} onChange={e => handleChange(key, e.target.value)} rows={3}
-                style={{ width: '100%', resize: 'vertical', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '6px 8px', color: 'var(--text)', fontFamily: 'inherit' }} />
-            ) : (
-              <input type="text" value={val} onChange={e => handleChange(key, e.target.value)}
-                style={{ width: '100%', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '5px 8px', color: 'var(--text)' }} />
-            )}
-          </td>
-        </tr>
-      );
+    const handleDiscardAndClose = () => {
+      setRow(originalRow);
+      setIsDirty(false);
+      setIsEditMode(false);
+      onClose();
     };
 
-    const SectionHeader = ({ label }: { label: string }) => (
-      <tr><td colSpan={2} style={{ padding: '10px 12px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.06em', background: 'var(--card-bg)' }}>{label}</td></tr>
+    // ── Render helpers ──────────────────────────────────────────────────────────
+
+    const renderCell = (key: string, editable: boolean) => {
+      const val = String(row![key] ?? '');
+      const isLong = val.length > 60 || key.toLowerCase().includes('paragraph') || key.toLowerCase().includes('passage') || key.toLowerCase().includes('scenario') || key.toLowerCase().includes('sample');
+      if (editable) {
+        return isLong
+          ? <textarea value={val} onChange={e => handleChange(key, e.target.value)} rows={3}
+              style={{ width: '100%', resize: 'vertical', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '6px 8px', color: 'var(--text)', fontFamily: 'inherit' }} />
+          : <input type="text" value={val} onChange={e => handleChange(key, e.target.value)}
+              style={{ width: '100%', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '5px 8px', color: 'var(--text)' }} />;
+      }
+      return <span style={{ fontSize: 13, color: 'var(--text)', display: 'block', padding: '4px 0', wordBreak: 'break-word', lineHeight: 1.5 }}>{val || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}</span>;
+    };
+
+    /** Single key row (Data Master / unpaired) */
+    const renderSingleRow = (key: string) => (
+      <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
+        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 200 }}>{key}</td>
+        <td style={{ padding: '6px 8px' }}>{renderCell(key, isEditMode)}</td>
+      </tr>
     );
 
+    /** Paired language row — base label on left, then one column per visible language */
+    const renderPairedRow = (base: string, langs: LangSuffix[]) => (
+      <tr key={base} style={{ borderBottom: '1px solid var(--border)' }}>
+        {/* Base field name */}
+        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 160 }}>{base}</td>
+        {/* One cell per visible language */}
+        {langs.map(lang => {
+          const key = `${base}${lang}`;
+          const canEdit = isEditMode && (userRole === 'admin' || lang !== '_EN'); // Teachers can't edit EN
+          return (
+            <td key={lang} style={{ padding: '6px 8px', verticalAlign: 'top', borderLeft: '1px solid var(--border)' }}>
+              {/* Language badge */}
+              <span style={{
+                display: 'inline-block', fontSize: 10, fontWeight: 700, padding: '1px 7px',
+                borderRadius: 10, marginBottom: 4,
+                background: `${LANG_COLORS[lang]}20`,
+                color: LANG_COLORS[lang],
+                border: `1px solid ${LANG_COLORS[lang]}40`,
+                letterSpacing: '0.05em',
+              }}>{LANG_LABELS[lang]}</span>
+              {renderCell(key, canEdit)}
+            </td>
+          );
+        })}
+        {/* Fill empty columns if fewer than maxLangs visible languages */}
+        {Array.from({ length: maxLangs - langs.length }).map((_, i) => (
+          <td key={`empty-${i}`} style={{ padding: '6px 8px', borderLeft: '1px solid var(--border)' }} />
+        ))}
+      </tr>
+    );
+
+    const SectionHeader = ({ label, colSpan = 2 }: { label: string; colSpan?: number }) => (
+      <tr>
+        <td colSpan={colSpan} style={{
+          padding: '10px 12px 4px', fontSize: 11, fontWeight: 700,
+          textTransform: 'uppercase', color: 'var(--text-muted)',
+          letterSpacing: '0.06em', background: 'rgba(255,255,255,0.02)',
+        }}>{label}</td>
+      </tr>
+    );
+
+    const { masterKeys, pairedGroups, unpaired } = row ? groupRowKeys(row, visibleLanguages) : { masterKeys: [], pairedGroups: [], unpaired: [] };
+    // How many lang columns to span (based on visible languages, min 2)
+    const maxLangs = Math.max(visibleLanguages.length, 2);
+    const totalCols = 1 + maxLangs; // base label + lang columns
+
     return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div>
-            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{externalId}</span>
-            {typeSlug && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{typeSlug}</span>}
+      <>
+        {/* Backdrop */}
+        <div onClick={handleCloseRequest}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
+
+        {/* Modal — wider to accommodate side-by-side language columns */}
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          zIndex: 1001, width: 'min(960px, 97vw)', maxHeight: '90vh',
+          background: 'var(--card-bg)', borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          border: '1px solid var(--border)',
+        }}>
+          {/* Header */}
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }}>{externalId}</span>
+              {typeSlug && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{typeSlug}</span>}
+              {/* VIEW / EDIT MODE badge */}
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                background: isEditMode ? 'rgba(245,158,11,0.15)' : 'rgba(96,165,250,0.12)',
+                color: isEditMode ? '#f59e0b' : '#60a5fa',
+                border: `1px solid ${isEditMode ? 'rgba(245,158,11,0.35)' : 'rgba(96,165,250,0.3)'}`,
+                letterSpacing: '0.05em',
+              }}>
+                {isEditMode ? '✏️ EDIT MODE' : '👁 VIEW MODE'}
+              </span>
+              {/* TEST: Role switcher */}
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 11 }}>
+                <select value={testRole} onChange={e => setTestRole(e.target.value as 'admin' | 'teacher')}
+                  style={{ fontSize: 11, padding: '2px 6px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)' }}>
+                  <option value="admin">Admin</option>
+                  <option value="teacher">Teacher</option>
+                </select>
+                {testRole === 'teacher' && (
+                  <select value={testLang || ''} onChange={e => setTestLang(e.target.value as LangSuffix || null)}
+                    style={{ fontSize: 11, padding: '2px 6px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)' }}>
+                    <option value="">Select Language</option>
+                    <option value="_FR">French Teacher</option>
+                    <option value="_DE">German Teacher</option>
+                    <option value="_ES">Spanish Teacher</option>
+                  </select>
+                )}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {saved && !isEditMode && (
+                <span style={{ fontSize: 12, color: '#4ade80', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <CheckCircle2 size={14} />Saved
+                </span>
+              )}
+              {!isEditMode && (
+                <button onClick={load} title="Reload"
+                  style={{ padding: '5px 12px', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', cursor: 'pointer' }}>
+                  Reload
+                </button>
+              )}
+              {isEditMode ? (
+                <button className="btn btn-primary" style={{ padding: '5px 14px', fontSize: 13 }} onClick={handleSave} disabled={saving}>
+                  <Save size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} />
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              ) : (
+                <button onClick={() => setIsEditMode(true)}
+                  style={{ padding: '5px 14px', fontSize: 13, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, color: '#f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                  <Pencil size={13} /> Edit
+                </button>
+              )}
+              <button onClick={handleCloseRequest}
+                style={{ width: 30, height: 30, borderRadius: 6, border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={15} />
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {saved && <span style={{ fontSize: 12, color: '#4ade80' }}><CheckCircle2 size={14} className="inline mr-1" />Saved</span>}
-            <button className="btn btn-secondary" style={{ padding: '5px 10px', fontSize: 13 }} onClick={load}>Reload</button>
-            <button className="btn btn-primary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={handleSave} disabled={saving}>
-              <Save size={14} className="inline mr-1" />{saving ? 'Saving...' : 'Save Changes'}
-            </button>
+
+          {/* Body — scrollable */}
+          <div style={{ overflowY: 'auto', flex: 1, padding: '0 0 16px' }}>
+            {loading && <p style={{ color: 'var(--text-muted)', padding: '2rem', textAlign: 'center' }}>Loading...</p>}
+            {error && <div style={{ margin: '1rem', padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#f87171', fontSize: 13 }}><AlertCircle size={14} style={{ display: 'inline', marginRight: 6 }} />{error}</div>}
+            {row && (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <tbody>
+                  {/* ── Part 1: Data Master ── */}
+                  {masterKeys.length > 0 && (
+                    <>
+                      <SectionHeader label="Part 1 · Data Master" colSpan={totalCols} />
+                      <tr style={{ background: 'rgba(255,255,255,0.01)' }}>
+                        <td colSpan={totalCols} style={{ padding: '4px 12px 8px', fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          Language-agnostic settings — same for all languages
+                        </td>
+                      </tr>
+                      {masterKeys.map(renderSingleRow)}
+                    </>
+                  )}
+
+                  {/* ── Part 2: Teacher Check (paired language columns) ── */}
+                  {pairedGroups.length > 0 && (
+                    <>
+                      <SectionHeader label="Part 2 · Teacher Check — Translations" colSpan={totalCols} />
+                      <tr style={{ background: 'rgba(255,255,255,0.01)' }}>
+                        <td colSpan={totalCols} style={{ padding: '4px 12px 8px', fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          {userRole === 'admin' 
+                            ? 'Each row shows all language versions side by side for easy comparison'
+                            : `Showing ${userLanguage ? `English and ${LANG_LABELS[userLanguage]}` : 'English only'} for comparison`}
+                          {isEditMode && (
+                            <span style={{ color: '#f59e0b', marginLeft: 8 }}>
+                              · EN is read-only (source of truth)
+                              {userRole === 'teacher' && ' · Teachers edit target language only'}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                      {pairedGroups.map(({ base, langs }) => renderPairedRow(base, langs))}
+                    </>
+                  )}
+
+                  {/* ── Unpaired / other keys ── */}
+                  {unpaired.length > 0 && (
+                    <>
+                      <SectionHeader label="Other" colSpan={totalCols} />
+                      {unpaired.map(renderSingleRow)}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
+
+          {/* Edit mode bottom bar */}
+          {isEditMode && (
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', background: 'rgba(245,158,11,0.05)', display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
+              <button onClick={() => { setRow(originalRow); setIsDirty(false); setIsEditMode(false); }}
+                style={{ padding: '6px 14px', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 13 }} onClick={handleSave} disabled={saving}>
+                <Save size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} />
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          )}
         </div>
-        {error && <div className="alert alert-error mb-8"><AlertCircle size={16} className="inline mr-2" />{error}</div>}
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <tbody>
-              {metaEntries.length > 0 && <><SectionHeader label="Metadata" />{metaEntries.map(renderField)}</>}
-              {instEntries.length > 0 && <><SectionHeader label="Instructions" />{instEntries.map(renderField)}</>}
-              {otherEntries.length > 0 && <><SectionHeader label="Content" />{otherEntries.map(renderField)}</>}
-            </tbody>
-          </table>
-        </div>
-      </div>
+
+        {/* Unsaved changes warning */}
+        {showUnsavedWarning && (
+          <>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.4)' }} />
+            <div style={{
+              position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+              zIndex: 1101, background: 'var(--card-bg)', borderRadius: 10, padding: '24px 28px',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.5)', border: '1px solid var(--border)',
+              width: 'min(400px, 90vw)', textAlign: 'center',
+            }}>
+              <p style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Unsaved Changes</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>You have unsaved edits. Save before closing?</p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                <button onClick={handleDiscardAndClose}
+                  style={{ padding: '7px 16px', fontSize: 13, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#f87171', cursor: 'pointer' }}>
+                  Discard & Close
+                </button>
+                <button onClick={() => setShowUnsavedWarning(false)}
+                  style={{ padding: '7px 16px', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', cursor: 'pointer' }}>
+                  Keep Editing
+                </button>
+                <button className="btn btn-primary" style={{ padding: '7px 16px', fontSize: 13 }} onClick={async () => { setShowUnsavedWarning(false); await handleSave(); }}>
+                  Save & Close
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </>
     );
   }
 
@@ -1471,8 +1753,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const pageSize = 50;
     const [loading, setLoading] = useState(true);
     const [showDeactivatedOnly, setShowDeactivatedOnly] = useState(false);
-    // editingId: which row is in edit mode (null = none)
-    const [editingId, setEditingId] = useState<string | null>(null);
+    // viewingId: which row's modal is open (null = none)
+    const [viewingId, setViewingId] = useState<string | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<ExerciseRow | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [searchId, setSearchId] = useState('');
@@ -1649,12 +1931,12 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                                 {/* Actions — LEFT side, matching design */}
                                 <td style={{ padding: '9px 14px' }}>
                                   <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                                    {/* Edit / Save toggle */}
+                                    {/* View button */}
                                     <button
-                                      title={editingId === ex.external_id ? 'Close editor' : 'Edit'}
-                                      onClick={() => setEditingId(editingId === ex.external_id ? null : ex.external_id)}
-                                      style={iconBtnStyle(editingId === ex.external_id ? '#f59e0b' : '#60a5fa')}>
-                                      <Pencil size={13} />
+                                      title="View"
+                                      onClick={() => setViewingId(ex.external_id)}
+                                      style={iconBtnStyle('#60a5fa')}>
+                                      <Eye size={13} />
                                     </button>
                                     {/* Delete */}
                                     <button title="Delete" onClick={() => setConfirmDelete(ex)} style={iconBtnStyle('#ef4444')}>
@@ -1679,21 +1961,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                                 <td style={{ padding: '9px 14px', color: 'var(--text-muted)' }}>{ex.type_slug ?? '—'}</td>
                                 <td style={{ padding: '9px 14px' }}>{ex.level ?? '—'}</td>
                               </tr>
-                              {/* Inline editor — expands below the row when pencil clicked */}
-                              {editingId === ex.external_id && (
-                                <tr key={`editor-${ex.external_id}`}>
-                                  <td colSpan={4} style={{ padding: '1rem 1.5rem', background: 'rgba(31,111,235,0.04)', borderBottom: '2px solid var(--accent)' }}>
-                                    <ExcelRowEditor
-                                      key={ex.external_id}
-                                      externalId={ex.external_id}
-                                      onSaved={() => {
-                                        showToast(true, `Saved ${ex.external_id}`);
-                                        load(page);
-                                      }}
-                                    />
-                                  </td>
-                                </tr>
-                              )}
+                              {/* View/Edit Modal — rendered outside table via portal-like pattern */}
                             </>
                           ))}
                         </tbody>
@@ -1701,6 +1969,19 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                     </div>
                   </div>
                 </div>
+
+                {/* View/Edit Modals — outside table to avoid invalid HTML */}
+                {exercises.map(ex => viewingId === ex.external_id && (
+                  <ViewEditModal
+                    key={ex.external_id}
+                    externalId={ex.external_id}
+                    onClose={() => setViewingId(null)}
+                    onSaved={() => {
+                      showToast(true, `Saved ${ex.external_id}`);
+                      load(page);
+                    }}
+                  />
+                ))}
 
                 {totalPages > 1 && (
                   <div style={{ display: 'flex', gap: 8, marginTop: 16, alignItems: 'center' }}>
@@ -1728,9 +2009,10 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               </button>
             </div>
             {detailId && (
-              <ExcelRowEditor
+              <ViewEditModal
                 key={detailId}
                 externalId={detailId}
+                onClose={() => setDetailId('')}
                 onSaved={() => showToast(true, `Saved ${detailId}`)}
               />
             )}
