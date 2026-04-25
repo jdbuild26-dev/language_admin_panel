@@ -1117,9 +1117,10 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
 
   // ─── Direct CSV Upload (for exercise types like correct_spelling) ─────────────
   function DirectCsvUpload({
-    exerciseType, category, showToast,
+    exerciseType, category, subtypeSlug, showToast,
   }: {
     exerciseType: QuestionType; category: Category;
+    subtypeSlug?: string;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1130,12 +1131,12 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       setUploading(true);
       setProgress(null);
       try {
-        // Send the whole file in one request — avoids splitting quoted multi-line cells
         const fd = new FormData();
         fd.append('file', file, file.name);
         fd.append('skill', category);
         fd.append('type_slug', exerciseType.slug);
         fd.append('category', 'main');
+        if (subtypeSlug) fd.append('subtype_slug', subtypeSlug);
         setProgress({ current: 0, total: 1 });
         const result = await api.post('/admin/sync/exercises', fd);
         const count = result.data?.message?.match(/\d+/)?.[0] ?? '?';
@@ -1766,7 +1767,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         const params: Record<string, string | number> = {
           page: p, page_size: pageSize,
           type_slug: exerciseType.slug,
-          level,
+          subtype_slug: subtype.subtype_slug,
         };
         const r = await api.get('/admin/exercises', { params });
         const allItems: ExerciseRow[] = r.data.items || [];
@@ -1781,7 +1782,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       } finally {
         setLoading(false);
       }
-    }, [exerciseType.slug, level, showDeactivatedOnly]);
+    }, [exerciseType.slug, subtype.subtype_slug, showDeactivatedOnly]);
 
     useEffect(() => { load(1); }, [load]);
 
@@ -1851,8 +1852,14 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           <h2 style={{ margin: 0 }}>
             {exerciseType.name || exerciseType.slug} &gt;&gt; {subtypeIndex}. {subtype.name_en}
           </h2>
-          {/* Download CSV — green, top right */}
+          {/* Upload / Download CSV — top right */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <DirectCsvUpload
+              exerciseType={exerciseType}
+              category={category}
+              subtypeSlug={subtype.subtype_slug}
+              showToast={showToast}
+            />
             <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate more"
               style={{
                 width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer',
@@ -2083,6 +2090,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           fd.append('skill', category);
           fd.append('type_slug', exerciseType.slug);
           fd.append('category', 'main');
+          fd.append('subtype_slug', form.subtype_slug);
           await api.post('/admin/sync/exercises', fd);
           setUploadProgress({ current: 1, total: 1 });
         }
