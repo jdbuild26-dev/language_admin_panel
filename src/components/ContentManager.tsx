@@ -95,15 +95,507 @@ function iconBtn(color: string): React.CSSProperties {
   return { width: 32, height: 32, borderRadius: 6, border: 'none', cursor: 'pointer', background: `${color}22`, color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' };
 }
 
-// ─── Preview helper ───────────────────────────────────────────────────────────
-// The backend returns a full <!DOCTYPE html> page. We only need the body content
+// ─── Box Modal ───────────────────────────────────────────────────────────────
+// Inserts a styled callout/highlight box into the editor
+
+function BoxModal({ onInsert, onClose, darkMode }: {
+  onInsert: (html: string) => void;
+  onClose: () => void;
+  darkMode: boolean;
+}) {
+  const [text, setText] = useState('');
+  const dm = darkMode;
+  const bg = dm ? '#161b22' : '#ffffff';
+  const border = dm ? '#30363d' : '#dee2e6';
+  const textPrimary = dm ? '#c9d1d9' : '#1a1a1a';
+  const textMuted = dm ? '#8b949e' : '#666';
+  const inputBg = dm ? '#0e1117' : '#ffffff';
+
+  const handleInsert = () => {
+    if (!text.trim()) return;
+    // Use <blockquote> — Quill preserves it natively and the grammar CSS template
+    // already styles blockquote with the orange left border + cream background.
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const inner = lines.map(l => `<p>${l}</p>`).join('');
+    const html = `<blockquote>${inner}</blockquote><p><br></p>`;
+    onInsert(html);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '1.5rem', width: 520, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <h3 style={{ margin: 0, color: textPrimary, fontSize: 16 }}>📦 Insert Box</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>Creates a highlighted callout box (orange left border)</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: textMuted }}><X size={18} /></button>
+        </div>
+        <textarea
+          autoFocus
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Type the box content here. Each line becomes a paragraph inside the box."
+          rows={5}
+          style={{ width: '100%', padding: '10px 12px', border: `1px solid ${border}`, borderRadius: 8, fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: inputBg, color: textPrimary, boxSizing: 'border-box' }}
+        />
+        {/* Preview */}
+        {text.trim() && (
+          <div style={{ marginTop: 12, background: '#eff6ff', borderLeft: '4px solid #2563eb', borderRadius: 8, padding: '14px 18px' }}>
+            {text.split('\n').filter(Boolean).map((l, i) => (
+              <p key={i} style={{ margin: '0 0 6px 0', fontSize: 13, color: '#363639' }}>{l}</p>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '7px 16px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', fontSize: 13, color: textMuted }}>Cancel</button>
+          <button onClick={handleInsert} disabled={!text.trim()}
+            style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#ffa90a', color: '#fff', cursor: text.trim() ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: text.trim() ? 1 : 0.5 }}>
+            Insert Box
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Vocab Table Modal ────────────────────────────────────────────────────────
+// Customizable columns, hover-translate tooltips, audio per cell, arrow separators
+
+interface VocabCell {
+  text: string;
+  tooltip: string;
+  audioUrl: string;
+}
+
+interface VocabTableRow {
+  cells: VocabCell[];
+}
+
+// Keep old VocabRow interface for type compat (unused after refactor)
+interface VocabRow { french: string; english: string; audioUrl: string; }
+
+function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
+  onInsert: (html: string, tableData: TableBlockData) => void;
+  onClose: () => void;
+  darkMode: boolean;
+  initialData?: TableBlockData;
+}) {
+  const [headers, setHeaders] = useState<string[]>(
+    initialData?.headers ?? ['French Singular', 'French Plural']
+  );
+  const [rows, setRows] = useState<VocabTableRow[]>(
+    initialData?.rows ?? [
+      { cells: [{ text: '', tooltip: '', audioUrl: '' }, { text: '', tooltip: '', audioUrl: '' }] },
+      { cells: [{ text: '', tooltip: '', audioUrl: '' }, { text: '', tooltip: '', audioUrl: '' }] },
+      { cells: [{ text: '', tooltip: '', audioUrl: '' }, { text: '', tooltip: '', audioUrl: '' }] },
+    ]
+  );
+  const dm = darkMode;
+  const bg = dm ? '#161b22' : '#ffffff';
+  const border = dm ? '#30363d' : '#dee2e6';
+  const textPrimary = dm ? '#c9d1d9' : '#1a1a1a';
+  const textMuted = dm ? '#8b949e' : '#666';
+  const inputBg = dm ? '#0e1117' : '#ffffff';
+  const inputBorder = dm ? '#30363d' : '#dee2e6';
+  const surface = dm ? '#1c2128' : '#f8f9fa';
+
+  const numCols = headers.length;
+
+  const addColumn = () => {
+    setHeaders(h => [...h, `Column ${h.length + 1}`]);
+    setRows(r => r.map(row => ({ cells: [...row.cells, { text: '', tooltip: '', audioUrl: '' }] })));
+  };
+  const removeColumn = (ci: number) => {
+    if (numCols <= 1) return;
+    setHeaders(h => h.filter((_, i) => i !== ci));
+    setRows(r => r.map(row => ({ cells: row.cells.filter((_, i) => i !== ci) })));
+  };
+  const updateHeader = (ci: number, val: string) => setHeaders(h => h.map((v, i) => i === ci ? val : v));
+  const addRow = () => setRows(r => [...r, { cells: Array.from({ length: numCols }, () => ({ text: '', tooltip: '', audioUrl: '' })) }]);
+  const removeRow = (ri: number) => { if (rows.length > 1) setRows(r => r.filter((_, i) => i !== ri)); };
+  const updateCell = (ri: number, ci: number, field: keyof VocabCell, val: string) =>
+    setRows(r => r.map((row, i) => i !== ri ? row : { cells: row.cells.map((cell, j) => j !== ci ? cell : { ...cell, [field]: val }) }));
+
+  const hasContent = rows.some(row => row.cells.some(c => c.text.trim()));
+
+  const handleInsert = () => {
+    const validRows = rows.filter(row => row.cells.some(c => c.text.trim()));
+    if (!validRows.length) return;
+
+    // Structured data embedded as a <script> tag — survives DB round-trip with
+    // zero encoding issues. The script tag is invisible in the rendered output.
+    const tableData: TableBlockData = { headers, rows: validRows };
+    const metaJson = JSON.stringify({ type: 'table', data: tableData });
+    const metaTag = `<div data-block-meta="1" style="display:none;">${metaJson}</div>`;
+
+    // Header row — columns separated by narrow arrow columns
+    const thCells = headers.map((h, ci) => {
+      const isLast = ci === headers.length - 1;
+      return `<th style="padding:18px 20px;text-align:center;font-weight:700;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:#3d2817;border-right:1px solid rgba(255,255,255,0.3);">${h}</th>`
+        + (isLast ? '' : `<th style="padding:0;width:48px;border-right:1px solid rgba(255,255,255,0.3);"></th>`);
+    }).join('');
+
+    // Data rows
+    const bodyRows = validRows.map((row, ri) => {
+      const tdCells = row.cells.map((cell, ci) => {
+        const isLast = ci === headers.length - 1;
+        const cellBg = ri % 2 === 0 ? '#fffbeb' : '#ffffff';
+        const audioBtn = cell.audioUrl.trim()
+          ? `<button onclick="(function(b){var a=new Audio('${cell.audioUrl.trim()}');a.play();b.style.transform='scale(0.9)';setTimeout(function(){b.style.transform='scale(1)'},200)})(this)" style="background:none;border:none;cursor:pointer;padding:2px 4px;display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;" title="Play audio">🔊</button>`
+          : '';
+        const inner = cell.tooltip.trim()
+          ? `<span style="position:relative;display:inline-block;cursor:pointer;color:#2563eb;font-weight:600;" onmouseenter="var t=this.querySelector('.vtt');if(t)t.style.opacity='1';" onmouseleave="var t=this.querySelector('.vtt');if(t)t.style.opacity='0';">${cell.text.trim() || '—'}<span class="vtt" style="opacity:0;transition:opacity 0.15s;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;white-space:nowrap;pointer-events:none;font-weight:400;z-index:10;">${cell.tooltip.trim()}</span></span>`
+          : `<span style="font-weight:600;color:#3d2817;">${cell.text.trim() || '—'}</span>`;
+        return `<td style="padding:18px 20px;text-align:center;vertical-align:middle;background:${cellBg};border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb;">${inner}${audioBtn}</td>`
+          + (isLast ? '' : `<td style="padding:0;width:48px;text-align:center;vertical-align:middle;background:${cellBg};border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb;color:#ffa90a;font-size:18px;">→</td>`);
+      }).join('');
+      return `<tr>${tdCells}</tr>`;
+    }).join('\n');
+
+    const html = `<div data-vocab-table="1" style="overflow-x:auto;margin:24px 0;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,0.08);overflow:hidden;">${metaTag}<table style="width:100%;border-collapse:collapse;font-family:'DM Sans',sans-serif;font-size:1rem;background:#ffffff;"><thead style="background:hsl(39,100%,73%);"><tr>${thCells}</tr></thead><tbody>${bodyRows}</tbody></table></div><p><br></p>`;
+    onInsert(html, tableData);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '1.5rem', width: 860, maxWidth: '97vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
+
+        {/* Title */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexShrink: 0 }}>
+          <div>
+            <h3 style={{ margin: 0, color: textPrimary, fontSize: 16 }}>📋 Insert Vocabulary Table</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>Customizable columns · hover tooltip · audio per cell · arrow separators</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: textMuted }}><X size={18} /></button>
+        </div>
+
+        {/* Column header editors */}
+        <div style={{ flexShrink: 0, marginBottom: 12, padding: '10px 12px', background: surface, borderRadius: 8, border: `1px solid ${border}` }}>
+          <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Column Headers</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {headers.map((h, ci) => (
+              <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {ci > 0 && <span style={{ color: '#ffa90a', fontSize: 16, marginRight: 4 }}>→</span>}
+                <input value={h} onChange={e => updateHeader(ci, e.target.value)}
+                  style={{ padding: '5px 8px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary, width: 150 }} />
+                {headers.length > 1 && (
+                  <button onClick={() => removeColumn(ci)}
+                    style={{ width: 20, height: 20, border: 'none', borderRadius: 4, background: '#ef444422', color: '#ef4444', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>×</button>
+                )}
+              </div>
+            ))}
+            <button onClick={addColumn}
+              style={{ padding: '5px 10px', border: `1px dashed ${border}`, borderRadius: 6, background: 'transparent', color: textMuted, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Plus size={12} /> Add Column
+            </button>
+          </div>
+        </div>
+
+        {/* Sub-header labels for each column's fields */}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${numCols}, 1fr) 32px`, gap: 6, marginBottom: 4, flexShrink: 0 }}>
+          {headers.map((_, ci) => (
+            <div key={ci} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: 4 }}>
+              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Text</span>
+              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Tooltip (hover)</span>
+              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Audio URL</span>
+            </div>
+          ))}
+          <span />
+        </div>
+
+        {/* Rows */}
+        <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rows.map((row, ri) => (
+            <div key={ri} style={{ display: 'grid', gridTemplateColumns: `repeat(${numCols}, 1fr) 32px`, gap: 6, alignItems: 'center' }}>
+              {row.cells.map((cell, ci) => (
+                <div key={ci} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: 4 }}>
+                  <input value={cell.text} onChange={e => updateCell(ri, ci, 'text', e.target.value)}
+                    placeholder="e.g. un chat"
+                    style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
+                  <input value={cell.tooltip} onChange={e => updateCell(ri, ci, 'tooltip', e.target.value)}
+                    placeholder="a cat"
+                    style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
+                  <input value={cell.audioUrl} onChange={e => updateCell(ri, ci, 'audioUrl', e.target.value)}
+                    placeholder="https://…"
+                    style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
+                </div>
+              ))}
+              <button onClick={() => removeRow(ri)} disabled={rows.length <= 1}
+                style={{ width: 32, height: 32, border: 'none', borderRadius: 6, background: rows.length > 1 ? '#ef444422' : 'transparent', color: rows.length > 1 ? '#ef4444' : textMuted, cursor: rows.length > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Add row + preview */}
+        <div style={{ flexShrink: 0, marginTop: 10 }}>
+          <button onClick={addRow}
+            style={{ padding: '6px 14px', border: `1px dashed ${border}`, borderRadius: 6, background: 'transparent', color: textMuted, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Plus size={14} /> Add Row
+          </button>
+
+          {hasContent && (
+            <div style={{ marginTop: 10, background: surface, borderRadius: 8, padding: '10px 14px', border: `1px solid ${border}`, overflowX: 'auto' }}>
+              <p style={{ fontSize: 11, color: textMuted, margin: '0 0 8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Preview</p>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: 'hsl(39,100%,73%)' }}>
+                    {headers.map((h, ci) => (
+                      <React.Fragment key={ci}>
+                        <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#3d2817' }}>{h}</th>
+                        {ci < headers.length - 1 && <th style={{ width: 32, padding: 0 }} />}
+                      </React.Fragment>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.filter(row => row.cells.some(c => c.text.trim())).map((row, ri) => (
+                    <tr key={ri} style={{ background: ri % 2 === 0 ? '#fffbeb' : '#ffffff' }}>
+                      {row.cells.map((cell, ci) => (
+                        <React.Fragment key={ci}>
+                          <td style={{ padding: '8px 12px', textAlign: 'center', borderBottom: '1px solid #e5e7eb' }}>
+                            <span title={cell.tooltip || undefined}
+                              style={{ fontWeight: 600, color: cell.tooltip ? '#2563eb' : '#3d2817', borderBottom: cell.tooltip ? '1px dashed #ffa90a' : 'none', cursor: cell.tooltip ? 'help' : 'default' }}>
+                              {cell.text || '—'}
+                            </span>
+                            {cell.audioUrl && <span style={{ marginLeft: 6 }}>🔊</span>}
+                          </td>
+                          {ci < headers.length - 1 && (
+                            <td style={{ width: 32, textAlign: 'center', color: '#ffa90a', fontSize: 16, borderBottom: '1px solid #e5e7eb' }}>→</td>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end', flexShrink: 0 }}>
+          <button onClick={onClose} style={{ padding: '7px 16px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', fontSize: 13, color: textMuted }}>Cancel</button>
+          <button onClick={handleInsert} disabled={!hasContent}
+            style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#2563eb', color: '#fff', cursor: hasContent ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: hasContent ? 1 : 0.5 }}>
+            Insert Table
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Extract Modal ────────────────────────────────────────────────────────────
+// Inserts a styled extract block: text + optional image side-by-side
+
+function ExtractModal({ onInsert, onClose, darkMode, initialData }: {
+  onInsert: (html: string, extractData: ExtractBlockData) => void;
+  onClose: () => void;
+  darkMode: boolean;
+  initialData?: ExtractBlockData;
+}) {
+  const [text, setText] = useState(initialData?.text ?? '');
+  const [imageUrl, setImageUrl] = useState(initialData?.imageUrl ?? '');
+  const [imageAlt, setImageAlt] = useState(initialData?.imageAlt ?? '');
+  const [imagePosition, setImagePosition] = useState<'right' | 'left'>(initialData?.imagePosition ?? 'right');
+  const dm = darkMode;
+  const bg = dm ? '#161b22' : '#ffffff';
+  const border = dm ? '#30363d' : '#dee2e6';
+  const textPrimary = dm ? '#c9d1d9' : '#1a1a1a';
+  const textMuted = dm ? '#8b949e' : '#666';
+  const inputBg = dm ? '#0e1117' : '#ffffff';
+  const inputBorder = dm ? '#30363d' : '#dee2e6';
+
+  const handleInsert = () => {
+    if (!text.trim()) return;
+    const extractData: ExtractBlockData = { text, imageUrl, imageAlt, imagePosition };
+    const metaJson = JSON.stringify({ type: 'extract', data: extractData });
+    const metaTag = `<div data-block-meta="1" style="display:none;">${metaJson}</div>`;
+
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const textHtml = lines.map(l => `<p style="margin:0 0 10px 0;color:#363639;line-height:1.7;">${l}</p>`).join('');
+    const imgHtml = imageUrl.trim()
+      ? `<img src="${imageUrl.trim()}" alt="${imageAlt.trim() || 'Extract image'}" style="width:200px;max-width:200px;border-radius:10px;object-fit:cover;display:block;" />`
+      : '';
+
+    let innerHtml: string;
+    if (imgHtml) {
+      const textCell = `<td style="padding:0 16px 0 0;vertical-align:top;color:#363639;">${textHtml}</td>`;
+      const imgCell = `<td style="padding:0;vertical-align:top;width:210px;">${imgHtml}</td>`;
+      const cells = imagePosition === 'right' ? `${textCell}${imgCell}` : `${imgCell}${textCell}`;
+      innerHtml = `<table style="width:100%;border-collapse:collapse;border:none;background:transparent;box-shadow:none;"><tbody><tr style="background:transparent;">${cells}</tr></tbody></table>`;
+    } else {
+      innerHtml = textHtml;
+    }
+
+    const html = `<div data-extract="1" style="background:#f3ede6;border-radius:12px;padding:20px 24px;margin:16px 0;font-family:'DM Sans',sans-serif;border:1px solid #e5e7eb;">${metaTag}${innerHtml}</div><p><br></p>`;
+    onInsert(html, extractData);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '1.5rem', width: 580, maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <h3 style={{ margin: 0, color: textPrimary, fontSize: 16 }}>🖼 Insert Extract</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>A styled block with text and an optional image</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: textMuted }}><X size={18} /></button>
+        </div>
+
+        {/* Text */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Text *</label>
+          <textarea
+            autoFocus
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="Type the extract text here. Each line becomes a paragraph."
+            rows={5}
+            style={{ width: '100%', padding: '10px 12px', border: `1px solid ${inputBorder}`, borderRadius: 8, fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: inputBg, color: textPrimary, boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* Image URL */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Image URL (optional)</label>
+          <input
+            value={imageUrl}
+            onChange={e => setImageUrl(e.target.value)}
+            placeholder="https://…/image.jpg"
+            style={{ width: '100%', padding: '8px 12px', border: `1px solid ${inputBorder}`, borderRadius: 8, fontSize: 13, outline: 'none', background: inputBg, color: textPrimary, boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {imageUrl.trim() && (
+          <>
+            {/* Alt text */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Image Alt Text</label>
+              <input
+                value={imageAlt}
+                onChange={e => setImageAlt(e.target.value)}
+                placeholder="Describe the image for accessibility"
+                style={{ width: '100%', padding: '8px 12px', border: `1px solid ${inputBorder}`, borderRadius: 8, fontSize: 13, outline: 'none', background: inputBg, color: textPrimary, boxSizing: 'border-box' }}
+              />
+            </div>
+            {/* Image position */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Image Position</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(['right', 'left'] as const).map(pos => (
+                  <button key={pos} onClick={() => setImagePosition(pos)}
+                    style={{ padding: '6px 16px', border: `1px solid ${imagePosition === pos ? '#2563eb' : inputBorder}`, borderRadius: 6, background: imagePosition === pos ? '#2563eb22' : 'transparent', color: imagePosition === pos ? '#2563eb' : textMuted, cursor: 'pointer', fontSize: 13, fontWeight: imagePosition === pos ? 600 : 400 }}>
+                    Image {pos === 'right' ? '→ Right' : '← Left'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Preview */}
+        {text.trim() && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Preview</label>
+            <div style={{ background: '#f3ede6', borderRadius: 10, padding: '14px 18px', border: '1px solid #e5e7eb' }}>
+              {imageUrl.trim() ? (
+                <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none', background: 'transparent', boxShadow: 'none' }}>
+                  <tbody>
+                    <tr style={{ background: 'transparent' }}>
+                      {imagePosition === 'left' && (
+                        <td style={{ width: 120, verticalAlign: 'top', paddingRight: 12, border: 'none' }}>
+                          <img src={imageUrl} alt={imageAlt || 'preview'} style={{ width: 110, borderRadius: 8, objectFit: 'cover', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        </td>
+                      )}
+                      <td style={{ verticalAlign: 'top', border: 'none', padding: 0 }}>
+                        {text.split('\n').filter(Boolean).map((l, i) => (
+                          <p key={i} style={{ margin: '0 0 6px 0', fontSize: 13, color: '#363639', lineHeight: 1.6 }}>{l}</p>
+                        ))}
+                      </td>
+                      {imagePosition === 'right' && (
+                        <td style={{ width: 120, verticalAlign: 'top', paddingLeft: 12, border: 'none' }}>
+                          <img src={imageUrl} alt={imageAlt || 'preview'} style={{ width: 110, borderRadius: 8, objectFit: 'cover', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        </td>
+                      )}
+                    </tr>
+                  </tbody>
+                </table>
+              ) : (
+                <div>
+                  {text.split('\n').filter(Boolean).map((l, i) => (
+                    <p key={i} style={{ margin: '0 0 6px 0', fontSize: 13, color: '#363639', lineHeight: 1.6 }}>{l}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '7px 16px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', fontSize: 13, color: textMuted }}>Cancel</button>
+          <button onClick={handleInsert} disabled={!text.trim()}
+            style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#059669', color: '#fff', cursor: text.trim() ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: text.trim() ? 1 : 0.5 }}>
+            Insert Extract
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Appended block types ─────────────────────────────────────────────────────
+// Each inserted block stores its source data as a typed object.
+// The data is also embedded in the saved HTML as a hidden <div data-block-meta="1">
+// tag so it survives the DB round-trip without any encoding issues.
+
+interface TableBlockData {
+  headers: string[];
+  rows: VocabTableRow[];
+}
+
+interface ExtractBlockData {
+  text: string;
+  imageUrl: string;
+  imageAlt: string;
+  imagePosition: 'right' | 'left';
+}
+
+interface AppendedBlock {
+  id: string;
+  type: 'table' | 'extract';
+  html: string;             // full rendered HTML saved to DB (includes embedded <script> tag)
+  tableData?: TableBlockData;
+  extractData?: ExtractBlockData;
+}
+
+// ─── extractBlockMeta ─────────────────────────────────────────────────────────
+// Read the embedded <div data-block-meta="1" style="display:none"> tag
+// from a block wrapper element. Returns the parsed meta object or null.
+function extractBlockMeta(el: Element): { type: string; data: any } | null {
+  try {
+    const metaDiv = el.querySelector('div[data-block-meta="1"]');
+    if (!metaDiv) return null;
+    return JSON.parse(metaDiv.textContent || '');
+  } catch {
+    return null;
+  }
+}
+
 // ─── Rich Text Editor Modal (Quill-based) ────────────────────────────────────
 
+// Quill v2 only accepts formats it has registered blots for.
+// 'table' is handled via dangerouslyPasteHTML — do NOT list td/tr/tbody/thead/th
+// as named formats or Quill will spam "Cannot register" warnings on every render.
 const QUILL_FORMATS = [
   'header', 'bold', 'italic', 'underline', 'strike',
   'color', 'background', 'list', 'indent',
   'blockquote', 'code-block', 'link', 'image', 'align',
-  'table', 'td', 'tr', 'tbody', 'thead', 'th',
 ];
 
 function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, translationFor, takenLangs, onClose, onSaved, showToast }: {
@@ -139,6 +631,15 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const [tab, setTab] = useState<'write' | 'preview'>('write');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Insert-block modals
+  const [showBoxModal, setShowBoxModal] = useState(false);
+  const [showTableModal, setShowTableModal] = useState(false);
+  const [showExtractModal, setShowExtractModal] = useState(false);
+  // Complex HTML blocks (tables, extracts) — stored as typed objects so each can be edited/deleted individually
+  const [appendedBlocks, setAppendedBlocks] = useState<AppendedBlock[]>([]);
+  // Which block is currently being edited (index into appendedBlocks)
+  const [editingBlockIndex, setEditingBlockIndex] = useState<number | null>(null);
 
   // Dark mode — persisted per editor session
   const [darkMode, setDarkMode] = useState(() => {
@@ -194,6 +695,33 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
     quill.setSelection(index + 1, 0);
   }, [quillRef]);
 
+  // Insert raw HTML — for complex blocks (tables, styled divs) we append to a
+  // separate `appendedBlocks` array that lives outside Quill's sanitizer.
+  // On save, we combine Quill's HTML + appended blocks.
+  const insertHtmlAtCursor = useCallback((html: string, bypassQuill = false, blockType: 'table' | 'extract' = 'extract', tableData?: TableBlockData, extractData?: ExtractBlockData) => {
+    if (bypassQuill) {
+      const newBlock: AppendedBlock = {
+        id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type: blockType,
+        html,
+        tableData,
+        extractData,
+      };
+      setAppendedBlocks(prev => [...prev, newBlock]);
+      return;
+    }
+    if (!quillRef) {
+      setHtmlContent(prev => prev + html);
+      return;
+    }
+    const quill = quillRef.getEditor ? quillRef.getEditor() : quillRef;
+    if (!quill) { setHtmlContent(prev => prev + html); return; }
+    const range = quill.getSelection(true);
+    const index = range ? range.index : quill.getLength();
+    quill.clipboard.dangerouslyPasteHTML(index, html);
+    quill.setSelection(index + 1, 0);
+  }, [quillRef]);
+
   useEffect(() => {
     import('react-quill-new').then(mod => {
       const modules = {
@@ -220,15 +748,73 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
     });
   }, [insertTable]);
 
-  // Load existing content when editing
+  // Load existing content when editing.
+  // We split the saved HTML into two parts:
+  //   1. quillSafe  — paragraphs, headings, blockquotes, lists (Quill handles these)
+  //   2. complexBlocks — vocab table and extract divs (must bypass Quill's sanitizer)
   const apiPrefix = useContext(ApiPrefixContext);
   useEffect(() => {
     if (existingNote) {
       setLoading(true);
       api.get(`/admin/${apiPrefix}/notes/${existingNote.id}/markdown`)
         .then(r => {
-          // markdown_source holds the raw HTML from Quill
-          setHtmlContent(r.data.markdown_source || '');
+          let raw: string = r.data.markdown_source || '';
+
+          // Safety net: if the backend returned a full HTML page instead of a
+          // raw fragment, extract just the body content before parsing.
+          if (/^\s*<!DOCTYPE/i.test(raw) || /^\s*<html/i.test(raw)) {
+            const fullDoc = new DOMParser().parseFromString(raw, 'text/html');
+            // Try .note-body wrapper first, then fall back to full body
+            const noteBody = fullDoc.querySelector('.note-body');
+            raw = noteBody ? noteBody.innerHTML : fullDoc.body.innerHTML;
+          }
+
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(`<div id="root">${raw}</div>`, 'text/html');
+          const root = doc.getElementById('root');
+          if (!root) { setHtmlContent(raw); return; }
+
+          let quillPart = '';
+          const blocks: AppendedBlock[] = [];
+
+          Array.from(root.childNodes).forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+              quillPart += node.textContent;
+              return;
+            }
+            if (node.nodeType !== Node.ELEMENT_NODE) return;
+            const el = node as Element;
+            const tag = el.tagName.toLowerCase();
+
+            const isVocabTable = tag === 'div' && el.getAttribute('data-vocab-table') === '1';
+            const isExtract = tag === 'div' && el.getAttribute('data-extract') === '1';
+            // Also catch old extract divs that don't have data-extract yet
+            const isLegacyExtract = tag === 'div' && !isVocabTable && (
+              el.getAttribute('style')?.includes('#f3ede6') ||
+              el.getAttribute('style')?.includes('f3ede6')
+            );
+
+            if (isVocabTable || isExtract || isLegacyExtract) {
+              // Read the embedded <script data-block-meta> tag — this is the
+              // single source of truth for re-editing. No HTML parsing needed.
+              const meta = extractBlockMeta(el);
+              const blockId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${blocks.length}`;
+
+              if (meta?.type === 'table') {
+                blocks.push({ id: blockId, type: 'table', html: el.outerHTML, tableData: meta.data });
+              } else if (meta?.type === 'extract') {
+                blocks.push({ id: blockId, type: 'extract', html: el.outerHTML, extractData: meta.data });
+              } else {
+                // Legacy block with no meta tag — still show it, just not editable
+                blocks.push({ id: blockId, type: isVocabTable ? 'table' : 'extract', html: el.outerHTML });
+              }
+            } else {
+              quillPart += el.outerHTML;
+            }
+          });
+
+          setHtmlContent(quillPart);
+          setAppendedBlocks(blocks);
         })
         .catch(() => setHtmlContent(''))
         .finally(() => setLoading(false));
@@ -239,6 +825,8 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
     const stripped = html.replace(/<[^>]*>/g, '').trim();
     return !stripped || stripped === '<br>';
   };
+
+  const blocksHtml = appendedBlocks.map(b => b.html).join('');
 
   // Inject raw HTML directly into Quill by setting it as the editor value
   const handleInjectRawHtml = () => {
@@ -258,13 +846,15 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const handleSave = async () => {
     if (!title.trim()) { showToast(false, 'Title is required'); return; }
     if (!conceptId.trim()) { showToast(false, 'Concept ID is required'); return; }
-    if (isEmpty(htmlContent)) { showToast(false, 'Content cannot be empty'); return; }
+    // Combined content = Quill HTML + any appended complex blocks (tables, extracts)
+    const combinedContent = htmlContent + blocksHtml;
+    if (isEmpty(combinedContent)) { showToast(false, 'Content cannot be empty'); return; }
     setSaving(true);
     try {
-      // We send the Quill HTML as markdown_source — the backend wraps it in the full page template
+      // We send the combined HTML as markdown_source — the backend wraps it in the full page template
       if (existingNote) {
         await api.put(`/admin/${apiPrefix}/notes/${existingNote.id}`, {
-          markdown_source: htmlContent,
+          markdown_source: combinedContent,
           title,
         });
         showToast(true, 'Note updated');
@@ -274,7 +864,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
           concept_id: conceptId,
           known_lang: knownLang,
           learning_lang: learningLang,
-          markdown_source: htmlContent,
+          markdown_source: combinedContent,
           title,
         });
         showToast(true, 'Note created');
@@ -360,7 +950,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
         </div>
       </div>
 
-      {/* ── Tab bar + Paste HTML button ── */}
+      {/* ── Tab bar + action buttons ── */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0, alignItems: 'center' }}>
         {(['write', 'preview'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
@@ -368,6 +958,32 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
             {t === 'write' ? '✏️ Write' : '👁 Preview'}
           </button>
         ))}
+
+        {/* Insert-block buttons — only visible in write mode */}
+        {tab === 'write' && (
+          <div style={{ display: 'flex', gap: 6, marginLeft: 16, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Add section</span>
+            <button
+              onClick={() => setShowBoxModal(true)}
+              title="Insert a highlighted callout box"
+              style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#fff8e622', color: '#ffa90a', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+              📦 Box
+            </button>
+            <button
+              onClick={() => setShowTableModal(true)}
+              title="Insert a vocabulary table with audio and hover-translate"
+              style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#2563eb22', color: '#60a5fa', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+              📋 Table
+            </button>
+            <button
+              onClick={() => setShowExtractModal(true)}
+              title="Insert a styled extract block with optional image"
+              style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#05966922', color: '#34d399', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+              🖼 Extract
+            </button>
+          </div>
+        )}
+
         <button
           onClick={() => setShowRawHtmlPanel(p => !p)}
           style={{ marginLeft: 'auto', marginRight: 12, padding: '5px 12px', border: `1px solid ${border}`, borderRadius: 6, background: showRawHtmlPanel ? '#0969da' : 'transparent', color: showRawHtmlPanel ? '#fff' : textMuted, cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>
@@ -452,17 +1068,119 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                 <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', marginRight: 8 }} />
                 Loading editor…
               </div>
-            )}          </div>
+            )}
+
+            {/* ── Appended blocks (tables / extracts) — rendered outside Quill ── */}
+            {appendedBlocks.length > 0 && (
+              <div style={{ marginTop: 8, borderTop: `1px dashed ${border}`, paddingTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Inserted blocks (Table / Extract) — saved with note
+                  </span>
+                  <button
+                    onClick={() => setAppendedBlocks([])}
+                    title="Remove all inserted blocks"
+                    style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
+                    ✕ Clear all
+                  </button>
+                </div>
+                {appendedBlocks.map((block, idx) => (
+                  <div key={block.id} style={{ marginBottom: 10, borderRadius: 8, border: `1px solid ${border}`, overflow: 'hidden' }}>
+                    {/* Block toolbar */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: dm ? '#1c2128' : '#f0f0f0', borderBottom: `1px solid ${border}` }}>
+                      <span style={{ fontSize: 11, color: textMuted, fontWeight: 600 }}>
+                        {block.type === 'table' ? '📋 Vocabulary Table' : '🖼 Extract'} #{idx + 1}
+                      </span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {block.type === 'table' && block.tableData && (
+                          <button
+                            onClick={() => { setEditingBlockIndex(idx); setShowTableModal(true); }}
+                            title="Edit this table"
+                            style={{ fontSize: 11, color: '#2563eb', background: '#2563eb18', border: '1px solid #2563eb44', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
+                            ✏️ Edit
+                          </button>
+                        )}
+                        {block.type === 'extract' && block.extractData && (
+                          <button
+                            onClick={() => { setEditingBlockIndex(idx); setShowExtractModal(true); }}
+                            title="Edit this extract"
+                            style={{ fontSize: 11, color: '#059669', background: '#05966918', border: '1px solid #05966944', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
+                            ✏️ Edit
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setAppendedBlocks(prev => prev.filter((_, i) => i !== idx))}
+                          title="Remove this block"
+                          style={{ fontSize: 11, color: '#ef4444', background: '#ef444418', border: '1px solid #ef444444', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
+                          ✕ Remove
+                        </button>
+                      </div>
+                    </div>
+                    {/* Block preview */}
+                    <div
+                      className="note-preview"
+                      style={{ background: dm ? '#1c2128' : '#f9f5f0', padding: '12px 16px', fontSize: 14 }}
+                      dangerouslySetInnerHTML={{ __html: block.html }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <div style={{ flex: 1, overflowY: 'auto', background: previewBg }}>
-            {isEmpty(htmlContent) ? (
+            {isEmpty(htmlContent + blocksHtml) ? (
               <div style={{ textAlign: 'center', padding: '3rem', color: textMuted }}>Nothing to preview yet — write something first.</div>
             ) : (
-              <div className="note-preview" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+              <div className="note-preview" dangerouslySetInnerHTML={{ __html: htmlContent + blocksHtml }} />
             )}
           </div>
         )}
+
       </div>
+
+      {/* ── Insert-block modals ── */}
+      {showBoxModal && (
+        <BoxModal
+          onInsert={(html) => insertHtmlAtCursor(html, false)}
+          onClose={() => setShowBoxModal(false)}
+          darkMode={darkMode}
+        />
+      )}
+      {showTableModal && (
+        <VocabTableModal
+          onInsert={(html, tableData) => {
+            if (editingBlockIndex !== null) {
+              setAppendedBlocks(prev => prev.map((b, i) =>
+                i === editingBlockIndex ? { ...b, html, tableData } : b
+              ));
+              setEditingBlockIndex(null);
+            } else {
+              insertHtmlAtCursor(html, true, 'table', tableData, undefined);
+            }
+          }}
+          onClose={() => { setShowTableModal(false); setEditingBlockIndex(null); }}
+          darkMode={darkMode}
+          initialData={editingBlockIndex !== null ? appendedBlocks[editingBlockIndex]?.tableData : undefined}
+        />
+      )}
+      {showExtractModal && (
+        <ExtractModal
+          onInsert={(html, extractData) => {
+            if (editingBlockIndex !== null) {
+              setAppendedBlocks(prev => prev.map((b, i) =>
+                i === editingBlockIndex ? { ...b, html, extractData } : b
+              ));
+              setEditingBlockIndex(null);
+            } else {
+              insertHtmlAtCursor(html, true, 'extract', undefined, extractData);
+            }
+          }}
+          onClose={() => { setShowExtractModal(false); setEditingBlockIndex(null); }}
+          darkMode={darkMode}
+          initialData={editingBlockIndex !== null ? appendedBlocks[editingBlockIndex]?.extractData : undefined}
+        />
+      )}
     </div>
   );
 }
