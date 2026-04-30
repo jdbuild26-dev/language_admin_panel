@@ -549,6 +549,108 @@ function ExtractModal({ onInsert, onClose, darkMode, initialData }: {
   );
 }
 
+// ─── Section types ────────────────────────────────────────────────────────────
+
+interface NoteSection {
+  id: string;
+  slNo: number;
+  heading: string;
+}
+
+// ─── Section Modal ────────────────────────────────────────────────────────────
+// Asks for Sl No + Heading when adding/editing a section
+
+function SectionModal({ onInsert, onClose, darkMode, initialData }: {
+  onInsert: (section: NoteSection) => void;
+  onClose: () => void;
+  darkMode: boolean;
+  initialData?: NoteSection;
+}) {
+  const [slNo, setSlNo] = useState(initialData?.slNo?.toString() ?? '');
+  const [heading, setHeading] = useState(initialData?.heading ?? '');
+  const dm = darkMode;
+  const bg = dm ? '#161b22' : '#ffffff';
+  const border = dm ? '#30363d' : '#dee2e6';
+  const textPrimary = dm ? '#c9d1d9' : '#1a1a1a';
+  const textMuted = dm ? '#8b949e' : '#666';
+  const inputBg = dm ? '#0e1117' : '#ffffff';
+  const inputBorder = dm ? '#30363d' : '#dee2e6';
+
+  const slNoNum = parseInt(slNo, 10);
+  const valid = heading.trim().length > 0 && !isNaN(slNoNum) && slNoNum > 0;
+
+  const handleSubmit = () => {
+    if (!valid) return;
+    onInsert({
+      id: initialData?.id ?? `sec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      slNo: slNoNum,
+      heading: heading.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '1.5rem', width: 420, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <h3 style={{ margin: 0, color: textPrimary, fontSize: 16 }}>📑 {initialData ? 'Edit Section' : 'Add Section'}</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>Sections appear in the Table of Contents</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: textMuted }}><X size={18} /></button>
+        </div>
+
+        {/* Sl No */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Sl No <span style={{ color: '#ef4444' }}>*</span>
+          </label>
+          <input
+            autoFocus
+            type="number"
+            min={1}
+            value={slNo}
+            onChange={e => setSlNo(e.target.value.replace(/[^0-9]/g, ''))}
+            placeholder="e.g. 1"
+            style={{ width: '100%', padding: '8px 12px', border: `1px solid ${inputBorder}`, borderRadius: 8, fontSize: 14, outline: 'none', background: inputBg, color: textPrimary, boxSizing: 'border-box' }}
+          />
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: textMuted }}>Numbers only — used to order the Table of Contents</p>
+        </div>
+
+        {/* Heading */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Section Heading <span style={{ color: '#ef4444' }}>*</span>
+          </label>
+          <input
+            value={heading}
+            onChange={e => setHeading(e.target.value)}
+            placeholder="e.g. Introduction"
+            onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+            style={{ width: '100%', padding: '8px 12px', border: `1px solid ${inputBorder}`, borderRadius: 8, fontSize: 14, outline: 'none', background: inputBg, color: textPrimary, boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* Preview */}
+        {valid && (
+          <div style={{ marginBottom: 16, padding: '10px 14px', background: dm ? '#1c2128' : '#f9f5f0', borderRadius: 8, border: `1px solid ${border}` }}>
+            <p style={{ margin: 0, fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase' }}>Preview</p>
+            <p style={{ margin: 0, fontSize: 13, color: textMuted }}><span style={{ fontWeight: 700, color: '#ffa90a' }}>{slNoNum}.</span> <span style={{ fontWeight: 700, color: textPrimary }}>{heading}</span></p>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '7px 16px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', fontSize: 13, color: textMuted }}>Cancel</button>
+          <button onClick={handleSubmit} disabled={!valid}
+            style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#ffa90a', color: '#fff', cursor: valid ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: valid ? 1 : 0.5 }}>
+            {initialData ? 'Update Section' : 'Add Section'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Appended block types ─────────────────────────────────────────────────────
 // Each inserted block stores its source data as a typed object.
 // The data is also embedded in the saved HTML as a hidden <div data-block-meta="1">
@@ -640,6 +742,11 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const [appendedBlocks, setAppendedBlocks] = useState<AppendedBlock[]>([]);
   // Which block is currently being edited (index into appendedBlocks)
   const [editingBlockIndex, setEditingBlockIndex] = useState<number | null>(null);
+
+  // Sections — each becomes an <h2> with a data-section attribute, sorted by slNo on save
+  const [sections, setSections] = useState<NoteSection[]>([]);
+  const [showSectionModal, setShowSectionModal] = useState(false);
+  const [editingSectionIndex, setEditingSectionIndex] = useState<number | null>(null);
 
   // Dark mode — persisted per editor session
   const [darkMode, setDarkMode] = useState(() => {
@@ -776,6 +883,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
 
           let quillPart = '';
           const blocks: AppendedBlock[] = [];
+          const loadedSections: NoteSection[] = [];
 
           Array.from(root.childNodes).forEach(node => {
             if (node.nodeType === Node.TEXT_NODE) {
@@ -793,19 +901,25 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
               el.getAttribute('style')?.includes('#f3ede6') ||
               el.getAttribute('style')?.includes('f3ede6')
             );
+            // Section headings
+            const isSectionHeading = tag === 'h2' && el.hasAttribute('data-section-slno');
 
-            if (isVocabTable || isExtract || isLegacyExtract) {
-              // Read the embedded <script data-block-meta> tag — this is the
-              // single source of truth for re-editing. No HTML parsing needed.
+            if (isSectionHeading) {
+              // Restore section to the sections array — not into quillPart
+              const slNo = parseInt(el.getAttribute('data-section-slno') || '0', 10);
+              const secId = el.getAttribute('data-section-id') || `sec-${Date.now()}-${blocks.length}`;
+              const heading = el.textContent?.trim() || '';
+              if (slNo > 0 && heading) {
+                loadedSections.push({ id: secId, slNo, heading });
+              }
+            } else if (isVocabTable || isExtract || isLegacyExtract) {
               const meta = extractBlockMeta(el);
               const blockId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${blocks.length}`;
-
               if (meta?.type === 'table') {
                 blocks.push({ id: blockId, type: 'table', html: el.outerHTML, tableData: meta.data });
               } else if (meta?.type === 'extract') {
                 blocks.push({ id: blockId, type: 'extract', html: el.outerHTML, extractData: meta.data });
               } else {
-                // Legacy block with no meta tag — still show it, just not editable
                 blocks.push({ id: blockId, type: isVocabTable ? 'table' : 'extract', html: el.outerHTML });
               }
             } else {
@@ -815,6 +929,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
 
           setHtmlContent(quillPart);
           setAppendedBlocks(blocks);
+          setSections(loadedSections.sort((a, b) => a.slNo - b.slNo));
         })
         .catch(() => setHtmlContent(''))
         .finally(() => setLoading(false));
@@ -846,12 +961,17 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const handleSave = async () => {
     if (!title.trim()) { showToast(false, 'Title is required'); return; }
     if (!conceptId.trim()) { showToast(false, 'Concept ID is required'); return; }
-    // Combined content = Quill HTML + any appended complex blocks (tables, extracts)
-    const combinedContent = htmlContent + blocksHtml;
+    // Build section headings HTML sorted by slNo — each gets a data attribute so
+    // the backend can build the TOC and the editor can reload them on edit.
+    const sectionsHtml = [...sections]
+      .sort((a, b) => a.slNo - b.slNo)
+      .map(s => `<h2 data-section-slno="${s.slNo}" data-section-id="${s.id}">${s.heading}</h2>`)
+      .join('');
+    // Combined content = section headings + Quill HTML + appended blocks
+    const combinedContent = sectionsHtml + htmlContent + blocksHtml;
     if (isEmpty(combinedContent)) { showToast(false, 'Content cannot be empty'); return; }
     setSaving(true);
     try {
-      // We send the combined HTML as markdown_source — the backend wraps it in the full page template
       if (existingNote) {
         await api.put(`/admin/${apiPrefix}/notes/${existingNote.id}`, {
           markdown_source: combinedContent,
@@ -962,7 +1082,13 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
         {/* Insert-block buttons — only visible in write mode */}
         {tab === 'write' && (
           <div style={{ display: 'flex', gap: 6, marginLeft: 16, alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Add section</span>
+            <button
+              onClick={() => { setEditingSectionIndex(null); setShowSectionModal(true); }}
+              title="Add a new section with heading and Sl No"
+              style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#ffa90a22', color: '#ffa90a', cursor: 'pointer', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+              📑 Add Section
+            </button>
+            <span style={{ color: border, fontSize: 14 }}>|</span>
             <button
               onClick={() => setShowBoxModal(true)}
               title="Insert a highlighted callout box"
@@ -1052,6 +1178,33 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                 margin: 8px 0;
               }
             `}</style>
+            {/* ── Sections panel ── */}
+            {sections.length > 0 && (
+              <div style={{ flexShrink: 0, marginTop: 8, marginBottom: 4, padding: '8px 12px', background: dm ? '#1c2128' : '#fffbeb', borderRadius: 8, border: `1px solid ${dm ? '#30363d' : '#fde68a'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: '#ffa90a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    📑 Sections — Table of Contents
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {[...sections].sort((a, b) => a.slNo - b.slNo).map((sec, idx) => (
+                    <div key={sec.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 10px', background: dm ? '#0e1117' : '#ffffff', border: `1px solid ${dm ? '#30363d' : '#e5e7eb'}`, borderRadius: 20, fontSize: 12 }}>
+                      <span style={{ fontWeight: 700, color: '#ffa90a', minWidth: 16 }}>{sec.slNo}.</span>
+                      <span style={{ color: textPrimary, fontWeight: 600 }}>{sec.heading}</span>
+                      <button
+                        onClick={() => { setEditingSectionIndex(idx); setShowSectionModal(true); }}
+                        title="Edit section"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', padding: '0 2px', fontSize: 11, lineHeight: 1 }}>✏️</button>
+                      <button
+                        onClick={() => setSections(prev => prev.filter((_, i) => i !== idx))}
+                        title="Remove section"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0 2px', fontSize: 11, lineHeight: 1 }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {ReactQuill && quillModules ? (
               <ReactQuill
                 ref={(el: any) => { if (el && el !== quillRef) setQuillRef(el); }}
@@ -1140,6 +1293,21 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       </div>
 
       {/* ── Insert-block modals ── */}
+      {showSectionModal && (
+        <SectionModal
+          onInsert={(sec) => {
+            if (editingSectionIndex !== null) {
+              setSections(prev => prev.map((s, i) => i === editingSectionIndex ? sec : s));
+              setEditingSectionIndex(null);
+            } else {
+              setSections(prev => [...prev, sec]);
+            }
+          }}
+          onClose={() => { setShowSectionModal(false); setEditingSectionIndex(null); }}
+          darkMode={darkMode}
+          initialData={editingSectionIndex !== null ? sections[editingSectionIndex] : undefined}
+        />
+      )}
       {showBoxModal && (
         <BoxModal
           onInsert={(html) => insertHtmlAtCursor(html, false)}
