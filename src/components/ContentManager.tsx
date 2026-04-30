@@ -173,8 +173,6 @@ interface VocabTableRow {
   cells: VocabCell[];
 }
 
-// Keep old VocabRow interface for type compat (unused after refactor)
-interface VocabRow { french: string; english: string; audioUrl: string; }
 
 function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
   onInsert: (html: string, tableData: TableBlockData) => void;
