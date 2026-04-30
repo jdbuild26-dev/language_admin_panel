@@ -1256,14 +1256,12 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {/* Direct CSV upload — shown for exercise types that don't need subtypes */}
-            {(exerciseType.slug === 'correct_spelling' || exerciseType.slug === 'write_fill_blanks' || exerciseType.slug === 'write_topic' || exerciseType.slug === 'write_image' || exerciseType.slug === 'summarise_audio' || exerciseType.slug === 'write_interactive' || exerciseType.slug === 'speak_interactive' || exerciseType.slug === 'writing_conversation' || exerciseType.slug === 'speaking_conversation') && (
-              <DirectCsvUpload
-                exerciseType={exerciseType}
-                category={category}
-                showToast={showToast}
-              />
-            )}
+            {/* Direct CSV upload — available for all exercise types */}
+            <DirectCsvUpload
+              exerciseType={exerciseType}
+              category={category}
+              showToast={showToast}
+            />
             <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate exercises"
               style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.9 }}>
               <Sparkles size={18} />
@@ -1761,6 +1759,41 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [searchId, setSearchId] = useState('');
     const [detailId, setDetailId] = useState('');
 
+    // ── Image upload state (for image-based exercise types) ──────────────────
+    const imageFileInputRef = useRef<HTMLInputElement>(null);
+    const pendingImageExId = useRef<string | null>(null);
+    const [uploadingImageId, setUploadingImageId] = useState<string | null>(null);
+
+    const handleImageUploadClick = (exId: string) => {
+      pendingImageExId.current = exId;
+      imageFileInputRef.current?.click();
+    };
+
+    const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      const exId = pendingImageExId.current;
+      if (!file || !exId) return;
+      e.target.value = '';
+      setUploadingImageId(exId);
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const uploadRes = await api.post('/admin/upload-image', fd);
+        const imageUrl = uploadRes.data.url;
+        await api.patch(`/admin/exercises/${exId}/image-url`, { image_url: imageUrl });
+        setExercises(prev => prev.map(ex =>
+          ex.external_id === exId ? { ...ex, image_url: imageUrl } : ex
+        ));
+        showToast(true, `Image uploaded for ${exId}`);
+      } catch (err: unknown) {
+        const e2 = err as { response?: { data?: { detail?: string } } };
+        showToast(false, e2.response?.data?.detail || 'Image upload failed');
+      } finally {
+        setUploadingImageId(null);
+        pendingImageExId.current = null;
+      }
+    };
+
     const load = useCallback(async (p = 1) => {
       setLoading(true);
       try {
@@ -1835,6 +1868,14 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
 
     return (
       <div>
+        {/* Hidden file input for image uploads */}
+        <input
+          ref={imageFileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleImageFileChange}
+        />
         {/* Breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.25rem' }}>
           <button onClick={onBack}
@@ -1957,9 +1998,16 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                                       <Power size={13} />
                                     </button>
                                     {/* Image upload — only shown for image-based exercise types */}
-                                    {['image_mcq', 'image_labelling', 'diagram_mapping', 'match_desc_to_image'].includes(exerciseType.slug) && (
-                                      <button title="Upload image" style={iconBtnStyle('#f87171')}>
-                                        <Upload size={13} />
+                                    {['image_mcq', 'image_labelling', 'diagram_mapping', 'match_desc_to_image', 'write_image', 'speak_image'].includes(exerciseType.slug) && (
+                                      <button
+                                        title="Upload image to Cloudinary"
+                                        onClick={() => handleImageUploadClick(ex.external_id)}
+                                        disabled={uploadingImageId === ex.external_id}
+                                        style={iconBtnStyle(ex.image_url || ex.content?.image_url ? '#22c55e' : '#f87171')}
+                                      >
+                                        {uploadingImageId === ex.external_id
+                                          ? <span style={{ fontSize: 10 }}>…</span>
+                                          : <Upload size={13} />}
                                       </button>
                                     )}
                                   </div>
