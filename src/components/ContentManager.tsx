@@ -167,6 +167,7 @@ interface VocabCell {
   text: string;
   tooltip: string;
   audioUrl: string;
+  tts: boolean;
 }
 
 interface VocabTableRow {
@@ -185,9 +186,9 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
   );
   const [rows, setRows] = useState<VocabTableRow[]>(
     initialData?.rows ?? [
-      { cells: [{ text: '', tooltip: '', audioUrl: '' }, { text: '', tooltip: '', audioUrl: '' }] },
-      { cells: [{ text: '', tooltip: '', audioUrl: '' }, { text: '', tooltip: '', audioUrl: '' }] },
-      { cells: [{ text: '', tooltip: '', audioUrl: '' }, { text: '', tooltip: '', audioUrl: '' }] },
+      { cells: [{ text: '', tooltip: '', audioUrl: '', tts: false }, { text: '', tooltip: '', audioUrl: '', tts: false }] },
+      { cells: [{ text: '', tooltip: '', audioUrl: '', tts: false }, { text: '', tooltip: '', audioUrl: '', tts: false }] },
+      { cells: [{ text: '', tooltip: '', audioUrl: '', tts: false }, { text: '', tooltip: '', audioUrl: '', tts: false }] },
     ]
   );
   const dm = darkMode;
@@ -203,7 +204,7 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
 
   const addColumn = () => {
     setHeaders(h => [...h, `Column ${h.length + 1}`]);
-    setRows(r => r.map(row => ({ cells: [...row.cells, { text: '', tooltip: '', audioUrl: '' }] })));
+    setRows(r => r.map(row => ({ cells: [...row.cells, { text: '', tooltip: '', audioUrl: '', tts: false }] })));
   };
   const removeColumn = (ci: number) => {
     if (numCols <= 1) return;
@@ -211,9 +212,9 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
     setRows(r => r.map(row => ({ cells: row.cells.filter((_, i) => i !== ci) })));
   };
   const updateHeader = (ci: number, val: string) => setHeaders(h => h.map((v, i) => i === ci ? val : v));
-  const addRow = () => setRows(r => [...r, { cells: Array.from({ length: numCols }, () => ({ text: '', tooltip: '', audioUrl: '' })) }]);
+  const addRow = () => setRows(r => [...r, { cells: Array.from({ length: numCols }, () => ({ text: '', tooltip: '', audioUrl: '', tts: false })) }]);
   const removeRow = (ri: number) => { if (rows.length > 1) setRows(r => r.filter((_, i) => i !== ri)); };
-  const updateCell = (ri: number, ci: number, field: keyof VocabCell, val: string) =>
+  const updateCell = (ri: number, ci: number, field: keyof VocabCell, val: string | boolean) =>
     setRows(r => r.map((row, i) => i !== ri ? row : { cells: row.cells.map((cell, j) => j !== ci ? cell : { ...cell, [field]: val }) }));
 
   const hasContent = rows.some(row => row.cells.some(c => c.text.trim()));
@@ -240,8 +241,10 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
       const tdCells = row.cells.map((cell, ci) => {
         const isLast = ci === headers.length - 1;
         const cellBg = ri % 2 === 0 ? '#fffbeb' : '#ffffff';
-        const audioBtn = cell.audioUrl.trim()
-          ? `<button onclick="(function(b){var a=new Audio('${cell.audioUrl.trim()}');a.play();b.style.transform='scale(0.9)';setTimeout(function(){b.style.transform='scale(1)'},200)})(this)" style="background:none;border:none;cursor:pointer;padding:2px 4px;display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;" title="Play audio">🔊</button>`
+        const audioBtn = cell.tts && cell.text.trim()
+          ? `<button onclick="(function(b){var t=b.getAttribute('data-tts-text');if(!t)return;window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(t);window.speechSynthesis.speak(u);b.style.transform='scale(0.9)';setTimeout(function(){b.style.transform='scale(1)'},200)})(this)" data-tts-text="${cell.text.trim()}" style="background:none;border:none;cursor:pointer;padding:2px 4px;display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;" title="Play TTS">🔊</button>`
+          : cell.audioUrl.trim()
+          ? `<button onclick="(function(b){var a=new Audio('${cell.audioUrl.trim()}');a.currentTime=0;a.play();b.style.transform='scale(0.9)';setTimeout(function(){b.style.transform='scale(1)'},200)})(this)" style="background:none;border:none;cursor:pointer;padding:2px 4px;display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;" title="Play audio">🔊</button>`
           : '';
         const inner = cell.tooltip.trim()
           ? `<span style="position:relative;display:inline-block;cursor:pointer;color:#2563eb;font-weight:600;" onmouseenter="var t=this.querySelector('.vtt');if(t)t.style.opacity='1';" onmouseleave="var t=this.querySelector('.vtt');if(t)t.style.opacity='0';">${cell.text.trim() || '—'}<span class="vtt" style="opacity:0;transition:opacity 0.15s;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;white-space:nowrap;pointer-events:none;font-weight:400;z-index:10;">${cell.tooltip.trim()}</span></span>`
@@ -265,7 +268,7 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexShrink: 0 }}>
           <div>
             <h3 style={{ margin: 0, color: textPrimary, fontSize: 16 }}>📋 Insert Vocabulary Table</h3>
-            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>Customizable columns · hover tooltip · audio per cell · arrow separators</p>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>Customizable columns · hover tooltip · TTS per cell · arrow separators</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: textMuted }}><X size={18} /></button>
         </div>
@@ -293,36 +296,50 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
         </div>
 
         {/* Sub-header labels for each column's fields */}
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${numCols}, 1fr) 32px`, gap: 6, marginBottom: 4, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 4, flexShrink: 0, paddingRight: 38 }}>
           {headers.map((_, ci) => (
-            <div key={ci} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: 4 }}>
+            <div key={ci} style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 2fr 90px', gap: 4 }}>
               <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Text</span>
               <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Tooltip (hover)</span>
-              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Audio URL</span>
+              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>TTS</span>
             </div>
           ))}
-          <span />
         </div>
 
         {/* Rows */}
         <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {rows.map((row, ri) => (
-            <div key={ri} style={{ display: 'grid', gridTemplateColumns: `repeat(${numCols}, 1fr) 32px`, gap: 6, alignItems: 'center' }}>
+            <div key={ri} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               {row.cells.map((cell, ci) => (
-                <div key={ci} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: 4 }}>
+                <div key={ci} style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 2fr 90px', gap: 4, alignItems: 'center' }}>
                   <input value={cell.text} onChange={e => updateCell(ri, ci, 'text', e.target.value)}
                     placeholder="e.g. un chat"
                     style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
                   <input value={cell.tooltip} onChange={e => updateCell(ri, ci, 'tooltip', e.target.value)}
                     placeholder="a cat"
                     style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
-                  <input value={cell.audioUrl} onChange={e => updateCell(ri, ci, 'audioUrl', e.target.value)}
-                    placeholder="https://…"
-                    style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
+                  {/* TTS toggle */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none' }}>
+                    <div
+                      onClick={() => updateCell(ri, ci, 'tts', !cell.tts)}
+                      style={{
+                        width: 34, height: 18, borderRadius: 9, background: cell.tts ? '#2563eb' : (dm ? '#30363d' : '#d1d5db'),
+                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0,
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute', top: 2, left: cell.tts ? 18 : 2, width: 14, height: 14,
+                        borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 11, color: cell.tts ? (dm ? '#93c5fd' : '#2563eb') : textMuted, fontWeight: cell.tts ? 600 : 400, whiteSpace: 'nowrap' }}>
+                      {cell.tts ? 'On' : 'Off'}
+                    </span>
+                  </label>
                 </div>
               ))}
               <button onClick={() => removeRow(ri)} disabled={rows.length <= 1}
-                style={{ width: 32, height: 32, border: 'none', borderRadius: 6, background: rows.length > 1 ? '#ef444422' : 'transparent', color: rows.length > 1 ? '#ef4444' : textMuted, cursor: rows.length > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                style={{ width: 32, height: 32, border: 'none', borderRadius: 6, background: rows.length > 1 ? '#ef444422' : 'transparent', color: rows.length > 1 ? '#ef4444' : textMuted, cursor: rows.length > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <X size={14} />
               </button>
             </div>
@@ -360,7 +377,7 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
                               style={{ fontWeight: 600, color: cell.tooltip ? '#2563eb' : '#3d2817', borderBottom: cell.tooltip ? '1px dashed #ffa90a' : 'none', cursor: cell.tooltip ? 'help' : 'default' }}>
                               {cell.text || '—'}
                             </span>
-                            {cell.audioUrl && <span style={{ marginLeft: 6 }}>🔊</span>}
+                            {(cell.tts && cell.text.trim()) || cell.audioUrl ? <span style={{ marginLeft: 6 }}>🔊</span> : null}
                           </td>
                           {ci < headers.length - 1 && (
                             <td style={{ width: 32, textAlign: 'center', color: '#ffa90a', fontSize: 16, borderBottom: '1px solid #e5e7eb' }}>→</td>
