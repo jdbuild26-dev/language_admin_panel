@@ -39,6 +39,10 @@ function App() {
             <Dumbbell size={20} />
             Main Practice
           </NavLink>
+          <NavLink to="/exercises" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Upload size={20} />
+            Upload Exercises
+          </NavLink>
           <NavLink to="/stories" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <BookMarked size={20} />
             Stories
