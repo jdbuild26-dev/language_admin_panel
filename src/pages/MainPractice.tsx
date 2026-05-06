@@ -2207,7 +2207,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     onBack, onCreated, showToast,
   }: {
     level: CefrLevel; category: Category; exerciseType: QuestionType;
-    onBack: () => void; onCreated: (file?: File) => void;
+    onBack: () => void; onCreated: (file?: File, subtypeSlug?: string) => void;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2261,8 +2261,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           setUploadProgress({ current: 1, total: 1 });
         }
 
-        showToast(true, `Created "${form.name_en}" and synced exercises`);
-        onCreated(file || undefined);
+        showToast(true, 'Subtype created successfully');
+        onCreated(file || undefined, form.subtype_slug);
       } catch (e: unknown) {
         const err = e as { response?: { data?: { detail?: string } } };
         setError(err.response?.data?.detail || 'Save failed');
@@ -2545,12 +2545,13 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     );
   }
 
-  function ImageBulkUploadModal({ exerciseType, category, onClose, showToast, initialFile }: { 
+  function ImageBulkUploadModal({ exerciseType, category, onClose, showToast, initialFile, subtypeSlug }: { 
     exerciseType: QuestionType; 
     category: Category; 
     onClose: () => void; 
     showToast: (ok: boolean, msg: string) => void;
     initialFile?: File | null;
+    subtypeSlug?: string;
   }) {
     const [rows, setRows] = useState<any[]>([]);
     const [currentIdx, setCurrentIdx] = useState(0);
@@ -2602,6 +2603,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             skill: category,
             category: 'main',
             row_data: r.data,
+            subtype_slug: subtypeSlug,
           })),
         };
         await api.post('/admin/image-exercises/bulk-save', payload);
@@ -2712,6 +2714,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [aiGenQt, setAiGenQt] = useState<{ qt: QuestionType; subtype?: ExerciseSubtype } | null>(null);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
+    const [bulkUploadSubtype, setBulkUploadSubtype] = useState<string | undefined>(undefined);
     const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
     useEffect(() => {
@@ -2780,10 +2783,11 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           <Slide4Create
             level={level} category={category} exerciseType={selectedType}
             onBack={() => setSlide('subtypes')}
-            onCreated={(file) => {
+            onCreated={(file, createdSubtypeSlug) => {
               setSlide('subtypes');
               if (file && IMAGE_EXERCISE_TYPES.includes(selectedType.slug)) {
                 setBulkUploadFile(file);
+                setBulkUploadSubtype(createdSubtypeSlug);
                 setShowBulkUpload(true);
               }
             }}
@@ -2806,9 +2810,10 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           <ImageBulkUploadModal
             exerciseType={selectedType}
             category={category}
-            onClose={() => setShowBulkUpload(false)}
+            onClose={() => { setShowBulkUpload(false); setBulkUploadSubtype(undefined); setBulkUploadFile(null); }}
             showToast={showToast}
             initialFile={bulkUploadFile}
+            subtypeSlug={bulkUploadSubtype}
           />
         )}
 
