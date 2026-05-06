@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet, CloudUpload, Sparkles, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet, CloudUpload, Sparkles, Check, Loader2, ImageIcon } from 'lucide-react';
 import api from '../services/api';
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'] as const;
@@ -101,6 +101,17 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'speaking_conversation',     // Speaking Conversation (Running)
   ],
 };
+
+const IMAGE_EXERCISE_TYPES = [
+  'diagram_mapping',
+  'image_mcq',
+  'match_desc_to_image',
+  'image_labelling',
+  'match_image_description',
+  'write_image',
+  'speak_image',
+  'image_mcq'
+];
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ ok, msg, onDone }: { ok: boolean; msg: string; onDone: () => void }) {
@@ -1176,11 +1187,12 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   function Slide2Subtypes({
     level, category, exerciseType,
     onBack, onView, onCreate, onAiGenerate,
-    showToast,
+    showToast, onShowBulkUpload,
   }: {
     level: CefrLevel; category: Category; exerciseType: QuestionType;
     onBack: () => void; onView: (sub: ExerciseSubtype) => void; onCreate: () => void; onAiGenerate: (qt: QuestionType) => void;
     showToast: (ok: boolean, msg: string) => void;
+    onShowBulkUpload: () => void;
   }) {
     const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1249,12 +1261,23 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {/* Direct CSV upload — available for all exercise types */}
-            <DirectCsvUpload
-              exerciseType={exerciseType}
-              category={category}
-              showToast={showToast}
-            />
+            {/* Direct CSV upload / Image Bulk Upload */}
+            {IMAGE_EXERCISE_TYPES.includes(exerciseType.slug) ? (
+              <button 
+                onClick={onShowBulkUpload}
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '6px 14px' }}
+                title="Upload CSV and sequentially add images"
+              >
+                <CloudUpload size={15} /> Upload Image CSV
+              </button>
+            ) : (
+              <DirectCsvUpload
+                exerciseType={exerciseType}
+                category={category}
+                showToast={showToast}
+              />
+            )}
             <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate exercises"
               style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.9 }}>
               <Sparkles size={18} />
@@ -1401,6 +1424,68 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     return { masterKeys, pairedGroups, unpaired };
   }
 
+  function ImageUploader({ onUploaded, existingUrl, isEditMode }: { onUploaded: (url: string) => void; existingUrl?: string; isEditMode: boolean }) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    const [preview, setPreview] = useState<string | null>(existingUrl || null);
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+      setPreview(existingUrl || null);
+    }, [existingUrl]);
+
+    const handleFile = async (file: File) => {
+      if (!isEditMode) return;
+      setError('');
+      const localUrl = URL.createObjectURL(file);
+      setPreview(localUrl);
+      setUploading(true);
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await api.post<{ url: string }>('/admin/upload-image', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        onUploaded(res.data.url);
+        setPreview(res.data.url);
+      } catch (e: any) {
+        setError(e.response?.data?.detail || 'Upload failed');
+        setPreview(existingUrl || null);
+      } finally {
+        setUploading(false);
+      }
+    };
+
+    return (
+      <div style={{ marginBottom: '1rem', padding: '0 20px', marginTop: '1rem' }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+          Exercise Image
+        </p>
+        <div
+          onClick={() => isEditMode && inputRef.current?.click()}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); if (isEditMode) { const f = e.dataTransfer.files[0]; if (f) handleFile(f); } }}
+          style={{
+            border: isEditMode ? '2px dashed var(--border)' : '1px solid var(--border)',
+            borderRadius: 12, padding: '1rem',
+            textAlign: 'center', cursor: isEditMode ? 'pointer' : 'default', background: 'rgba(255,255,255,0.02)',
+            minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}
+        >
+          {uploading ? (
+            <><Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} /><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Uploading...</span></>
+          ) : preview ? (
+            <img src={preview} alt="preview" style={{ maxHeight: 200, maxWidth: '100%', borderRadius: 8, objectFit: 'contain' }} />
+          ) : (
+            <><ImageIcon size={28} style={{ opacity: 0.3 }} /><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{isEditMode ? 'Click or drag to upload image' : 'No image uploaded'}</span></>
+          )}
+        </div>
+        <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+        {error && <div style={{ color: '#f87171', fontSize: 12, marginTop: 4 }}>{error}</div>}
+      </div>
+    );
+  }
+
   // ─── View/Edit Modal ──────────────────────────────────────────────────────────
   function ViewEditModal({ externalId, onClose, onSaved }: { externalId: string; onClose: () => void; onSaved: () => void }) {
     const [row, setRow] = useState<ExcelRow | null>(null);
@@ -1428,6 +1513,18 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       : userLanguage 
         ? ['_EN', userLanguage] as LangSuffix[]
         : ['_EN'] as LangSuffix[];
+
+    const imageKey = row ? Object.keys(row).find(k => 
+      ['image link from cloudinary', 'imageurl', 'image_url', 'image link'].includes(k.toLowerCase())
+    ) : null;
+
+    const handleImageUploaded = (url: string) => {
+      if (imageKey) {
+        handleChange(imageKey, url);
+      } else {
+        handleChange('Image link from Cloudinary', url);
+      }
+    };
 
     const load = useCallback(async () => {
       if (!externalId.trim()) return;
@@ -1643,8 +1740,16 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             {loading && <p style={{ color: 'var(--text-muted)', padding: '2rem', textAlign: 'center' }}>Loading...</p>}
             {error && <div style={{ margin: '1rem', padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#f87171', fontSize: 13 }}><AlertCircle size={14} style={{ display: 'inline', marginRight: 6 }} />{error}</div>}
             {row && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <tbody>
+              <>
+                {IMAGE_EXERCISE_TYPES.includes(typeSlug) && (
+                  <ImageUploader 
+                    isEditMode={isEditMode}
+                    existingUrl={imageKey ? String(row[imageKey] || '') : ''}
+                    onUploaded={handleImageUploaded}
+                  />
+                )}
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <tbody>
                   {/* ── Part 1: Data Master ── */}
                   {masterKeys.length > 0 && (
                     <>
@@ -1688,6 +1793,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                   )}
                 </tbody>
               </table>
+              </>
             )}
           </div>
 
@@ -2280,6 +2386,289 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     );
   }
 
+  // ─── Image Bulk Upload Helpers ───────────────────────────────────────────────
+
+  function splitCsvLine(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current);
+    return result;
+  }
+
+  function parseCsv(text: string): ExcelRow[] {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+
+    let headerIdx = 0;
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+      const cells = splitCsvLine(lines[i]);
+      const lower = cells.map(c => c.toLowerCase().trim());
+      if (lower.some(c => ['exerciseid', 'exercise id', 'heading_en', 'heading_fr', 'image link from cloudinary', 'level'].includes(c))) {
+        headerIdx = i;
+        break;
+      }
+    }
+
+    const headers = splitCsvLine(lines[headerIdx]).map(h => h.trim());
+    const rows: ExcelRow[] = [];
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const cells = splitCsvLine(lines[i]);
+      if (cells.every(c => !c.trim())) continue;
+      const row: ExcelRow = {};
+      headers.forEach((h, idx) => { row[h] = (cells[idx] || '').trim(); });
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function detectTypeSlugInRow(row: ExcelRow): string {
+    const qt = (String(row['Question Type'] || row['QuestionType'] || row['questiontype'] || '')).toLowerCase().trim();
+    if (qt === 'diagram labelling') return 'diagram_mapping';
+    if (qt === 'match image to description') return 'match_image_description';
+    if (qt === 'image labelling') return 'image_labelling';
+    if (qt === 'image mcq') return 'image_mcq';
+    if (qt) return qt.replace(/\s+/g, '_');
+    if ('Correct Answer 1_FR' in row || 'Correct Answer 1_EN' in row) return 'image_labelling';
+    if ('Correct answer_FR' in row || 'options_fr' in row) return 'image_mcq';
+    if ('Answer 1_FR' in row || 'answers_fr' in row) return 'diagram_mapping';
+    return 'image_labelling';
+  }
+
+  function RowImageUploader({ existingUrl, onUploaded }: { existingUrl: string; onUploaded: (url: string) => void }) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    const [preview, setPreview] = useState<string>(existingUrl);
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleFile = async (file: File) => {
+      setError('');
+      const localUrl = URL.createObjectURL(file);
+      setPreview(localUrl);
+      setUploading(true);
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await api.post('/admin/upload-image', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setPreview(res.data.url);
+        onUploaded(res.data.url);
+      } catch (e: any) {
+        setError(e.response?.data?.detail || 'Upload failed');
+        setPreview(existingUrl);
+      } finally {
+        setUploading(false);
+      }
+    };
+
+    return (
+      <div>
+        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+          {preview ? 'Image (click to replace)' : 'Upload Image'}
+        </p>
+        <div
+          onClick={() => inputRef.current?.click()}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+          style={{
+            border: `2px dashed ${preview ? '#4ade8066' : 'var(--border)'}`,
+            borderRadius: 12, cursor: 'pointer',
+            background: 'var(--card-bg)',
+            minHeight: 180, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+            overflow: 'hidden', position: 'relative',
+          }}>
+          {uploading ? (
+            <><Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} /><span style={{ fontSize: 13, opacity: 0.6 }}>Uploading...</span></>
+          ) : preview ? (
+            <img src={preview} alt="preview" style={{ maxHeight: 200, maxWidth: '100%', objectFit: 'contain', padding: 8 }} />
+          ) : (
+            <><ImageIcon size={32} style={{ opacity: 0.3 }} /><span style={{ fontSize: 13, opacity: 0.5 }}>Click or drag & drop</span></>
+          )}
+        </div>
+        <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+        {error && <div style={{ fontSize: 12, color: '#f87171', marginTop: 4 }}>{error}</div>}
+      </div>
+    );
+  }
+
+  function ImageBulkUploadModal({ exerciseType, category, onClose, showToast }: { 
+    exerciseType: QuestionType; 
+    category: Category; 
+    onClose: () => void; 
+    showToast: (ok: boolean, msg: string) => void;
+  }) {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [rows, setRows] = useState<any[]>([]);
+    const [currentIdx, setCurrentIdx] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleCsvFile = (file: File) => {
+      setError('');
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        const parsed = parseCsv(text);
+        if (parsed.length === 0) { setError('No data rows found in CSV'); return; }
+        const working = parsed.map((row, i) => ({
+          index: i,
+          exerciseId: row['ExerciseID'] || row['exerciseid'] || row['Exercise ID'] || '',
+          imageUrl: String(row['Image link from Cloudinary'] || row['imageUrl'] || row['image_url'] || ''),
+          data: row,
+          typeSlug: detectTypeSlugInRow(row),
+          level: String(row['Level'] || row['level'] || 'A1'),
+        }));
+        setRows(working);
+        setCurrentIdx(0);
+      };
+      reader.readAsText(file);
+    };
+
+    const handleImageUploaded = (url: string) => {
+      setRows(prev => prev.map((r, i) => i === currentIdx ? { ...r, imageUrl: url } : r));
+    };
+
+    const handleBulkSave = async () => {
+      const toSave = rows.filter(r => r.imageUrl);
+      if (toSave.length === 0) { setError('No rows have images uploaded yet'); return; }
+      setSaving(true); setError('');
+      try {
+        const payload = {
+          rows: toSave.map(r => ({
+            exercise_id: r.exerciseId,
+            image_url: r.imageUrl,
+            type_slug: r.typeSlug || exerciseType.slug,
+            level: r.level,
+            skill: category,
+            category: 'main',
+            row_data: r.data,
+          })),
+        };
+        await api.post('/admin/image-exercises/bulk-save', payload);
+        showToast(true, `Saved ${toSave.length} exercises with images`);
+        onClose();
+      } catch (e: any) {
+        setError(e.response?.data?.detail || 'Save failed');
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const current = rows[currentIdx];
+
+    return (
+      <>
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          zIndex: 1001, width: 'min(900px, 95vw)', maxHeight: '90vh',
+          background: 'var(--card-bg)', borderRadius: 16, boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border)',
+        }}>
+          {/* Header */}
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Bulk Image Upload</h3>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>{exerciseType.name || exerciseType.slug} · {category}</p>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+            {rows.length === 0 ? (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleCsvFile(f); }}
+                style={{
+                  border: '2px dashed var(--border)', borderRadius: 16, padding: '4rem 2rem',
+                  textAlign: 'center', cursor: 'pointer', background: 'rgba(255,255,255,0.02)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+                }}>
+                <FileSpreadsheet size={48} style={{ opacity: 0.3 }} />
+                <div>
+                  <p style={{ fontWeight: 600, fontSize: 18, marginBottom: 4 }}>Upload Exercise CSV</p>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Drag and drop your file here, or click to browse</p>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', alignItems: 'center' }}>
+                  <div style={{ fontSize: 14 }}>
+                    <strong>{rows.length}</strong> rows loaded · <strong>{rows.filter(r => r.imageUrl).length}</strong> with images
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-secondary" style={{ padding: '6px 12px' }} onClick={() => setRows([])}>Change CSV</button>
+                    <button className="btn btn-primary" onClick={handleBulkSave} disabled={saving || !rows.some(r => r.imageUrl)}>
+                      {saving ? 'Saving...' : 'Save All Progress'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '1.5rem' }}>
+                  {/* Left side: Row List */}
+                  <div className="card" style={{ padding: 0, maxHeight: 400, overflowY: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                      <thead style={{ position: 'sticky', top: 0, background: 'var(--card-bg)', boxShadow: '0 1px 0 var(--border)' }}>
+                        <tr>
+                          <th style={{ padding: '10px 12px', textAlign: 'left' }}>ID</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, i) => (
+                          <tr key={i} onClick={() => setCurrentIdx(i)}
+                            style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', background: i === currentIdx ? 'rgba(31,111,235,0.1)' : 'transparent' }}>
+                            <td style={{ padding: '8px 12px' }}>{r.exerciseId || `Row ${i+1}`}</td>
+                            <td style={{ padding: '8px 12px' }}>
+                              {r.imageUrl ? <span style={{ color: '#4ade80' }}>✓ Image</span> : <span style={{ opacity: 0.4 }}>No image</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Right side: Current Row Editor */}
+                  <div>
+                    {current && (
+                      <div className="card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                          <span style={{ fontWeight: 600 }}>Row {currentIdx + 1}</span>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="btn btn-secondary" style={{ padding: '2px 8px' }} disabled={currentIdx === 0} onClick={() => setCurrentIdx(i => i - 1)}><ChevronLeft size={14} /></button>
+                            <button className="btn btn-secondary" style={{ padding: '2px 8px' }} disabled={currentIdx === rows.length - 1} onClick={() => setCurrentIdx(i => i + 1)}><ChevronRight size={14} /></button>
+                          </div>
+                        </div>
+                        <RowImageUploader key={currentIdx} existingUrl={current.imageUrl} onUploaded={handleImageUploaded} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            {error && <div className="alert alert-error" style={{ marginTop: '1rem' }}>{error}</div>}
+          </div>
+          <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvFile(f); }} />
+        </div>
+      </>
+    );
+  }
+
   // ─── Root Component ───────────────────────────────────────────────────────────
   export default function MainPractice() {
     const [slide, setSlide] = useState<Slide>('main');
@@ -2289,6 +2678,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [selectedSubtype, setSelectedSubtype] = useState<ExerciseSubtype | null>(null);
     const [selectedType, setSelectedType] = useState<QuestionType | null>(null);
     const [aiGenQt, setAiGenQt] = useState<QuestionType | null>(null);
+    const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
     useEffect(() => {
@@ -2340,6 +2730,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             onCreate={handleCreate}
             onAiGenerate={(qt) => setAiGenQt(qt)}
             showToast={showToast}
+            onShowBulkUpload={() => setShowBulkUpload(true)}
           />
         )}
 
@@ -2368,6 +2759,15 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             level={level}
             category={category}
             onClose={() => setAiGenQt(null)}
+            showToast={showToast}
+          />
+        )}
+
+        {showBulkUpload && selectedType && (
+          <ImageBulkUploadModal
+            exerciseType={selectedType}
+            category={category}
+            onClose={() => setShowBulkUpload(false)}
             showToast={showToast}
           />
         )}

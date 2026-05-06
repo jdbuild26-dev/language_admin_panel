@@ -4,7 +4,6 @@ import Dashboard from './pages/Dashboard';
 import UploadVocabulary from './pages/UploadVocabulary';
 import UploadExercises from './pages/UploadExercises';
 import PromptsEditor from './pages/PromptsEditor';
-import ImageExercises from './pages/ImageExercises';
 import ReadingExercises from './pages/ReadingExercises';
 import TagTopics from './pages/TagTopics';
 import MainPractice from './pages/MainPractice';
@@ -70,7 +69,7 @@ function App() {
           <Route path="/stories" element={<Stories />} />
           <Route path="/stories/upload" element={<StoryUploadPage />} />
           <Route path="/tag-topics" element={<TagTopics />} />
-          <Route path="/image-exercises" element={<ImageExercises />} />
+
           <Route path="/ai-practice" element={<PromptsEditor />} />
           <Route path="/prompts" element={<PromptsEditor />} />
           <Route path="/blog" element={<Dashboard />} />
