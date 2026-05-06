@@ -1187,12 +1187,11 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   function Slide2Subtypes({
     level, category, exerciseType,
     onBack, onView, onCreate, onAiGenerate,
-    showToast, onShowBulkUpload,
+    showToast,
   }: {
     level: CefrLevel; category: Category; exerciseType: QuestionType;
     onBack: () => void; onView: (sub: ExerciseSubtype) => void; onCreate: () => void; onAiGenerate: (qt: QuestionType) => void;
     showToast: (ok: boolean, msg: string) => void;
-    onShowBulkUpload: () => void;
   }) {
     const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1261,23 +1260,12 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {/* Direct CSV upload / Image Bulk Upload */}
-            {IMAGE_EXERCISE_TYPES.includes(exerciseType.slug) ? (
-              <button 
-                onClick={onShowBulkUpload}
-                className="btn btn-secondary"
-                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '6px 14px' }}
-                title="Upload CSV and sequentially add images"
-              >
-                <CloudUpload size={15} /> Upload Image CSV
-              </button>
-            ) : (
-              <DirectCsvUpload
-                exerciseType={exerciseType}
-                category={category}
-                showToast={showToast}
-              />
-            )}
+            {/* Direct CSV upload */}
+            <DirectCsvUpload
+              exerciseType={exerciseType}
+              category={category}
+              showToast={showToast}
+            />
             <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate exercises"
               style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.9 }}>
               <Sparkles size={18} />
@@ -2203,7 +2191,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     onBack, onCreated, showToast,
   }: {
     level: CefrLevel; category: Category; exerciseType: QuestionType;
-    onBack: () => void; onCreated: () => void;
+    onBack: () => void; onCreated: (file?: File) => void;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2253,7 +2241,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         }
 
         showToast(true, `Created "${form.name_en}" and synced exercises`);
-        onCreated();
+        onCreated(file || undefined);
       } catch (e: unknown) {
         const err = e as { response?: { data?: { detail?: string } } };
         setError(err.response?.data?.detail || 'Save failed');
@@ -2505,17 +2493,23 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     );
   }
 
-  function ImageBulkUploadModal({ exerciseType, category, onClose, showToast }: { 
+  function ImageBulkUploadModal({ exerciseType, category, onClose, showToast, initialFile }: { 
     exerciseType: QuestionType; 
     category: Category; 
     onClose: () => void; 
     showToast: (ok: boolean, msg: string) => void;
+    initialFile?: File | null;
   }) {
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const [rows, setRows] = useState<any[]>([]);
     const [currentIdx, setCurrentIdx] = useState(0);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+      if (initialFile) {
+        handleCsvFile(initialFile);
+      }
+    }, [initialFile]);
 
     const handleCsvFile = (file: File) => {
       setError('');
@@ -2590,20 +2584,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
             {rows.length === 0 ? (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleCsvFile(f); }}
-                style={{
-                  border: '2px dashed var(--border)', borderRadius: 16, padding: '4rem 2rem',
-                  textAlign: 'center', cursor: 'pointer', background: 'rgba(255,255,255,0.02)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-                }}>
-                <FileSpreadsheet size={48} style={{ opacity: 0.3 }} />
-                <div>
-                  <p style={{ fontWeight: 600, fontSize: 18, marginBottom: 4 }}>Upload Exercise CSV</p>
-                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Drag and drop your file here, or click to browse</p>
-                </div>
+              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                {error || 'Processing CSV...'}
               </div>
             ) : (
               <div>
@@ -2612,7 +2594,6 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                     <strong>{rows.length}</strong> rows loaded · <strong>{rows.filter(r => r.imageUrl).length}</strong> with images
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-secondary" style={{ padding: '6px 12px' }} onClick={() => setRows([])}>Change CSV</button>
                     <button className="btn btn-primary" onClick={handleBulkSave} disabled={saving || !rows.some(r => r.imageUrl)}>
                       {saving ? 'Saving...' : 'Save All Progress'}
                     </button>
@@ -2661,9 +2642,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                 </div>
               </div>
             )}
-            {error && <div className="alert alert-error" style={{ marginTop: '1rem' }}>{error}</div>}
+            {error && rows.length > 0 && <div className="alert alert-error" style={{ marginTop: '1rem' }}>{error}</div>}
           </div>
-          <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvFile(f); }} />
         </div>
       </>
     );
@@ -2679,6 +2659,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [selectedType, setSelectedType] = useState<QuestionType | null>(null);
     const [aiGenQt, setAiGenQt] = useState<QuestionType | null>(null);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
+    const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
     const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
     useEffect(() => {
@@ -2730,7 +2711,6 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             onCreate={handleCreate}
             onAiGenerate={(qt) => setAiGenQt(qt)}
             showToast={showToast}
-            onShowBulkUpload={() => setShowBulkUpload(true)}
           />
         )}
 
@@ -2748,7 +2728,13 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           <Slide4Create
             level={level} category={category} exerciseType={selectedType}
             onBack={() => setSlide('subtypes')}
-            onCreated={() => setSlide('subtypes')}
+            onCreated={(file) => {
+              setSlide('subtypes');
+              if (file && IMAGE_EXERCISE_TYPES.includes(selectedType.slug)) {
+                setBulkUploadFile(file);
+                setShowBulkUpload(true);
+              }
+            }}
             showToast={showToast}
           />
         )}
@@ -2769,6 +2755,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             category={category}
             onClose={() => setShowBulkUpload(false)}
             showToast={showToast}
+            initialFile={bulkUploadFile}
           />
         )}
 
