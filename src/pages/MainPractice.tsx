@@ -1497,10 +1497,20 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       return <span style={{ fontSize: 13, color: 'var(--text)', display: 'block', padding: '4px 0', wordBreak: 'break-word', lineHeight: 1.5 }}>{val || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}</span>;
     };
 
+    const formatKey = (key: string) => {
+      const labels: Record<string, string> = {
+        'Exercise Tag': 'Exercise Tag (Topic)',
+        'ExerciseID': 'Exercise ID',
+        'TimeLimitSeconds': 'Time Limit (Sec)',
+        'Difficulty': 'Difficulty Level'
+      };
+      return labels[key] || key;
+    };
+
     /** Single key row (Data Master / unpaired) */
     const renderSingleRow = (key: string) => (
       <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
-        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 200 }}>{key}</td>
+        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 200 }}>{formatKey(key)}</td>
         <td style={{ padding: '6px 8px' }}>{renderCell(key, isEditMode)}</td>
       </tr>
     );
@@ -2192,13 +2202,13 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             <div>
               {/* Exercise Name section */}
               <div className="card" style={{ marginBottom: '1.5rem' }}>
-                <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Exercise Name</h3>
+                <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Exercise Name / Topic Tag</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.75rem', alignItems: 'center' }}>
                   {(['English', 'French', 'German', 'Spanish'] as const).map((lang, i) => {
                     const key = ['name_en', 'name_fr', 'name_de', 'name_es'][i] as keyof typeof form;
                     return (
                       <>
-                        <label key={`lbl-${lang}`} style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>{lang}</label>
+                        <label key={`lbl-${lang}`} style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>{lang === 'English' ? 'English (Tag)' : lang}</label>
                         <input key={`inp-${lang}`} className="form-control" value={form[key]} onChange={e => set(key, e.target.value)}
                           placeholder={`Name in ${lang}`} style={{ marginBottom: 0 }} />
                       </>
