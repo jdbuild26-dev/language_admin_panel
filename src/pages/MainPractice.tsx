@@ -58,7 +58,6 @@ interface ExcelRow { [key: string]: string | number | boolean | null; }
 const SKILL_SLUGS: Record<Category, string[]> = {
   Reading: [
     'translate_bubbles',         // Translate the Sentence
-    'match_pairs',               // Match Pairs
     'highlight_text',            // Highlight the Sentence
     'diagram_mapping',           // Diagram Labelling
     'image_mcq',                 // Match Image to Description
@@ -66,15 +65,9 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'image_labelling',           // Image Labelling
     'passage_mcq',               // Reading Comprehension
     'complete_passage_dropdown', // Complete the Passage
-    'fill_blanks_passage',       // Fill in the Blanks Passage
-    'fill_blanks',               // Fill in the Blanks (alias)
+    'fill_blanks',               // Fill in the Blanks Passage
     'reorder_sentences',         // Reorder Sentences
-    'true_false',                // Identify Information
     'conversation_dialogue',     // Running Conversation
-    'summary_completion',        // Summary Completion
-    'match_sentence_ending',     // Match Sentence Ending
-    'sentence_completion',       // Sentence Completion
-    'reading_conversation',      // Reading Conversation
   ],
   Listening: [
     'listen_select',             // Listen and Select
