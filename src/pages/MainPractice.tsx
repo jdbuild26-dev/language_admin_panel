@@ -2195,11 +2195,13 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     showToast: (ok: boolean, msg: string) => void;
   }) {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef2 = useRef<HTMLInputElement>(null);
     const [form, setForm] = useState({
       name_en: '', name_fr: '', name_de: '', name_es: '',
       identifier_name: '', subtype_slug: '',
     });
     const [file, setFile] = useState<File | null>(null);
+    const [file2, setFile2] = useState<File | null>(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [uploadProgress, setUploadProgress] = useState<{ current: number, total: number } | null>(null);
@@ -2232,6 +2234,9 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           setUploadProgress({ current: 0, total: 1 });
           const fd = new FormData();
           fd.append('file', file, file.name);
+          if (file2) {
+            fd.append('file2', file2, file2.name);
+          }
           fd.append('skill', category);
           fd.append('type_slug', exerciseType.slug);
           fd.append('category', 'main');
@@ -2340,33 +2345,64 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             </div>
 
             {/* CSV Upload panel */}
-            <div style={{ width: 200 }}>
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
-                style={{
-                  width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
-                  background: 'var(--card-bg)', cursor: 'pointer',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-                  transition: 'border-color 0.2s',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
-                <Upload size={40} style={{ color: file ? 'var(--accent)' : 'var(--text-muted)', opacity: file ? 1 : 0.5 }} />
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
-                  {file ? file.name : 'Upload CSV (optional)'}
-                </span>
-                {file && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: 200 }}>
+              <div>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
+                  style={{
+                    width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
+                    background: 'var(--card-bg)', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+                    transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                  <Upload size={40} style={{ color: file ? 'var(--accent)' : 'var(--text-muted)', opacity: file ? 1 : 0.5 }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
+                    {file ? file.name : 'Upload Master CSV'}
+                  </span>
+                  {file && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
+                </div>
+                <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
+                {file && (
+                  <button onClick={() => setFile(null)}
+                    style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <X size={12} /> Remove file
+                  </button>
+                )}
               </div>
-              <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
-              {file && (
-                <button onClick={() => setFile(null)}
-                  style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <X size={12} /> Remove file
-                </button>
-              )}
+
+              <div>
+                <div
+                  onClick={() => fileInputRef2.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile2(f); }}
+                  style={{
+                    width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
+                    background: 'var(--card-bg)', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+                    transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                  <Upload size={40} style={{ color: file2 ? 'var(--accent)' : 'var(--text-muted)', opacity: file2 ? 1 : 0.5 }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
+                    {file2 ? file2.name : 'Upload Items/Sub-CSV (optional)'}
+                  </span>
+                  {file2 && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
+                </div>
+                <input ref={fileInputRef2} type="file" accept=".csv" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) setFile2(f); }} />
+                {file2 && (
+                  <button onClick={() => setFile2(null)}
+                    style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <X size={12} /> Remove file
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
