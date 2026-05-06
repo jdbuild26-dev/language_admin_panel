@@ -470,8 +470,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   }
 
   // ─── AI Generator Modal ──────────────────────────────────────────────────────
-  function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
-    qt: QuestionType; level: string; category: string; onClose: () => void; showToast: (ok: boolean, msg: string) => void;
+  function AIGeneratorModal({ qt, subtype, level, category, onClose, showToast }: {
+    qt: QuestionType; subtype?: ExerciseSubtype; level: string; category: string; onClose: () => void; showToast: (ok: boolean, msg: string) => void;
   }) {
     const [loading, setLoading] = useState(false);
     const [savingAll, setSavingAll] = useState(false);
@@ -481,7 +481,16 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [lastExtId, setLastExtId] = useState<string | null>(null);
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
     const batchActive = useRef(false);
+    const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
+    
+    useEffect(() => {
+      api.get('/admin/exercise-subtypes', { params: { type_slug: qt.slug, level, skill: category } })
+        .then(r => setSubtypes(r.data.items || []))
+        .catch(() => {});
+    }, [qt.slug, level, category]);
+
     const [form, setForm] = useState({
+      subtype_slug: subtype?.subtype_slug || '',
       topic: '',
       grammar: '',
       count: 5,
@@ -708,9 +717,16 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             <h2 style={{ margin: 0 }}>AI Exercise Generator</h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
             <div className="form-group">
-              <label className="form-label">Topic / Theme</label>
+              <label className="form-label">Subtype (Optional)</label>
+              <select className="form-control" value={form.subtype_slug} onChange={e => setForm({ ...form, subtype_slug: e.target.value })}>
+                <option value="">-- None --</option>
+                {subtypes.map(s => <option key={s.id} value={s.subtype_slug}>{s.name_en} ({s.subtype_slug})</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Topic / Exercise Tag</label>
               <input className="form-control" value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="e.g. Professional communication" />
             </div>
             <div className="form-group">
@@ -822,7 +838,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     questionTypes: QuestionType[];
     setQuestionTypes: React.Dispatch<React.SetStateAction<QuestionType[]>>;
     onEdit: (qt: QuestionType) => void;
-    onAiGenerate: (qt: QuestionType) => void;
+    onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     // Fetch available slugs — kept for potential future use but not used for filtering in admin
@@ -1190,7 +1206,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     showToast,
   }: {
     level: CefrLevel; category: Category; exerciseType: QuestionType;
-    onBack: () => void; onView: (sub: ExerciseSubtype) => void; onCreate: () => void; onAiGenerate: (qt: QuestionType) => void;
+    onBack: () => void; onView: (sub: ExerciseSubtype) => void; onCreate: () => void; onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
@@ -1838,7 +1854,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   }: {
     level: CefrLevel; category: Category; exerciseType: QuestionType; subtype: ExerciseSubtype;
     onBack: () => void;
-    onAiGenerate: (qt: QuestionType) => void;
+    onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     type ExTab = 'list' | 'detail';
@@ -1998,7 +2014,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               subtypeSlug={subtype.subtype_slug}
               showToast={showToast}
             />
-            <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate more"
+            <button onClick={() => onAiGenerate(exerciseType, subtype)} title="AI Generate more"
               style={{
                 width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer',
                 background: 'var(--accent)', color: '#fff',
@@ -2301,13 +2317,13 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             <div>
               {/* Exercise Name section */}
               <div className="card" style={{ marginBottom: '1.5rem' }}>
-                <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Exercise Name / Topic Tag</h3>
+                <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Subtype Name</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.75rem', alignItems: 'center' }}>
                   {(['English', 'French', 'German', 'Spanish'] as const).map((lang, i) => {
                     const key = ['name_en', 'name_fr', 'name_de', 'name_es'][i] as keyof typeof form;
                     return (
                       <>
-                        <label key={`lbl-${lang}`} style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>{lang === 'English' ? 'English (Tag)' : lang}</label>
+                        <label key={`lbl-${lang}`} style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>{lang === 'English' ? 'English Name' : lang}</label>
                         <input key={`inp-${lang}`} className="form-control" value={form[key]} onChange={e => set(key, e.target.value)}
                           placeholder={`Name in ${lang}`} style={{ marginBottom: 0 }} />
                       </>
@@ -2693,7 +2709,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [questionTypes, setQuestionTypes] = useState<QuestionType[]>([]);
     const [selectedSubtype, setSelectedSubtype] = useState<ExerciseSubtype | null>(null);
     const [selectedType, setSelectedType] = useState<QuestionType | null>(null);
-    const [aiGenQt, setAiGenQt] = useState<QuestionType | null>(null);
+    const [aiGenQt, setAiGenQt] = useState<{ qt: QuestionType; subtype?: ExerciseSubtype } | null>(null);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
     const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -2734,7 +2750,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             questionTypes={questionTypes}
             setQuestionTypes={setQuestionTypes}
             onEdit={handleEdit}
-            onAiGenerate={(qt) => setAiGenQt(qt)}
+            onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
             showToast={showToast}
           />
         )}
@@ -2745,7 +2761,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             onBack={() => setSlide('main')}
             onView={handleView}
             onCreate={handleCreate}
-            onAiGenerate={(qt) => setAiGenQt(qt)}
+            onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
             showToast={showToast}
           />
         )}
@@ -2755,7 +2771,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             level={level} category={category}
             exerciseType={selectedType} subtype={selectedSubtype}
             onBack={() => setSlide('subtypes')}
-            onAiGenerate={(qt) => setAiGenQt(qt)}
+            onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
             showToast={showToast}
           />
         )}
@@ -2777,7 +2793,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
 
         {aiGenQt && (
           <AIGeneratorModal
-            qt={aiGenQt}
+            qt={aiGenQt.qt}
+            subtype={aiGenQt.subtype}
             level={level}
             category={category}
             onClose={() => setAiGenQt(null)}
