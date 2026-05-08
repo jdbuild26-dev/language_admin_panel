@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Upload, Plus, Trash2, Save, Image, Tag, CheckCircle, Loader2, FileSpreadsheet, ChevronLeft, ChevronRight, X, AlertCircle, ImageIcon } from 'lucide-react';
 import api from '../services/api';
 
@@ -128,8 +128,13 @@ function splitCsvLine(line: string): string[] {
 }
 
 function detectTypeSlug(row: CsvRow): string {
-  const qt = (row['QuestionType'] || row['questiontype'] || '').toLowerCase();
-  if (qt) return qt;
+  const qt = (row['Question Type'] || row['QuestionType'] || row['questiontype'] || '').toLowerCase().trim();
+  if (qt === 'diagram labelling') return 'diagram_mapping';
+  if (qt === 'match image to description') return 'match_image_description';
+  if (qt === 'image labelling') return 'image_labelling';
+  if (qt === 'image mcq') return 'image_mcq';
+  if (qt) return qt.replace(/\s+/g, '_');
+  
   // Infer from columns
   if ('Correct Answer 1_FR' in row || 'Correct Answer 1_EN' in row) return 'image_labelling';
   if ('Correct answer_FR' in row || 'options_fr' in row) return 'image_mcq';
@@ -148,10 +153,20 @@ function getExerciseId(row: CsvRow): string {
 function CsvBulkUpload() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<WorkingRow[]>([]);
+  const [subtypes, setSubtypes] = useState<any[]>([]);
+  const [selectedSubtype, setSelectedSubtype] = useState('');
   const [currentIdx, setCurrentIdx] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<{ saved: number; skipped: number; errors: any[] } | null>(null);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get('/admin/exercise-subtypes').then(res => {
+      setSubtypes(res.data.items || []);
+    }).catch(err => {
+      console.error("Failed to load subtypes:", err);
+    });
+  }, []);
 
   const handleCsvFile = (file: File) => {
     setError('');
@@ -193,6 +208,7 @@ function CsvBulkUpload() {
           exercise_id: r.exerciseId,
           image_url: r.imageUrl,
           type_slug: r.typeSlug,
+          subtype_slug: selectedSubtype || undefined,
           level: r.level,
           skill: 'Reading',
           category: 'main',
@@ -215,6 +231,24 @@ function CsvBulkUpload() {
   if (rows.length === 0) {
     return (
       <div>
+        <div style={{ marginBottom: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="form-group">
+            <label className="form-label">Exercise Subtype (Optional)</label>
+            <select 
+              className="form-control" 
+              value={selectedSubtype} 
+              onChange={e => setSelectedSubtype(e.target.value)}
+            >
+              <option value="">-- Autodetect or No Subtype --</option>
+              {subtypes.map(st => (
+                <option key={st.id} value={st.subtype_slug}>
+                  {st.name_en} ({st.type_slug})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div
           onClick={() => fileInputRef.current?.click()}
           onDragOver={e => e.preventDefault()}

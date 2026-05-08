@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronLeft, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet, CloudUpload, Sparkles, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet, CloudUpload, Sparkles, Check, Loader2, ImageIcon } from 'lucide-react';
 import api from '../services/api';
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'] as const;
@@ -58,7 +58,6 @@ interface ExcelRow { [key: string]: string | number | boolean | null; }
 const SKILL_SLUGS: Record<Category, string[]> = {
   Reading: [
     'translate_bubbles',         // Translate the Sentence
-    'match_pairs',               // Match Pairs
     'highlight_text',            // Highlight the Sentence
     'diagram_mapping',           // Diagram Labelling
     'image_mcq',                 // Match Image to Description
@@ -66,15 +65,9 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'image_labelling',           // Image Labelling
     'passage_mcq',               // Reading Comprehension
     'complete_passage_dropdown', // Complete the Passage
-    'fill_blanks_passage',       // Fill in the Blanks Passage
-    'fill_blanks',               // Fill in the Blanks (alias)
+    'fill_blanks',               // Fill in the Blanks Passage
     'reorder_sentences',         // Reorder Sentences
-    'true_false',                // Identify Information
     'conversation_dialogue',     // Running Conversation
-    'summary_completion',        // Summary Completion
-    'match_sentence_ending',     // Match Sentence Ending
-    'sentence_completion',       // Sentence Completion
-    'reading_conversation',      // Reading Conversation
   ],
   Listening: [
     'listen_select',             // Listen and Select
@@ -108,6 +101,17 @@ const SKILL_SLUGS: Record<Category, string[]> = {
     'speaking_conversation',     // Speaking Conversation (Running)
   ],
 };
+
+const IMAGE_EXERCISE_TYPES = [
+  'diagram_mapping',
+  'image_mcq',
+  'match_desc_to_image',
+  'image_labelling',
+  'match_image_description',
+  'write_image',
+  'speak_image',
+  'image_mcq'
+];
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ ok, msg, onDone }: { ok: boolean; msg: string; onDone: () => void }) {
@@ -466,8 +470,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   }
 
   // ─── AI Generator Modal ──────────────────────────────────────────────────────
-  function AIGeneratorModal({ qt, level, category, onClose, showToast }: {
-    qt: QuestionType; level: string; category: string; onClose: () => void; showToast: (ok: boolean, msg: string) => void;
+  function AIGeneratorModal({ qt, subtype, level, category, onClose, showToast }: {
+    qt: QuestionType; subtype?: ExerciseSubtype; level: string; category: string; onClose: () => void; showToast: (ok: boolean, msg: string) => void;
   }) {
     const [loading, setLoading] = useState(false);
     const [savingAll, setSavingAll] = useState(false);
@@ -477,7 +481,16 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [lastExtId, setLastExtId] = useState<string | null>(null);
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
     const batchActive = useRef(false);
+    const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
+    
+    useEffect(() => {
+      api.get('/admin/exercise-subtypes', { params: { type_slug: qt.slug, level, skill: category } })
+        .then(r => setSubtypes(r.data.items || []))
+        .catch(() => {});
+    }, [qt.slug, level, category]);
+
     const [form, setForm] = useState({
+      subtype_slug: subtype?.subtype_slug || '',
       topic: '',
       grammar: '',
       count: 5,
@@ -704,9 +717,16 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             <h2 style={{ margin: 0 }}>AI Exercise Generator</h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
             <div className="form-group">
-              <label className="form-label">Topic / Theme</label>
+              <label className="form-label">Subtype (Optional)</label>
+              <select className="form-control" value={form.subtype_slug} onChange={e => setForm({ ...form, subtype_slug: e.target.value })}>
+                <option value="">-- None --</option>
+                {subtypes.map(s => <option key={s.id} value={s.subtype_slug}>{s.name_en} ({s.subtype_slug})</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Topic / Exercise Tag</label>
               <input className="form-control" value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="e.g. Professional communication" />
             </div>
             <div className="form-group">
@@ -818,7 +838,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     questionTypes: QuestionType[];
     setQuestionTypes: React.Dispatch<React.SetStateAction<QuestionType[]>>;
     onEdit: (qt: QuestionType) => void;
-    onAiGenerate: (qt: QuestionType) => void;
+    onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     // Fetch available slugs — kept for potential future use but not used for filtering in admin
@@ -1367,7 +1387,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     showToast,
   }: {
     level: CefrLevel; category: Category; exerciseType: QuestionType;
-    onBack: () => void; onView: (sub: ExerciseSubtype) => void; onCreate: () => void; onAiGenerate: (qt: QuestionType) => void;
+    onBack: () => void; onView: (sub: ExerciseSubtype) => void; onCreate: () => void; onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
@@ -1437,6 +1457,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+<<<<<<< HEAD
             {/* 2-CSV upload — shown for exercise types that need a passages CSV first */}
             {TWO_CSV_SLUGS.has(exerciseType.slug) && (
               <TwoCsvUpload
@@ -1446,6 +1467,9 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               />
             )}
             {/* Direct CSV upload — available for all exercise types */}
+=======
+            {/* Direct CSV upload */}
+>>>>>>> 6be26bf0bc83c923a7ccf0a74146fda0e2d3604c
             <DirectCsvUpload
               exerciseType={exerciseType}
               category={category}
@@ -1597,6 +1621,68 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     return { masterKeys, pairedGroups, unpaired };
   }
 
+  function ImageUploader({ onUploaded, existingUrl, isEditMode }: { onUploaded: (url: string) => void; existingUrl?: string; isEditMode: boolean }) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    const [preview, setPreview] = useState<string | null>(existingUrl || null);
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+      setPreview(existingUrl || null);
+    }, [existingUrl]);
+
+    const handleFile = async (file: File) => {
+      if (!isEditMode) return;
+      setError('');
+      const localUrl = URL.createObjectURL(file);
+      setPreview(localUrl);
+      setUploading(true);
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await api.post<{ url: string }>('/admin/upload-image', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        onUploaded(res.data.url);
+        setPreview(res.data.url);
+      } catch (e: any) {
+        setError(e.response?.data?.detail || 'Upload failed');
+        setPreview(existingUrl || null);
+      } finally {
+        setUploading(false);
+      }
+    };
+
+    return (
+      <div style={{ marginBottom: '1rem', padding: '0 20px', marginTop: '1rem' }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+          Exercise Image
+        </p>
+        <div
+          onClick={() => isEditMode && inputRef.current?.click()}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); if (isEditMode) { const f = e.dataTransfer.files[0]; if (f) handleFile(f); } }}
+          style={{
+            border: isEditMode ? '2px dashed var(--border)' : '1px solid var(--border)',
+            borderRadius: 12, padding: '1rem',
+            textAlign: 'center', cursor: isEditMode ? 'pointer' : 'default', background: 'rgba(255,255,255,0.02)',
+            minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}
+        >
+          {uploading ? (
+            <><Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} /><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Uploading...</span></>
+          ) : preview ? (
+            <img src={preview} alt="preview" style={{ maxHeight: 200, maxWidth: '100%', borderRadius: 8, objectFit: 'contain' }} />
+          ) : (
+            <><ImageIcon size={28} style={{ opacity: 0.3 }} /><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{isEditMode ? 'Click or drag to upload image' : 'No image uploaded'}</span></>
+          )}
+        </div>
+        <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+        {error && <div style={{ color: '#f87171', fontSize: 12, marginTop: 4 }}>{error}</div>}
+      </div>
+    );
+  }
+
   // ─── View/Edit Modal ──────────────────────────────────────────────────────────
   function ViewEditModal({ externalId, onClose, onSaved }: { externalId: string; onClose: () => void; onSaved: () => void }) {
     const [row, setRow] = useState<ExcelRow | null>(null);
@@ -1624,6 +1710,18 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       : userLanguage 
         ? ['_EN', userLanguage] as LangSuffix[]
         : ['_EN'] as LangSuffix[];
+
+    const imageKey = row ? Object.keys(row).find(k => 
+      ['image link from cloudinary', 'imageurl', 'image_url', 'image link'].includes(k.toLowerCase())
+    ) : null;
+
+    const handleImageUploaded = (url: string) => {
+      if (imageKey) {
+        handleChange(imageKey, url);
+      } else {
+        handleChange('Image link from Cloudinary', url);
+      }
+    };
 
     const load = useCallback(async () => {
       if (!externalId.trim()) return;
@@ -1693,10 +1791,20 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       return <span style={{ fontSize: 13, color: 'var(--text)', display: 'block', padding: '4px 0', wordBreak: 'break-word', lineHeight: 1.5 }}>{val || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}</span>;
     };
 
+    const formatKey = (key: string) => {
+      const labels: Record<string, string> = {
+        'Exercise Tag': 'Exercise Tag (Topic)',
+        'ExerciseID': 'Exercise ID',
+        'TimeLimitSeconds': 'Time Limit (Sec)',
+        'Difficulty': 'Difficulty Level'
+      };
+      return labels[key] || key;
+    };
+
     /** Single key row (Data Master / unpaired) */
     const renderSingleRow = (key: string) => (
       <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
-        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 200 }}>{key}</td>
+        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 200 }}>{formatKey(key)}</td>
         <td style={{ padding: '6px 8px' }}>{renderCell(key, isEditMode)}</td>
       </tr>
     );
@@ -1829,8 +1937,16 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             {loading && <p style={{ color: 'var(--text-muted)', padding: '2rem', textAlign: 'center' }}>Loading...</p>}
             {error && <div style={{ margin: '1rem', padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#f87171', fontSize: 13 }}><AlertCircle size={14} style={{ display: 'inline', marginRight: 6 }} />{error}</div>}
             {row && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <tbody>
+              <>
+                {IMAGE_EXERCISE_TYPES.includes(typeSlug) && (
+                  <ImageUploader 
+                    isEditMode={isEditMode}
+                    existingUrl={imageKey ? String(row[imageKey] || '') : ''}
+                    onUploaded={handleImageUploaded}
+                  />
+                )}
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <tbody>
                   {/* ── Part 1: Data Master ── */}
                   {masterKeys.length > 0 && (
                     <>
@@ -1874,6 +1990,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                   )}
                 </tbody>
               </table>
+              </>
             )}
           </div>
 
@@ -1930,7 +2047,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   }: {
     level: CefrLevel; category: Category; exerciseType: QuestionType; subtype: ExerciseSubtype;
     onBack: () => void;
-    onAiGenerate: (qt: QuestionType) => void;
+    onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     type ExTab = 'list' | 'detail';
@@ -2090,7 +2207,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               subtypeSlug={subtype.subtype_slug}
               showToast={showToast}
             />
-            <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate more"
+            <button onClick={() => onAiGenerate(exerciseType, subtype)} title="AI Generate more"
               style={{
                 width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer',
                 background: 'var(--accent)', color: '#fff',
@@ -2283,15 +2400,17 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     onBack, onCreated, showToast,
   }: {
     level: CefrLevel; category: Category; exerciseType: QuestionType;
-    onBack: () => void; onCreated: () => void;
+    onBack: () => void; onCreated: (file?: File, subtypeSlug?: string) => void;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef2 = useRef<HTMLInputElement>(null);
     const [form, setForm] = useState({
       name_en: '', name_fr: '', name_de: '', name_es: '',
       identifier_name: '', subtype_slug: '',
     });
     const [file, setFile] = useState<File | null>(null);
+    const [file2, setFile2] = useState<File | null>(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [uploadProgress, setUploadProgress] = useState<{ current: number, total: number } | null>(null);
@@ -2324,6 +2443,9 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           setUploadProgress({ current: 0, total: 1 });
           const fd = new FormData();
           fd.append('file', file, file.name);
+          if (file2) {
+            fd.append('file2', file2, file2.name);
+          }
           fd.append('skill', category);
           fd.append('type_slug', exerciseType.slug);
           fd.append('category', 'main');
@@ -2332,8 +2454,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           setUploadProgress({ current: 1, total: 1 });
         }
 
-        showToast(true, `Created "${form.name_en}" and synced exercises`);
-        onCreated();
+        showToast(true, 'Subtype created successfully');
+        onCreated(file || undefined, form.subtype_slug);
       } catch (e: unknown) {
         const err = e as { response?: { data?: { detail?: string } } };
         setError(err.response?.data?.detail || 'Save failed');
@@ -2388,13 +2510,13 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             <div>
               {/* Exercise Name section */}
               <div className="card" style={{ marginBottom: '1.5rem' }}>
-                <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Exercise Name</h3>
+                <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Subtype Name</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.75rem', alignItems: 'center' }}>
                   {(['English', 'French', 'German', 'Spanish'] as const).map((lang, i) => {
                     const key = ['name_en', 'name_fr', 'name_de', 'name_es'][i] as keyof typeof form;
                     return (
                       <>
-                        <label key={`lbl-${lang}`} style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>{lang}</label>
+                        <label key={`lbl-${lang}`} style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>{lang === 'English' ? 'English Name' : lang}</label>
                         <input key={`inp-${lang}`} className="form-control" value={form[key]} onChange={e => set(key, e.target.value)}
                           placeholder={`Name in ${lang}`} style={{ marginBottom: 0 }} />
                       </>
@@ -2432,37 +2554,345 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             </div>
 
             {/* CSV Upload panel */}
-            <div style={{ width: 200 }}>
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
-                style={{
-                  width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
-                  background: 'var(--card-bg)', cursor: 'pointer',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-                  transition: 'border-color 0.2s',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
-                <Upload size={40} style={{ color: file ? 'var(--accent)' : 'var(--text-muted)', opacity: file ? 1 : 0.5 }} />
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
-                  {file ? file.name : 'Upload CSV (optional)'}
-                </span>
-                {file && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: 200 }}>
+              <div>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
+                  style={{
+                    width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
+                    background: 'var(--card-bg)', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+                    transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                  <Upload size={40} style={{ color: file ? 'var(--accent)' : 'var(--text-muted)', opacity: file ? 1 : 0.5 }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
+                    {file ? file.name : 'Upload Master CSV'}
+                  </span>
+                  {file && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
+                </div>
+                <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
+                {file && (
+                  <button onClick={() => setFile(null)}
+                    style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <X size={12} /> Remove file
+                  </button>
+                )}
               </div>
-              <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
-              {file && (
-                <button onClick={() => setFile(null)}
-                  style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <X size={12} /> Remove file
-                </button>
-              )}
+
+              <div>
+                <div
+                  onClick={() => fileInputRef2.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile2(f); }}
+                  style={{
+                    width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
+                    background: 'var(--card-bg)', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+                    transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                  <Upload size={40} style={{ color: file2 ? 'var(--accent)' : 'var(--text-muted)', opacity: file2 ? 1 : 0.5 }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
+                    {file2 ? file2.name : 'Upload Items/Sub-CSV (optional)'}
+                  </span>
+                  {file2 && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
+                </div>
+                <input ref={fileInputRef2} type="file" accept=".csv" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) setFile2(f); }} />
+                {file2 && (
+                  <button onClick={() => setFile2(null)}
+                    style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <X size={12} /> Remove file
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
+    );
+  }
+
+  // ─── Image Bulk Upload Helpers ───────────────────────────────────────────────
+
+  function splitCsvLine(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current);
+    return result;
+  }
+
+  function parseCsv(text: string): ExcelRow[] {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+
+    let headerIdx = 0;
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+      const cells = splitCsvLine(lines[i]);
+      const lower = cells.map(c => c.toLowerCase().trim());
+      if (lower.some(c => ['exerciseid', 'exercise id', 'heading_en', 'heading_fr', 'image link from cloudinary', 'level'].includes(c))) {
+        headerIdx = i;
+        break;
+      }
+    }
+
+    const headers = splitCsvLine(lines[headerIdx]).map(h => h.trim());
+    const rows: ExcelRow[] = [];
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const cells = splitCsvLine(lines[i]);
+      if (cells.every(c => !c.trim())) continue;
+      const row: ExcelRow = {};
+      headers.forEach((h, idx) => { row[h] = (cells[idx] || '').trim(); });
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function detectTypeSlugInRow(row: ExcelRow): string {
+    const qt = (String(row['Question Type'] || row['QuestionType'] || row['questiontype'] || '')).toLowerCase().trim();
+    if (qt === 'diagram labelling') return 'diagram_mapping';
+    if (qt === 'match image to description') return 'match_image_description';
+    if (qt === 'image labelling') return 'image_labelling';
+    if (qt === 'image mcq') return 'image_mcq';
+    if (qt) return qt.replace(/\s+/g, '_');
+    if ('Correct Answer 1_FR' in row || 'Correct Answer 1_EN' in row) return 'image_labelling';
+    if ('Correct answer_FR' in row || 'options_fr' in row) return 'image_mcq';
+    if ('Answer 1_FR' in row || 'answers_fr' in row) return 'diagram_mapping';
+    return 'image_labelling';
+  }
+
+  function RowImageUploader({ existingUrl, onUploaded }: { existingUrl: string; onUploaded: (url: string) => void }) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    const [preview, setPreview] = useState<string>(existingUrl);
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleFile = async (file: File) => {
+      setError('');
+      const localUrl = URL.createObjectURL(file);
+      setPreview(localUrl);
+      setUploading(true);
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await api.post('/admin/upload-image', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setPreview(res.data.url);
+        onUploaded(res.data.url);
+      } catch (e: any) {
+        setError(e.response?.data?.detail || 'Upload failed');
+        setPreview(existingUrl);
+      } finally {
+        setUploading(false);
+      }
+    };
+
+    return (
+      <div>
+        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+          {preview ? 'Image (click to replace)' : 'Upload Image'}
+        </p>
+        <div
+          onClick={() => inputRef.current?.click()}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+          style={{
+            border: `2px dashed ${preview ? '#4ade8066' : 'var(--border)'}`,
+            borderRadius: 12, cursor: 'pointer',
+            background: 'var(--card-bg)',
+            minHeight: 180, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+            overflow: 'hidden', position: 'relative',
+          }}>
+          {uploading ? (
+            <><Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} /><span style={{ fontSize: 13, opacity: 0.6 }}>Uploading...</span></>
+          ) : preview ? (
+            <img src={preview} alt="preview" style={{ maxHeight: 200, maxWidth: '100%', objectFit: 'contain', padding: 8 }} />
+          ) : (
+            <><ImageIcon size={32} style={{ opacity: 0.3 }} /><span style={{ fontSize: 13, opacity: 0.5 }}>Click or drag & drop</span></>
+          )}
+        </div>
+        <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+        {error && <div style={{ fontSize: 12, color: '#f87171', marginTop: 4 }}>{error}</div>}
+      </div>
+    );
+  }
+
+  function ImageBulkUploadModal({ exerciseType, category, onClose, showToast, initialFile, subtypeSlug }: { 
+    exerciseType: QuestionType; 
+    category: Category; 
+    onClose: () => void; 
+    showToast: (ok: boolean, msg: string) => void;
+    initialFile?: File | null;
+    subtypeSlug?: string;
+  }) {
+    const [rows, setRows] = useState<any[]>([]);
+    const [currentIdx, setCurrentIdx] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+      if (initialFile) {
+        handleCsvFile(initialFile);
+      }
+    }, [initialFile]);
+
+    const handleCsvFile = (file: File) => {
+      setError('');
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        const parsed = parseCsv(text);
+        if (parsed.length === 0) { setError('No data rows found in CSV'); return; }
+        const working = parsed.map((row, i) => ({
+          index: i,
+          exerciseId: row['ExerciseID'] || row['exerciseid'] || row['Exercise ID'] || '',
+          imageUrl: String(row['Image link from Cloudinary'] || row['imageUrl'] || row['image_url'] || ''),
+          data: row,
+          typeSlug: detectTypeSlugInRow(row),
+          level: String(row['Level'] || row['level'] || 'A1'),
+        }));
+        setRows(working);
+        setCurrentIdx(0);
+      };
+      reader.readAsText(file);
+    };
+
+    const handleImageUploaded = (url: string) => {
+      setRows(prev => prev.map((r, i) => i === currentIdx ? { ...r, imageUrl: url } : r));
+    };
+
+    const handleBulkSave = async () => {
+      const toSave = rows.filter(r => r.imageUrl);
+      if (toSave.length === 0) { setError('No rows have images uploaded yet'); return; }
+      setSaving(true); setError('');
+      try {
+        const payload = {
+          rows: toSave.map(r => ({
+            exercise_id: r.exerciseId,
+            image_url: r.imageUrl,
+            type_slug: r.typeSlug || exerciseType.slug,
+            level: r.level,
+            skill: category,
+            category: 'main',
+            row_data: r.data,
+            subtype_slug: subtypeSlug,
+          })),
+        };
+        await api.post('/admin/image-exercises/bulk-save', payload);
+        showToast(true, `Saved ${toSave.length} exercises with images`);
+        onClose();
+      } catch (e: any) {
+        setError(e.response?.data?.detail || 'Save failed');
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const current = rows[currentIdx];
+
+    return (
+      <>
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          zIndex: 1001, width: 'min(900px, 95vw)', maxHeight: '90vh',
+          background: 'var(--card-bg)', borderRadius: 16, boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border)',
+        }}>
+          {/* Header */}
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Bulk Image Upload</h3>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>{exerciseType.name || exerciseType.slug} · {category}</p>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+            {rows.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                {error || 'Processing CSV...'}
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', alignItems: 'center' }}>
+                  <div style={{ fontSize: 14 }}>
+                    <strong>{rows.length}</strong> rows loaded · <strong>{rows.filter(r => r.imageUrl).length}</strong> with images
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary" onClick={handleBulkSave} disabled={saving || !rows.some(r => r.imageUrl)}>
+                      {saving ? 'Saving...' : 'Save All Progress'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '1.5rem' }}>
+                  {/* Left side: Row List */}
+                  <div className="card" style={{ padding: 0, maxHeight: 400, overflowY: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                      <thead style={{ position: 'sticky', top: 0, background: 'var(--card-bg)', boxShadow: '0 1px 0 var(--border)' }}>
+                        <tr>
+                          <th style={{ padding: '10px 12px', textAlign: 'left' }}>ID</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, i) => (
+                          <tr key={i} onClick={() => setCurrentIdx(i)}
+                            style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', background: i === currentIdx ? 'rgba(31,111,235,0.1)' : 'transparent' }}>
+                            <td style={{ padding: '8px 12px' }}>{r.exerciseId || `Row ${i+1}`}</td>
+                            <td style={{ padding: '8px 12px' }}>
+                              {r.imageUrl ? <span style={{ color: '#4ade80' }}>✓ Image</span> : <span style={{ opacity: 0.4 }}>No image</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Right side: Current Row Editor */}
+                  <div>
+                    {current && (
+                      <div className="card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                          <span style={{ fontWeight: 600 }}>Row {currentIdx + 1}</span>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="btn btn-secondary" style={{ padding: '2px 8px' }} disabled={currentIdx === 0} onClick={() => setCurrentIdx(i => i - 1)}><ChevronLeft size={14} /></button>
+                            <button className="btn btn-secondary" style={{ padding: '2px 8px' }} disabled={currentIdx === rows.length - 1} onClick={() => setCurrentIdx(i => i + 1)}><ChevronRight size={14} /></button>
+                          </div>
+                        </div>
+                        <RowImageUploader key={currentIdx} existingUrl={current.imageUrl} onUploaded={handleImageUploaded} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            {error && rows.length > 0 && <div className="alert alert-error" style={{ marginTop: '1rem' }}>{error}</div>}
+          </div>
+        </div>
+      </>
     );
   }
 
@@ -2474,7 +2904,10 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const [questionTypes, setQuestionTypes] = useState<QuestionType[]>([]);
     const [selectedSubtype, setSelectedSubtype] = useState<ExerciseSubtype | null>(null);
     const [selectedType, setSelectedType] = useState<QuestionType | null>(null);
-    const [aiGenQt, setAiGenQt] = useState<QuestionType | null>(null);
+    const [aiGenQt, setAiGenQt] = useState<{ qt: QuestionType; subtype?: ExerciseSubtype } | null>(null);
+    const [showBulkUpload, setShowBulkUpload] = useState(false);
+    const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
+    const [bulkUploadSubtype, setBulkUploadSubtype] = useState<string | undefined>(undefined);
     const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
     useEffect(() => {
@@ -2513,7 +2946,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             questionTypes={questionTypes}
             setQuestionTypes={setQuestionTypes}
             onEdit={handleEdit}
-            onAiGenerate={(qt) => setAiGenQt(qt)}
+            onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
             showToast={showToast}
           />
         )}
@@ -2524,7 +2957,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             onBack={() => setSlide('main')}
             onView={handleView}
             onCreate={handleCreate}
-            onAiGenerate={(qt) => setAiGenQt(qt)}
+            onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
             showToast={showToast}
           />
         )}
@@ -2534,7 +2967,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             level={level} category={category}
             exerciseType={selectedType} subtype={selectedSubtype}
             onBack={() => setSlide('subtypes')}
-            onAiGenerate={(qt) => setAiGenQt(qt)}
+            onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
             showToast={showToast}
           />
         )}
@@ -2543,18 +2976,37 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           <Slide4Create
             level={level} category={category} exerciseType={selectedType}
             onBack={() => setSlide('subtypes')}
-            onCreated={() => setSlide('subtypes')}
+            onCreated={(file, createdSubtypeSlug) => {
+              setSlide('subtypes');
+              if (file && IMAGE_EXERCISE_TYPES.includes(selectedType.slug)) {
+                setBulkUploadFile(file);
+                setBulkUploadSubtype(createdSubtypeSlug);
+                setShowBulkUpload(true);
+              }
+            }}
             showToast={showToast}
           />
         )}
 
         {aiGenQt && (
           <AIGeneratorModal
-            qt={aiGenQt}
+            qt={aiGenQt.qt}
+            subtype={aiGenQt.subtype}
             level={level}
             category={category}
             onClose={() => setAiGenQt(null)}
             showToast={showToast}
+          />
+        )}
+
+        {showBulkUpload && selectedType && (
+          <ImageBulkUploadModal
+            exerciseType={selectedType}
+            category={category}
+            onClose={() => { setShowBulkUpload(false); setBulkUploadSubtype(undefined); setBulkUploadFile(null); }}
+            showToast={showToast}
+            initialFile={bulkUploadFile}
+            subtypeSlug={bulkUploadSubtype}
           />
         )}
 
