@@ -295,53 +295,63 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
           </div>
         </div>
 
-        {/* Sub-header labels for each column's fields */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 4, flexShrink: 0, paddingRight: 38 }}>
-          {headers.map((_, ci) => (
-            <div key={ci} style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 2fr 90px', gap: 4 }}>
-              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Text</span>
-              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Tooltip (hover)</span>
-              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>TTS</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Rows */}
+        {/* Sub-header labels + Rows — labels are rendered inside each cell so they always align */}
         <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {rows.map((row, ri) => (
-            <div key={ri} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div key={ri} style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
               {row.cells.map((cell, ci) => (
-                <div key={ci} style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 2fr 90px', gap: 4, alignItems: 'center' }}>
-                  <input value={cell.text} onChange={e => updateCell(ri, ci, 'text', e.target.value)}
-                    placeholder="e.g. un chat"
-                    style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
-                  <input value={cell.tooltip} onChange={e => updateCell(ri, ci, 'tooltip', e.target.value)}
-                    placeholder="a cat"
-                    style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
+                <div key={ci} style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 2fr 90px', gap: 4 }}>
+                  {/* Text field */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {ri === 0 && (
+                      <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2, letterSpacing: '0.05em' }}>Text</span>
+                    )}
+                    <input value={cell.text} onChange={e => updateCell(ri, ci, 'text', e.target.value)}
+                      placeholder="e.g. un chat"
+                      style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary, width: '100%' }} />
+                  </div>
+                  {/* Tooltip field */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {ri === 0 && (
+                      <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2, letterSpacing: '0.05em' }}>Tooltip (hover)</span>
+                    )}
+                    <input value={cell.tooltip} onChange={e => updateCell(ri, ci, 'tooltip', e.target.value)}
+                      placeholder="a cat"
+                      style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary, width: '100%' }} />
+                  </div>
                   {/* TTS toggle */}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none' }}>
-                    <div
-                      onClick={() => updateCell(ri, ci, 'tts', !cell.tts)}
-                      style={{
-                        width: 34, height: 18, borderRadius: 9, background: cell.tts ? '#2563eb' : (dm ? '#30363d' : '#d1d5db'),
-                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0,
-                      }}
-                    >
-                      <div style={{
-                        position: 'absolute', top: 2, left: cell.tts ? 18 : 2, width: 14, height: 14,
-                        borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                      }} />
-                    </div>
-                    <span style={{ fontSize: 11, color: cell.tts ? (dm ? '#93c5fd' : '#2563eb') : textMuted, fontWeight: cell.tts ? 600 : 400, whiteSpace: 'nowrap' }}>
-                      {cell.tts ? 'On' : 'Off'}
-                    </span>
-                  </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {ri === 0 && (
+                      <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2, letterSpacing: '0.05em' }}>TTS</span>
+                    )}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none', height: 30 }}>
+                      <div
+                        onClick={() => updateCell(ri, ci, 'tts', !cell.tts)}
+                        style={{
+                          width: 34, height: 18, borderRadius: 9, background: cell.tts ? '#2563eb' : (dm ? '#30363d' : '#d1d5db'),
+                          position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0,
+                        }}
+                      >
+                        <div style={{
+                          position: 'absolute', top: 2, left: cell.tts ? 18 : 2, width: 14, height: 14,
+                          borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: cell.tts ? (dm ? '#93c5fd' : '#2563eb') : textMuted, fontWeight: cell.tts ? 600 : 400, whiteSpace: 'nowrap' }}>
+                        {cell.tts ? 'On' : 'Off'}
+                      </span>
+                    </label>
+                  </div>
                 </div>
               ))}
-              <button onClick={() => removeRow(ri)} disabled={rows.length <= 1}
-                style={{ width: 32, height: 32, border: 'none', borderRadius: 6, background: rows.length > 1 ? '#ef444422' : 'transparent', color: rows.length > 1 ? '#ef4444' : textMuted, cursor: rows.length > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <X size={14} />
-              </button>
+              {/* Delete button — aligned to bottom of inputs */}
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                {ri === 0 && <div style={{ height: 17 }} />}{/* spacer matching label height */}
+                <button onClick={() => removeRow(ri)} disabled={rows.length <= 1}
+                  style={{ width: 32, height: 30, border: 'none', borderRadius: 6, background: rows.length > 1 ? '#ef444422' : 'transparent', color: rows.length > 1 ? '#ef4444' : textMuted, cursor: rows.length > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <X size={14} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1039,6 +1049,20 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const handleSave = async () => {
     if (!title.trim()) { showToast(false, 'Title is required'); return; }
     if (!conceptId.trim()) { showToast(false, 'Concept ID is required'); return; }
+
+    // Convert plain text (from section textareas) to HTML paragraphs.
+    // If the content already contains HTML tags it's left as-is (Quill output).
+    const plainTextToHtml = (text: string): string => {
+      if (!text.trim()) return '';
+      // If it already looks like HTML, don't double-wrap
+      if (/<[a-z][\s\S]*>/i.test(text)) return text;
+      // Split on blank lines → paragraphs; single newlines → <br>
+      return text
+        .split(/\n{2,}/)
+        .map(para => `<p>${para.replace(/\n/g, '<br>')}</p>`)
+        .join('');
+    };
+
     // Build combined HTML:
     // 1. Preamble: quill html + preamble blocks
     // 2. Each section: <h2> + <div data-section-content> wrapping textarea text + blocks
@@ -1047,8 +1071,9 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       .sort((a, b) => a.slNo - b.slNo)
       .map(s => {
         const sectionBlocksHtml = s.blocks.map(b => b.html).join('');
+        const sectionContent = plainTextToHtml(s.quillHtml);
         return `<h2 data-section-slno="${s.slNo}" data-section-id="${s.id}">${s.heading}</h2>` +
-          `<div data-section-content="${s.id}">${s.quillHtml}${sectionBlocksHtml}</div>`;
+          `<div data-section-content="${s.id}">${sectionContent}${sectionBlocksHtml}</div>`;
       })
       .join('');
     const combinedContent = preamblePart + sectionsPart;
@@ -1092,7 +1117,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const previewBg = dm ? '#161b22' : '#f9f5f0';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', background: bg, borderRadius: 12, border: `1px solid ${border}`, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', background: bg, borderRadius: 12, border: `1px solid ${border}` }}>
 
       {/* ── Top bar ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.5rem', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0 }}>
@@ -1223,14 +1248,14 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       )}
 
       {/* ── Editor / Preview ── */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 400, height: 'calc(100vh - 280px)' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 12, color: textMuted }}>
             <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
             <span>Loading content…</span>
           </div>
         ) : tab === 'write' ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '0 1.5rem 1rem' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '0 1.5rem 1rem' }}>
             {/* Quill dark mode override */}
             {dm && <style>{`.ql-toolbar { background: #161b22 !important; border-color: #30363d !important; } .ql-container { border-color: #30363d !important; background: #0e1117; } .ql-editor { color: #c9d1d9 !important; background: #0e1117; } .ql-editor.ql-blank::before { color: #8b949e !important; } .ql-stroke { stroke: #8b949e !important; } .ql-fill { fill: #8b949e !important; } .ql-picker { color: #8b949e !important; } .ql-picker-options { background: #161b22 !important; border-color: #30363d !important; } .ql-picker-item { color: #c9d1d9 !important; }`}</style>}
             {/* Table styles — always injected so tables are visible in both modes */}

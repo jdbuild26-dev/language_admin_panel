@@ -1457,7 +1457,6 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-<<<<<<< HEAD
             {/* 2-CSV upload — shown for exercise types that need a passages CSV first */}
             {TWO_CSV_SLUGS.has(exerciseType.slug) && (
               <TwoCsvUpload
@@ -1467,9 +1466,6 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               />
             )}
             {/* Direct CSV upload — available for all exercise types */}
-=======
-            {/* Direct CSV upload */}
->>>>>>> 6be26bf0bc83c923a7ccf0a74146fda0e2d3604c
             <DirectCsvUpload
               exerciseType={exerciseType}
               category={category}
