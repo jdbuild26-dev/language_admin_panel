@@ -1013,9 +1013,9 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
 
   // ─── Write Image Upload Panel ─────────────────────────────────────────────────
   function WriteImageUploadPanel({
-    exerciseType, level, showToast,
+    exerciseType, level, subtypeSlug, showToast,
   }: {
-    exerciseType: QuestionType; level: CefrLevel;
+    exerciseType: QuestionType; level: CefrLevel; subtypeSlug?: string;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     const [exercises, setExercises] = useState<ExerciseRow[]>([]);
@@ -1027,9 +1027,11 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     const loadExercises = async () => {
       setLoading(true);
       try {
-        const r = await api.get('/admin/exercises', {
-          params: { type_slug: exerciseType.slug, level, page: 1, page_size: 50 }
-        });
+        const params: Record<string, string | number> = {
+          type_slug: exerciseType.slug, level, page: 1, page_size: 50,
+        };
+        if (subtypeSlug) params.subtype_slug = subtypeSlug;
+        const r = await api.get('/admin/exercises', { params });
         setExercises(r.data.items || []);
       } catch {
         setExercises([]);
@@ -2385,6 +2387,19 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             onCancel={() => setConfirmDelete(null)}
             loading={deleteLoading}
           />
+        )}
+
+        {/* Image upload panel — only for image-based exercise types, shown at subtype level */}
+        {exerciseType.slug === 'write_image' && (
+          <div style={{ marginTop: '2rem' }}>
+            <h3 style={{ marginBottom: '0.75rem', fontSize: 16 }}>Image Management</h3>
+            <WriteImageUploadPanel
+              exerciseType={exerciseType}
+              level={level}
+              subtypeSlug={subtype.subtype_slug}
+              showToast={showToast}
+            />
+          </div>
         )}
       </div>
     );
