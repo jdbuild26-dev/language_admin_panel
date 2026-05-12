@@ -167,6 +167,7 @@ interface VocabCell {
   text: string;
   tooltip: string;
   audioUrl: string;
+  tts: boolean;
 }
 
 interface VocabTableRow {
@@ -185,9 +186,9 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
   );
   const [rows, setRows] = useState<VocabTableRow[]>(
     initialData?.rows ?? [
-      { cells: [{ text: '', tooltip: '', audioUrl: '' }, { text: '', tooltip: '', audioUrl: '' }] },
-      { cells: [{ text: '', tooltip: '', audioUrl: '' }, { text: '', tooltip: '', audioUrl: '' }] },
-      { cells: [{ text: '', tooltip: '', audioUrl: '' }, { text: '', tooltip: '', audioUrl: '' }] },
+      { cells: [{ text: '', tooltip: '', audioUrl: '', tts: false }, { text: '', tooltip: '', audioUrl: '', tts: false }] },
+      { cells: [{ text: '', tooltip: '', audioUrl: '', tts: false }, { text: '', tooltip: '', audioUrl: '', tts: false }] },
+      { cells: [{ text: '', tooltip: '', audioUrl: '', tts: false }, { text: '', tooltip: '', audioUrl: '', tts: false }] },
     ]
   );
   const dm = darkMode;
@@ -203,7 +204,7 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
 
   const addColumn = () => {
     setHeaders(h => [...h, `Column ${h.length + 1}`]);
-    setRows(r => r.map(row => ({ cells: [...row.cells, { text: '', tooltip: '', audioUrl: '' }] })));
+    setRows(r => r.map(row => ({ cells: [...row.cells, { text: '', tooltip: '', audioUrl: '', tts: false }] })));
   };
   const removeColumn = (ci: number) => {
     if (numCols <= 1) return;
@@ -211,9 +212,9 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
     setRows(r => r.map(row => ({ cells: row.cells.filter((_, i) => i !== ci) })));
   };
   const updateHeader = (ci: number, val: string) => setHeaders(h => h.map((v, i) => i === ci ? val : v));
-  const addRow = () => setRows(r => [...r, { cells: Array.from({ length: numCols }, () => ({ text: '', tooltip: '', audioUrl: '' })) }]);
+  const addRow = () => setRows(r => [...r, { cells: Array.from({ length: numCols }, () => ({ text: '', tooltip: '', audioUrl: '', tts: false })) }]);
   const removeRow = (ri: number) => { if (rows.length > 1) setRows(r => r.filter((_, i) => i !== ri)); };
-  const updateCell = (ri: number, ci: number, field: keyof VocabCell, val: string) =>
+  const updateCell = (ri: number, ci: number, field: keyof VocabCell, val: string | boolean) =>
     setRows(r => r.map((row, i) => i !== ri ? row : { cells: row.cells.map((cell, j) => j !== ci ? cell : { ...cell, [field]: val }) }));
 
   const hasContent = rows.some(row => row.cells.some(c => c.text.trim()));
@@ -240,8 +241,10 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
       const tdCells = row.cells.map((cell, ci) => {
         const isLast = ci === headers.length - 1;
         const cellBg = ri % 2 === 0 ? '#fffbeb' : '#ffffff';
-        const audioBtn = cell.audioUrl.trim()
-          ? `<button onclick="(function(b){var a=new Audio('${cell.audioUrl.trim()}');a.play();b.style.transform='scale(0.9)';setTimeout(function(){b.style.transform='scale(1)'},200)})(this)" style="background:none;border:none;cursor:pointer;padding:2px 4px;display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;" title="Play audio">🔊</button>`
+        const audioBtn = cell.tts && cell.text.trim()
+          ? `<button onclick="(function(b){var t=b.getAttribute('data-tts-text');if(!t)return;var s=window.speechSynthesis;s.cancel();var u=new SpeechSynthesisUtterance(t);u.lang='fr-FR';var v=s.getVoices();var fv=v.find(function(x){return x.lang==='fr-FR'})||v.find(function(x){return x.lang==='fr-CA'})||v.find(function(x){return x.lang.startsWith('fr')});if(fv)u.voice=fv;s.speak(u);b.style.transform='scale(0.9)';setTimeout(function(){b.style.transform='scale(1)'},200)})(this)" data-tts-text="${cell.text.trim()}" style="background:none;border:none;cursor:pointer;padding:2px 4px;display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;" title="Play TTS">🔊</button>`
+          : cell.audioUrl.trim()
+          ? `<button onclick="(function(b){var a=new Audio('${cell.audioUrl.trim()}');a.currentTime=0;a.play();b.style.transform='scale(0.9)';setTimeout(function(){b.style.transform='scale(1)'},200)})(this)" style="background:none;border:none;cursor:pointer;padding:2px 4px;display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;" title="Play audio">🔊</button>`
           : '';
         const inner = cell.tooltip.trim()
           ? `<span style="position:relative;display:inline-block;cursor:pointer;color:#2563eb;font-weight:600;" onmouseenter="var t=this.querySelector('.vtt');if(t)t.style.opacity='1';" onmouseleave="var t=this.querySelector('.vtt');if(t)t.style.opacity='0';">${cell.text.trim() || '—'}<span class="vtt" style="opacity:0;transition:opacity 0.15s;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;white-space:nowrap;pointer-events:none;font-weight:400;z-index:10;">${cell.tooltip.trim()}</span></span>`
@@ -265,7 +268,7 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexShrink: 0 }}>
           <div>
             <h3 style={{ margin: 0, color: textPrimary, fontSize: 16 }}>📋 Insert Vocabulary Table</h3>
-            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>Customizable columns · hover tooltip · audio per cell · arrow separators</p>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>Customizable columns · hover tooltip · TTS per cell · arrow separators</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: textMuted }}><X size={18} /></button>
         </div>
@@ -292,39 +295,63 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
           </div>
         </div>
 
-        {/* Sub-header labels for each column's fields */}
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${numCols}, 1fr) 32px`, gap: 6, marginBottom: 4, flexShrink: 0 }}>
-          {headers.map((_, ci) => (
-            <div key={ci} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: 4 }}>
-              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Text</span>
-              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Tooltip (hover)</span>
-              <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2 }}>Audio URL</span>
-            </div>
-          ))}
-          <span />
-        </div>
-
-        {/* Rows */}
+        {/* Sub-header labels + Rows — labels are rendered inside each cell so they always align */}
         <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {rows.map((row, ri) => (
-            <div key={ri} style={{ display: 'grid', gridTemplateColumns: `repeat(${numCols}, 1fr) 32px`, gap: 6, alignItems: 'center' }}>
+            <div key={ri} style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
               {row.cells.map((cell, ci) => (
-                <div key={ci} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: 4 }}>
-                  <input value={cell.text} onChange={e => updateCell(ri, ci, 'text', e.target.value)}
-                    placeholder="e.g. un chat"
-                    style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
-                  <input value={cell.tooltip} onChange={e => updateCell(ri, ci, 'tooltip', e.target.value)}
-                    placeholder="a cat"
-                    style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
-                  <input value={cell.audioUrl} onChange={e => updateCell(ri, ci, 'audioUrl', e.target.value)}
-                    placeholder="https://…"
-                    style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary }} />
+                <div key={ci} style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 2fr 90px', gap: 4 }}>
+                  {/* Text field */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {ri === 0 && (
+                      <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2, letterSpacing: '0.05em' }}>Text</span>
+                    )}
+                    <input value={cell.text} onChange={e => updateCell(ri, ci, 'text', e.target.value)}
+                      placeholder="e.g. un chat"
+                      style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary, width: '100%' }} />
+                  </div>
+                  {/* Tooltip field */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {ri === 0 && (
+                      <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2, letterSpacing: '0.05em' }}>Tooltip (hover)</span>
+                    )}
+                    <input value={cell.tooltip} onChange={e => updateCell(ri, ci, 'tooltip', e.target.value)}
+                      placeholder="a cat"
+                      style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary, width: '100%' }} />
+                  </div>
+                  {/* TTS toggle */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {ri === 0 && (
+                      <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2, letterSpacing: '0.05em' }}>TTS</span>
+                    )}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none', height: 30 }}>
+                      <div
+                        onClick={() => updateCell(ri, ci, 'tts', !cell.tts)}
+                        style={{
+                          width: 34, height: 18, borderRadius: 9, background: cell.tts ? '#2563eb' : (dm ? '#30363d' : '#d1d5db'),
+                          position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0,
+                        }}
+                      >
+                        <div style={{
+                          position: 'absolute', top: 2, left: cell.tts ? 18 : 2, width: 14, height: 14,
+                          borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: cell.tts ? (dm ? '#93c5fd' : '#2563eb') : textMuted, fontWeight: cell.tts ? 600 : 400, whiteSpace: 'nowrap' }}>
+                        {cell.tts ? 'On' : 'Off'}
+                      </span>
+                    </label>
+                  </div>
                 </div>
               ))}
-              <button onClick={() => removeRow(ri)} disabled={rows.length <= 1}
-                style={{ width: 32, height: 32, border: 'none', borderRadius: 6, background: rows.length > 1 ? '#ef444422' : 'transparent', color: rows.length > 1 ? '#ef4444' : textMuted, cursor: rows.length > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <X size={14} />
-              </button>
+              {/* Delete button — aligned to bottom of inputs */}
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                {ri === 0 && <div style={{ height: 17 }} />}{/* spacer matching label height */}
+                <button onClick={() => removeRow(ri)} disabled={rows.length <= 1}
+                  style={{ width: 32, height: 30, border: 'none', borderRadius: 6, background: rows.length > 1 ? '#ef444422' : 'transparent', color: rows.length > 1 ? '#ef4444' : textMuted, cursor: rows.length > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <X size={14} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -360,7 +387,7 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
                               style={{ fontWeight: 600, color: cell.tooltip ? '#2563eb' : '#3d2817', borderBottom: cell.tooltip ? '1px dashed #ffa90a' : 'none', cursor: cell.tooltip ? 'help' : 'default' }}>
                               {cell.text || '—'}
                             </span>
-                            {cell.audioUrl && <span style={{ marginLeft: 6 }}>🔊</span>}
+                            {(cell.tts && cell.text.trim()) || cell.audioUrl ? <span style={{ marginLeft: 6 }}>🔊</span> : null}
                           </td>
                           {ci < headers.length - 1 && (
                             <td style={{ width: 32, textAlign: 'center', color: '#ffa90a', fontSize: 16, borderBottom: '1px solid #e5e7eb' }}>→</td>
@@ -1022,6 +1049,20 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const handleSave = async () => {
     if (!title.trim()) { showToast(false, 'Title is required'); return; }
     if (!conceptId.trim()) { showToast(false, 'Concept ID is required'); return; }
+
+    // Convert plain text (from section textareas) to HTML paragraphs.
+    // If the content already contains HTML tags it's left as-is (Quill output).
+    const plainTextToHtml = (text: string): string => {
+      if (!text.trim()) return '';
+      // If it already looks like HTML, don't double-wrap
+      if (/<[a-z][\s\S]*>/i.test(text)) return text;
+      // Split on blank lines → paragraphs; single newlines → <br>
+      return text
+        .split(/\n{2,}/)
+        .map(para => `<p>${para.replace(/\n/g, '<br>')}</p>`)
+        .join('');
+    };
+
     // Build combined HTML:
     // 1. Preamble: quill html + preamble blocks
     // 2. Each section: <h2> + <div data-section-content> wrapping textarea text + blocks
@@ -1030,8 +1071,9 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       .sort((a, b) => a.slNo - b.slNo)
       .map(s => {
         const sectionBlocksHtml = s.blocks.map(b => b.html).join('');
+        const sectionContent = plainTextToHtml(s.quillHtml);
         return `<h2 data-section-slno="${s.slNo}" data-section-id="${s.id}">${s.heading}</h2>` +
-          `<div data-section-content="${s.id}">${s.quillHtml}${sectionBlocksHtml}</div>`;
+          `<div data-section-content="${s.id}">${sectionContent}${sectionBlocksHtml}</div>`;
       })
       .join('');
     const combinedContent = preamblePart + sectionsPart;
@@ -1075,7 +1117,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const previewBg = dm ? '#161b22' : '#f9f5f0';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', background: bg, borderRadius: 12, border: `1px solid ${border}`, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', background: bg, borderRadius: 12, border: `1px solid ${border}` }}>
 
       {/* ── Top bar ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.5rem', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0 }}>
@@ -1206,14 +1248,14 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       )}
 
       {/* ── Editor / Preview ── */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 400, height: 'calc(100vh - 280px)' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 12, color: textMuted }}>
             <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
             <span>Loading content…</span>
           </div>
         ) : tab === 'write' ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '0 1.5rem 1rem' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '0 1.5rem 1rem' }}>
             {/* Quill dark mode override */}
             {dm && <style>{`.ql-toolbar { background: #161b22 !important; border-color: #30363d !important; } .ql-container { border-color: #30363d !important; background: #0e1117; } .ql-editor { color: #c9d1d9 !important; background: #0e1117; } .ql-editor.ql-blank::before { color: #8b949e !important; } .ql-stroke { stroke: #8b949e !important; } .ql-fill { fill: #8b949e !important; } .ql-picker { color: #8b949e !important; } .ql-picker-options { background: #161b22 !important; border-color: #30363d !important; } .ql-picker-item { color: #c9d1d9 !important; }`}</style>}
             {/* Table styles — always injected so tables are visible in both modes */}
