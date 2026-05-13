@@ -1211,49 +1211,31 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   ]);
 
   function TwoCsvUpload({
-    exerciseType, category, showToast,
+    exerciseType, category, subtypeSlug, showToast,
   }: {
-    exerciseType: QuestionType; category: Category;
+    exerciseType: QuestionType; category: Category; subtypeSlug?: string;
     showToast: (ok: boolean, msg: string) => void;
   }) {
     const [open, setOpen] = useState(false);
-    const [step, setStep] = useState<1 | 2>(1);
     const [file1, setFile1] = useState<File | null>(null);
     const [file2, setFile2] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
-    const [stepResult, setStepResult] = useState<string>('');
     const ref1 = useRef<HTMLInputElement>(null);
     const ref2 = useRef<HTMLInputElement>(null);
 
-    const reset = () => { setStep(1); setFile1(null); setFile2(null); setStepResult(''); };
+    const reset = () => { setFile1(null); setFile2(null); };
 
-    const uploadStep1 = async () => {
-      if (!file1) return;
+    const handleUpload = async () => {
+      if (!file2) { showToast(false, 'Please select the exercises CSV (required)'); return; }
       setUploading(true);
       try {
         const fd = new FormData();
-        fd.append('file', file1, file1.name);
-        const res = await api.post('/admin/sync/passages', fd);
-        setStepResult(res.data?.message || 'Passages uploaded');
-        showToast(true, res.data?.message || 'Step 1 done — now upload the exercises CSV');
-        setStep(2);
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Step 1 failed');
-      } finally {
-        setUploading(false);
-      }
-    };
-
-    const uploadStep2 = async () => {
-      if (!file2) return;
-      setUploading(true);
-      try {
-        const fd = new FormData();
-        fd.append('file', file2, file2.name);
+        fd.append('file', file2, file2.name);          // exercises CSV (required)
+        if (file1) fd.append('file2', file1, file1.name); // passages CSV (optional, sent as file2)
         fd.append('skill', category);
         fd.append('type_slug', exerciseType.slug);
         fd.append('category', 'main');
+        if (subtypeSlug) fd.append('subtype_slug', subtypeSlug);
         const res = await api.post('/admin/sync/exercises', fd);
         const count = res.data?.message?.match(/\d+/)?.[0] ?? '?';
         showToast(true, `Done — ${count} exercises saved`);
@@ -1261,7 +1243,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         setOpen(false);
       } catch (e: unknown) {
         const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Step 2 failed');
+        showToast(false, err.response?.data?.detail || 'Upload failed');
       } finally {
         setUploading(false);
       }
@@ -1293,90 +1275,49 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             <button onClick={() => { reset(); setOpen(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
           </div>
 
-          {/* Step indicator */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem' }}>
-            {([1, 2] as const).map(s => (
-              <div key={s} style={{
-                flex: 1, padding: '6px 0', textAlign: 'center', borderRadius: 6, fontSize: 13, fontWeight: 600,
-                background: step === s ? 'var(--accent)' : step > s ? 'rgba(34,197,94,0.2)' : 'var(--card-bg)',
-                color: step === s ? '#fff' : step > s ? '#4ade80' : 'var(--text-muted)',
-                border: `1px solid ${step === s ? 'var(--accent)' : step > s ? '#4ade80' : 'var(--border)'}`,
-              }}>
-                {step > s ? <Check size={13} className="inline mr-1" /> : null}
-                Step {s}: {s === 1 ? 'Passages CSV' : 'Exercises CSV'}
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.6 }}>
+            Select both CSVs and upload together. The <strong>passages/scenarios CSV</strong> is optional — if provided it will be merged with the exercises using the shared <code>ExerciseID</code>.
+          </p>
+
+          {/* Passages CSV (optional) */}
+          <div style={{ marginBottom: '0.75rem' }}>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>
+              Passages / Scenarios CSV <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional)</span>
+            </label>
+            <input ref={ref1} type="file" accept=".csv" style={{ display: 'none' }}
+              onChange={e => setFile1(e.target.files?.[0] ?? null)} />
+            <div onClick={() => ref1.current?.click()}
+              style={{ border: '2px dashed var(--border)', borderRadius: 8, padding: '1rem', textAlign: 'center', cursor: 'pointer', background: file1 ? 'rgba(34,197,94,0.05)' : 'transparent' }}>
+              <FileSpreadsheet size={20} style={{ opacity: 0.5, marginBottom: 4 }} />
+              <div style={{ fontSize: 13, color: file1 ? '#4ade80' : 'var(--text-muted)' }}>
+                {file1 ? file1.name : 'Click to select passages CSV'}
               </div>
-            ))}
+            </div>
           </div>
 
-          {step === 1 && (
-            <>
-              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.6 }}>
-                Upload the <strong>passages / scenarios CSV</strong> first (e.g. <code>Running-conversation.csv</code> or the image-map CSV with marker coordinates).
-                The backend will store these and merge them with the exercises CSV in Step 2 using the shared <code>ExerciseID</code>.
-              </p>
-              <input ref={ref1} type="file" accept=".csv" style={{ display: 'none' }}
-                onChange={e => setFile1(e.target.files?.[0] ?? null)} />
-              <div
-                onClick={() => ref1.current?.click()}
-                style={{
-                  border: '2px dashed var(--border)', borderRadius: 8, padding: '1.5rem',
-                  textAlign: 'center', cursor: 'pointer', marginBottom: '1rem',
-                  background: file1 ? 'rgba(34,197,94,0.05)' : 'transparent',
-                }}
-              >
-                <FileSpreadsheet size={24} style={{ opacity: 0.5, marginBottom: 6 }} />
-                <div style={{ fontSize: 13, color: file1 ? '#4ade80' : 'var(--text-muted)' }}>
-                  {file1 ? file1.name : 'Click to select passages CSV'}
-                </div>
+          {/* Exercises CSV (required) */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>
+              Exercises CSV <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <input ref={ref2} type="file" accept=".csv" style={{ display: 'none' }}
+              onChange={e => setFile2(e.target.files?.[0] ?? null)} />
+            <div onClick={() => ref2.current?.click()}
+              style={{ border: '2px dashed var(--border)', borderRadius: 8, padding: '1rem', textAlign: 'center', cursor: 'pointer', background: file2 ? 'rgba(34,197,94,0.05)' : 'transparent' }}>
+              <FileSpreadsheet size={20} style={{ opacity: 0.5, marginBottom: 4 }} />
+              <div style={{ fontSize: 13, color: file2 ? '#4ade80' : 'var(--text-muted)' }}>
+                {file2 ? file2.name : 'Click to select exercises CSV'}
               </div>
-              <button
-                className="btn btn-primary" style={{ width: '100%' }}
-                disabled={!file1 || uploading}
-                onClick={uploadStep1}
-              >
-                {uploading ? 'Uploading…' : 'Upload Passages → Continue to Step 2'}
-              </button>
-            </>
-          )}
+            </div>
+          </div>
 
-          {step === 2 && (
-            <>
-              {stepResult && (
-                <div className="alert alert-success" style={{ marginBottom: '1rem', fontSize: 13 }}>
-                  <CheckCircle2 size={14} className="inline mr-1" />{stepResult}
-                </div>
-              )}
-              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.6 }}>
-                Now upload the <strong>exercises CSV</strong> (e.g. <code>Running-conversation(2).csv</code> or the labels CSV).
-                The backend will merge it with the passages uploaded in Step 1.
-              </p>
-              <input ref={ref2} type="file" accept=".csv" style={{ display: 'none' }}
-                onChange={e => setFile2(e.target.files?.[0] ?? null)} />
-              <div
-                onClick={() => ref2.current?.click()}
-                style={{
-                  border: '2px dashed var(--border)', borderRadius: 8, padding: '1.5rem',
-                  textAlign: 'center', cursor: 'pointer', marginBottom: '1rem',
-                  background: file2 ? 'rgba(34,197,94,0.05)' : 'transparent',
-                }}
-              >
-                <FileSpreadsheet size={24} style={{ opacity: 0.5, marginBottom: 6 }} />
-                <div style={{ fontSize: 13, color: file2 ? '#4ade80' : 'var(--text-muted)' }}>
-                  {file2 ? file2.name : 'Click to select exercises CSV'}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-secondary" onClick={() => setStep(1)} disabled={uploading}>← Back</button>
-                <button
-                  className="btn btn-primary" style={{ flex: 1 }}
-                  disabled={!file2 || uploading}
-                  onClick={uploadStep2}
-                >
-                  {uploading ? 'Uploading…' : 'Upload Exercises & Finish'}
-                </button>
-              </div>
-            </>
-          )}
+          <button
+            className="btn btn-primary" style={{ width: '100%' }}
+            disabled={!file2 || uploading}
+            onClick={handleUpload}
+          >
+            {uploading ? 'Uploading…' : 'Upload & Save Exercises'}
+          </button>
         </div>
       </div>
     );
@@ -1464,6 +1405,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               <TwoCsvUpload
                 exerciseType={exerciseType}
                 category={category}
+                subtypeSlug={subtype.subtype_slug}
                 showToast={showToast}
               />
             )}
