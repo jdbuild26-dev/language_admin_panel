@@ -1405,7 +1405,6 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               <TwoCsvUpload
                 exerciseType={exerciseType}
                 category={category}
-                subtypeSlug={subtype.subtype_slug}
                 showToast={showToast}
               />
             )}
