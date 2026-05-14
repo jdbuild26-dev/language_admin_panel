@@ -72,13 +72,11 @@ const SKILL_SLUGS: Record<Category, string[]> = {
   Listening: [
     'listen_select',
     'type_what_you_hear',
-    'listen_fill_blanks',
     'listen_fill_blanks_dropdown',
     'listen_bubble',
     'listen_order',
     'listen_passage',
     'listen_interactive',
-    'listening_comprehension',
     'listening_conversation',
   ],
   Writing: [
@@ -121,13 +119,11 @@ const SLUG_DISPLAY_NAMES: Record<string, string> = {
   // Listening
   listen_select:              'Listen and Select',
   type_what_you_hear:         'Listen and Type',
-  listen_fill_blanks:         'Audio Fill in the Blanks',
   listen_fill_blanks_dropdown:'Audio Fill in the Blanks 2',
   listen_bubble:              'What do you hear?',
   listen_order:               'Listen and Order',
   listen_passage:             'Passage Questions',
   listen_interactive:         'Interactive Listening',
-  listening_comprehension:    'Listening Comprehension',
   listening_conversation:     'Running Conversation',
   // Writing
   translate_typed:            'Translate the Sentence',
