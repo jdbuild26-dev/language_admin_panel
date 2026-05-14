@@ -9,6 +9,7 @@ export default function UploadExercises() {
     const [file, setFile] = useState<File | null>(null);
     const [skill, setSkill] = useState('Reading');
     const [typeSlug, setTypeSlug] = useState('match_pairs');
+    const [subtypeSlug, setSubtypeSlug] = useState('');
     const [category, setCategory] = useState('main');
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<{ success: boolean, message: string } | null>(null);
@@ -37,6 +38,7 @@ export default function UploadExercises() {
                 formData.append('skill', skill);
                 formData.append('type_slug', typeSlug);
                 formData.append('category', category);
+                if (subtypeSlug.trim()) formData.append('subtype_slug', subtypeSlug.trim());
                 const res = await api.post('/admin/sync/exercises', formData);
                 setResult({ success: true, message: res.data.message });
             }
@@ -120,6 +122,24 @@ export default function UploadExercises() {
                             <Settings size={18} />
                         </button>
                     </div>
+                </div>
+            )}
+
+            {mode === 'exercises' && (
+                <div className="form-group mb-8">
+                    <label className="form-label">
+                        Subtype Slug <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>(optional — leave blank to auto-assign)</span>
+                    </label>
+                    <input
+                        type="text"
+                        className="form-control"
+                        value={subtypeSlug}
+                        onChange={(e) => setSubtypeSlug(e.target.value)}
+                        placeholder="e.g. passage_mcq_default, b1_reading_set2..."
+                    />
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+                        Set this when uploading a new batch that should be separate from existing exercises of the same type.
+                    </p>
                 </div>
             )}
 

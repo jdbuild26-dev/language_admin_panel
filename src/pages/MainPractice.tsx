@@ -1254,7 +1254,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   //           CSV merged with the exercises CSV via shared ExerciseID.
   const TWO_CSV_SLUGS = new Set([
     'conversation_dialogue', 'image_labelling', 'listening_conversation',
-    'speaking_conversation', 'running_conversation',
+    'speaking_conversation', 'running_conversation', 'passage_mcq',
   ]);
 
   function TwoCsvUpload({
@@ -1447,20 +1447,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>{getExerciseName(exerciseType)}</h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {/* 2-CSV upload — shown for exercise types that need a passages CSV first */}
-            {TWO_CSV_SLUGS.has(exerciseType.slug) && (
-              <TwoCsvUpload
-                exerciseType={exerciseType}
-                category={category}
-                showToast={showToast}
-              />
-            )}
-            {/* Direct CSV upload — available for all exercise types */}
-            <DirectCsvUpload
-              exerciseType={exerciseType}
-              category={category}
-              showToast={showToast}
-            />
+            {/* Upload buttons removed from subtype list — use Create Subtype (+) to upload with a proper subtype slug */}
             <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate exercises"
               style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.9 }}>
               <Sparkles size={18} />
@@ -2187,6 +2174,15 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           </h2>
           {/* Upload / Download CSV — top right */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* 2-CSV upload for types that need a passages CSV (e.g. passage_mcq) */}
+            {TWO_CSV_SLUGS.has(exerciseType.slug) && (
+              <TwoCsvUpload
+                exerciseType={exerciseType}
+                category={category}
+                subtypeSlug={subtype.subtype_slug}
+                showToast={showToast}
+              />
+            )}
             <DirectCsvUpload
               exerciseType={exerciseType}
               category={category}
@@ -2556,35 +2552,6 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: 200 }}>
               <div>
                 <div
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
-                  style={{
-                    width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
-                    background: 'var(--card-bg)', cursor: 'pointer',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-                    transition: 'border-color 0.2s',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
-                  <Upload size={40} style={{ color: file ? 'var(--accent)' : 'var(--text-muted)', opacity: file ? 1 : 0.5 }} />
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
-                    {file ? file.name : 'Upload Master CSV'}
-                  </span>
-                  {file && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
-                </div>
-                <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
-                {file && (
-                  <button onClick={() => setFile(null)}
-                    style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <X size={12} /> Remove file
-                  </button>
-                )}
-              </div>
-
-              <div>
-                <div
                   onClick={() => fileInputRef2.current?.click()}
                   onDragOver={e => e.preventDefault()}
                   onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile2(f); }}
@@ -2598,7 +2565,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                   onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
                   <Upload size={40} style={{ color: file2 ? 'var(--accent)' : 'var(--text-muted)', opacity: file2 ? 1 : 0.5 }} />
                   <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
-                    {file2 ? file2.name : 'Upload Items/Sub-CSV (optional)'}
+                    {file2 ? file2.name : (TWO_CSV_SLUGS.has(exerciseType.slug) ? 'Part 1 — Passages CSV (optional)' : 'Upload Items/Sub-CSV (optional)')}
                   </span>
                   {file2 && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
                 </div>
@@ -2606,6 +2573,35 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                   onChange={e => { const f = e.target.files?.[0]; if (f) setFile2(f); }} />
                 {file2 && (
                   <button onClick={() => setFile2(null)}
+                    style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <X size={12} /> Remove file
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
+                  style={{
+                    width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
+                    background: 'var(--card-bg)', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+                    transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                  <Upload size={40} style={{ color: file ? 'var(--accent)' : 'var(--text-muted)', opacity: file ? 1 : 0.5 }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
+                    {file ? file.name : (TWO_CSV_SLUGS.has(exerciseType.slug) ? 'Part 2 — Questions CSV' : 'Upload Master CSV')}
+                  </span>
+                  {file && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
+                </div>
+                <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
+                {file && (
+                  <button onClick={() => setFile(null)}
                     style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
                     <X size={12} /> Remove file
                   </button>
