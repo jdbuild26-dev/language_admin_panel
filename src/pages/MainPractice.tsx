@@ -57,50 +57,97 @@ interface ExcelRow { [key: string]: string | number | boolean | null; }
 // Update this whenever new exercise types are added to the practice page.
 const SKILL_SLUGS: Record<Category, string[]> = {
   Reading: [
-    'translate_bubbles',         // Translate the Sentence
-    'highlight_text',            // Highlight the Sentence
-    'diagram_mapping',           // Diagram Labelling
-    'image_mcq',                 // Match Image to Description
-    'match_desc_to_image',       // Match Description to Image
-    'image_labelling',           // Image Labelling
-    'passage_mcq',               // Reading Comprehension
-    'complete_passage_dropdown', // Complete the Passage
-    'fill_blanks',               // Fill in the Blanks Passage
-    'reorder_sentences',         // Reorder Sentences
-    'conversation_dialogue',     // Running Conversation
+    'translate_bubbles',
+    'highlight_text',
+    'diagram_mapping',
+    'image_mcq',
+    'match_desc_to_image',
+    'image_labelling',
+    'passage_mcq',
+    'complete_passage_dropdown',
+    'fill_blanks',
+    'reorder_sentences',
+    'conversation_dialogue',
   ],
   Listening: [
-    'listen_select',             // Listen and Select
-    'type_what_you_hear',        // Listen and Type
-    'listen_fill_blanks',        // Audio Fill in the Blanks
-    'listen_fill_blanks_dropdown', // Audio Fill in the Blanks 2
-    'listen_bubble',             // What do you hear?
-    'listen_order',              // Listen and Order
-    'listen_passage',            // Passage Questions
-    'listen_interactive',        // Interactive Listening
-    'listening_comprehension',   // Listening Comprehension
-    'listening_conversation',    // Running Conversation (Listening)
+    'listen_select',
+    'type_what_you_hear',
+    'listen_fill_blanks_dropdown',
+    'listen_bubble',
+    'listen_order',
+    'listen_passage',
+    'listen_interactive',
+    'listening_conversation',
   ],
   Writing: [
-    'translate_typed',           // Translate the Sentence
-    'correct_spelling',          // Fix the Spelling
-    'write_fill_blanks',         // Fill in the Blanks
-    'write_topic',               // Write About Topic
-    'write_image',               // Write About Image
-    'write_documents',           // Write Documents
-    'write_interactive',         // Interactive Writing
-    'writing_conversation',      // Writing Conversation (Running)
-    'write_analysis',            // Write About Data
-    'summarise_audio',           // Summarise What You Hear
+    'translate_typed',
+    'correct_spelling',
+    'write_fill_blanks',
+    'write_topic',
+    'write_image',
+    'write_documents',
+    'write_interactive',
+    'writing_conversation',
+    'write_analysis',
+    'summarise_audio',
   ],
   Speaking: [
-    'speak_translate',           // Translate by Speaking
-    'speak_topic',               // Speak About Topic
-    'speak_image',               // Speak About Image / Describe Image
-    'speak_interactive',         // Interactive Speaking
-    'speaking_conversation',     // Speaking Conversation (Running)
+    'speak_translate',
+    'speak_topic',
+    'speak_image',
+    'speak_interactive',
+    'speaking_conversation',
   ],
 };
+
+// ─── Canonical display names matching the main app (practice page) ────────────
+// These override whatever name is stored in the DB so the admin panel always
+// shows the same label the learner sees in the app.
+const SLUG_DISPLAY_NAMES: Record<string, string> = {
+  // Reading
+  translate_bubbles:          'Translate the Sentence',
+  highlight_text:             'Highlight the Sentence',
+  diagram_mapping:            'Diagram Labelling',
+  image_mcq:                  'Match Image to Description',
+  match_desc_to_image:        'Match Description to Image',
+  image_labelling:            'Image Labelling',
+  passage_mcq:                'Reading Comprehension',
+  complete_passage_dropdown:  'Complete the Passage',
+  fill_blanks:                'Fill in the Blanks Passage',
+  reorder_sentences:          'Reorder Sentences',
+  conversation_dialogue:      'Running Conversation',
+  // Listening
+  listen_select:              'Listen and Select',
+  type_what_you_hear:         'Listen and Type',
+  listen_fill_blanks_dropdown:'Audio Fill in the Blanks 2',
+  listen_bubble:              'What do you hear?',
+  listen_order:               'Listen and Order',
+  listen_passage:             'Passage Questions',
+  listen_interactive:         'Interactive Listening',
+  listening_conversation:     'Running Conversation',
+  // Writing
+  translate_typed:            'Translate the Sentence',
+  correct_spelling:           'Fix the Spelling',
+  write_fill_blanks:          'Fill in the Blanks',
+  write_topic:                'Write About Topic',
+  write_image:                'Write About Image',
+  write_documents:            'Write Documents',
+  write_interactive:          'Interactive Writing',
+  writing_conversation:       'Writing Conversation',
+  write_analysis:             'Write About Data',
+  summarise_audio:            'Summarise What You Hear',
+  // Speaking
+  speak_translate:            'Translate by Speaking',
+  speak_topic:                'Speak About Topic',
+  speak_image:                'Speak About Image',
+  speak_interactive:          'Interactive Speaking',
+  speaking_conversation:      'Speaking Conversation',
+};
+
+/** Returns the canonical display name for an exercise type slug. */
+function getExerciseName(qt: QuestionType): string {
+  return SLUG_DISPLAY_NAMES[qt.slug] ?? qt.name ?? qt.slug;
+}
 
 const IMAGE_EXERCISE_TYPES = [
   'diagram_mapping',
@@ -252,7 +299,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         showToast(true, 'Prompt saved');
       } else {
         // Create new prompt with slug matching the exercise type
-        await api.post('/admin/prompts', { ...form, slug: qt.slug, topic: form.topic || qt.name || qt.slug });
+        await api.post('/admin/prompts', { ...form, slug: qt.slug, topic: form.topic || getExerciseName(qt) });
         showToast(true, 'Prompt created');
       }
       setEditing(false);
@@ -266,7 +313,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   };
 
   const startCreate = () => {
-    const flat: Record<string, string> = { topic: qt.name || qt.slug, slug: qt.slug, ai_role: '', user_role: '' };
+    const flat: Record<string, string> = { topic: getExerciseName(qt), slug: qt.slug, ai_role: '', user_role: '' };
     CEFR_LEVELS.forEach(lvl => {
       const k = lvl.toLowerCase();
       flat[`instruction_${k}`] = '';
@@ -947,7 +994,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                     <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{idx + 1}</td>
                     <td style={{ padding: '12px 16px', fontWeight: 600 }}>
-                      {qt.name || qt.slug}
+                      {getExerciseName(qt)}
                       {!qt.is_active && (
                         <span style={{ marginLeft: 8, fontSize: 11, background: '#ef444422', color: '#ef4444', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>
                           DEACTIVATED
@@ -1271,7 +1318,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         <div className="card" style={{ maxWidth: 480, width: '92%', padding: '1.5rem' }}>
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h3 style={{ margin: 0, fontSize: 16 }}>2-CSV Upload — {exerciseType.name || exerciseType.slug}</h3>
+            <h3 style={{ margin: 0, fontSize: 16 }}>2-CSV Upload — {getExerciseName(exerciseType)}</h3>
             <button onClick={() => { reset(); setOpen(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
           </div>
 
@@ -1398,7 +1445,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
 
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ margin: 0 }}>{exerciseType.name || exerciseType.slug}</h2>
+          <h2 style={{ margin: 0 }}>{getExerciseName(exerciseType)}</h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {/* 2-CSV upload — shown for exercise types that need a passages CSV first */}
             {TWO_CSV_SLUGS.has(exerciseType.slug) && (
@@ -2136,7 +2183,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         {/* Title row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
           <h2 style={{ margin: 0 }}>
-            {exerciseType.name || exerciseType.slug} &gt;&gt; {subtypeIndex}. {subtype.name_en}
+            {getExerciseName(exerciseType)} &gt;&gt; {subtypeIndex}. {subtype.name_en}
           </h2>
           {/* Upload / Download CSV — top right */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2456,7 +2503,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             </span>
           </div>
 
-          <h2 style={{ marginBottom: '1.5rem' }}>{exerciseType.name || exerciseType.slug}</h2>
+          <h2 style={{ marginBottom: '1.5rem' }}>{getExerciseName(exerciseType)}</h2>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2rem', alignItems: 'start' }}>
             <div>
@@ -2776,7 +2823,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <h3 style={{ margin: 0 }}>Bulk Image Upload</h3>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>{exerciseType.name || exerciseType.slug} · {category}</p>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>{getExerciseName(exerciseType)} · {category}</p>
             </div>
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
           </div>
