@@ -1255,7 +1255,7 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
   const TWO_CSV_SLUGS = new Set([
     'conversation_dialogue', 'image_labelling', 'listening_conversation',
     'speaking_conversation', 'running_conversation', 'passage_mcq',
-    'fill_blanks',
+    'fill_blanks', 'listen_passage', 'listen_interactive',
   ]);
 
   function TwoCsvUpload({
