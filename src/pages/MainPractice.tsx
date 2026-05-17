@@ -1256,6 +1256,8 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     'conversation_dialogue', 'image_labelling', 'listening_conversation',
     'speaking_conversation', 'running_conversation', 'passage_mcq',
     'fill_blanks', 'listen_passage', 'listen_interactive',
+    // Writing/Speaking conversation & interactive — same 2-CSV format as listening_conversation
+    'writing_conversation', 'write_interactive', 'speak_interactive',
   ]);
 
   function TwoCsvUpload({
