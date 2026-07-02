@@ -1896,6 +1896,7 @@ function SubtopicsView({ topic, onBack, onSelectSubtopic, showToast }: {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Subtopic | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [previewLoadingId, setPreviewLoadingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1937,6 +1938,39 @@ function SubtopicsView({ topic, onBack, onSelectSubtopic, showToast }: {
     } finally {
       setDeleteLoading(false);
       setConfirmDelete(null);
+    }
+  };
+
+  const handleOpenPreview = async (subtopic: Subtopic) => {
+    const previewWindow = window.open('about:blank', '_blank');
+    if (!previewWindow) {
+      showToast(false, 'Allow pop-ups to open the note in a new page');
+      return;
+    }
+
+    previewWindow.opener = null;
+    previewWindow.document.title = 'Loading note...';
+    previewWindow.document.body.textContent = 'Loading note...';
+    setPreviewLoadingId(subtopic.id);
+
+    try {
+      const response = await api.get('/admin/grammar/notes', { params: { subtopic_id: subtopic.id } });
+      const notes: Note[] = response.data.notes || [];
+      const canonicalConceptId = notes[0]?.concept_id;
+      const translations = notes.filter(note => note.concept_id === canonicalConceptId);
+      const preferred = translations.find(note => note.known_lang === 'en') || translations[0];
+
+      if (!preferred) {
+        throw new Error('This subtopic does not have a saved note yet');
+      }
+
+      const apiBase = (api.defaults as any).baseURL || 'http://localhost:8000/api';
+      previewWindow.location.replace(`${apiBase}/admin/grammar/notes/${preferred.id}/html`);
+    } catch (error: any) {
+      previewWindow.close();
+      showToast(false, error.response?.data?.detail || error.message || 'Failed to open note');
+    } finally {
+      setPreviewLoadingId(null);
     }
   };
 
@@ -2011,9 +2045,21 @@ function SubtopicsView({ topic, onBack, onSelectSubtopic, showToast }: {
                     </span>
                   </td>
                   <td style={{ padding: '12px 16px' }} onClick={e => e.stopPropagation()}>
-                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                      <button title="Open" onClick={() => onSelectSubtopic(s)} style={iconBtn('#60a5fa')}><Eye size={14} /></button>
-                      <button title="Delete" onClick={() => setConfirmDelete(s)} style={iconBtn('#ef4444')}><Trash2 size={14} /></button>
+                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                       <button title="Open" onClick={() => onSelectSubtopic(s)} style={iconBtn('#60a5fa')}><Eye size={14} /></button>
+                       {apiPrefix === 'grammar' && s.notes_count > 0 && (
+                         <button
+                           title="Open saved note in a new page"
+                           onClick={() => handleOpenPreview(s)}
+                           disabled={previewLoadingId === s.id}
+                           style={iconBtn('#2ea043')}
+                         >
+                           {previewLoadingId === s.id
+                             ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                             : <ExternalLink size={14} />}
+                         </button>
+                       )}
+                       <button title="Delete" onClick={() => setConfirmDelete(s)} style={iconBtn('#ef4444')}><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
