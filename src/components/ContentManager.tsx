@@ -27,7 +27,7 @@ interface Subtopic {
 interface Note {
   id: number; subtopic_id: number; concept_id: string;
   known_lang: string; learning_lang: string;
-  title: string | null; html_url: string;
+  title: string | null; description?: string | null; html_url: string;
   s3_key: string | null;
   order_index: number; is_active: boolean;
 }
@@ -41,6 +41,7 @@ interface EditorState {
   existingNote: Note | null;
   translationFor: Note | null;
   takenLangs: string[];
+  translations: Note[];
 }
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'];
@@ -673,6 +674,43 @@ interface AppendedBlock {
   extractData?: ExtractBlockData;
 }
 
+function createIntroductionSection(quillHtml = '', blocks: AppendedBlock[] = []): EditorSection {
+  return {
+    id: `sec-introduction-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    slNo: 1,
+    heading: 'Introduction',
+    quillHtml,
+    blocks,
+  };
+}
+
+function plainTextToHtml(text: string): string {
+  if (!text.trim()) return '';
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  return text
+    .split(/\n{2,}/)
+    .map(paragraph => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
+function serializeNoteContent(
+  sections: EditorSection[],
+  preambleHtml = '',
+  preambleBlocks: AppendedBlock[] = [],
+): string {
+  const sectionsHtml = [...sections]
+    .sort((a, b) => a.slNo - b.slNo)
+    .map(section => {
+      const sectionBlocksHtml = section.blocks.map(block => block.html).join('');
+      const sectionContent = plainTextToHtml(section.quillHtml);
+      return `<h2 data-section-slno="${section.slNo}" data-section-id="${section.id}">${section.heading}</h2>` +
+        `<div data-section-content="${section.id}">${sectionContent}${sectionBlocksHtml}</div>`;
+    })
+    .join('');
+
+  return preambleHtml + preambleBlocks.map(block => block.html).join('') + sectionsHtml;
+}
+
 // ─── extractBlockMeta ─────────────────────────────────────────────────────────
 // Read the embedded <div data-block-meta="1" style="display:none"> tag
 // from a block wrapper element. Returns the parsed meta object or null.
@@ -686,26 +724,26 @@ function extractBlockMeta(el: Element): { type: string; data: any } | null {
   }
 }
 
-// ─── Rich Text Editor Modal (Quill-based) ────────────────────────────────────
-
-// Quill v2 only accepts formats it has registered blots for.
-// 'table' is handled via dangerouslyPasteHTML — do NOT list td/tr/tbody/thead/th
-// as named formats or Quill will spam "Cannot register" warnings on every render.
 const QUILL_FORMATS = [
   'header', 'bold', 'italic', 'underline', 'strike',
   'color', 'background', 'list', 'indent',
   'blockquote', 'code-block', 'link', 'image', 'align',
 ];
 
-function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, translationFor, takenLangs, onClose, onSaved, showToast }: {
+function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, translationFor, takenLangs, translations, onSelectTranslation, onAddTranslation, onClose, onSaved, showToast }: {
   subtopicId: number; subtopicName: string; learningLang: string;
   existingNote?: Note | null;
   translationFor?: Note | null;
   takenLangs?: string[];
+  translations?: Note[];
+  onSelectTranslation?: (note: Note) => void;
+  onAddTranslation?: (source: Note, takenLangs: string[]) => void;
   onClose: () => void;
   onSaved: () => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
+  const apiPrefix = useContext(ApiPrefixContext);
+  const sectionOnly = apiPrefix === 'grammar';
   const [title, setTitle] = useState(existingNote?.title || translationFor?.title || '');
   const [knownLang, setKnownLang] = useState(() => {
     if (existingNote) return existingNote.known_lang;
@@ -719,7 +757,8 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   });
   // For translations: lock concept_id to the source note's concept_id
   const [conceptId, setConceptId] = useState(
-    existingNote?.concept_id || translationFor?.concept_id || ''
+    existingNote?.concept_id || translationFor?.concept_id ||
+    (apiPrefix === 'grammar' ? `grammar-subtopic-${subtopicId}` : '')
   );
   const isTranslation = !!translationFor && !existingNote;
   const conceptLocked = !!existingNote || isTranslation;
@@ -728,6 +767,9 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const [rawHtmlInput, setRawHtmlInput] = useState('');
   const [showRawHtmlPanel, setShowRawHtmlPanel] = useState(false);
   const [tab, setTab] = useState<'write' | 'preview'>('write');
+  const [compiledPreviewHtml, setCompiledPreviewHtml] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -735,13 +777,14 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const [showBoxModal, setShowBoxModal] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
   const [showExtractModal, setShowExtractModal] = useState(false);
-  // Preamble blocks (before any section)
   const [preambleBlocks, setPreambleBlocks] = useState<AppendedBlock[]>([]);
   // Per-section content
-  const [editorSections, setEditorSections] = useState<EditorSection[]>([]);
-  // Which block is currently being edited: { sectionId: null = preamble, sectionId = section id, index = block index }
+  const [editorSections, setEditorSections] = useState<EditorSection[]>(() =>
+    sectionOnly && !existingNote ? [createIntroductionSection()] : []
+  );
+  // Which section block is currently being edited.
   const [editingBlock, setEditingBlock] = useState<{ sectionId: string | null; index: number } | null>(null);
-  // Which section id the currently-open modal is targeting (null = preamble)
+  // Which section id the currently-open block modal is targeting.
   const [targetSectionId, setTargetSectionId] = useState<string | null>(null);
 
   // Section modal
@@ -768,18 +811,14 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
     return () => { document.getElementById(id)?.remove(); };
   }, []);
 
-  // Dynamically import ReactQuill to avoid SSR issues
   const [ReactQuill, setReactQuill] = useState<any>(null);
   const [quillRef, setQuillRef] = useState<any>(null);
   const [quillModules, setQuillModules] = useState<any>(null);
 
-  // Insert a plain HTML table at the current cursor position
   const insertTable = useCallback((rows = 3, cols = 3) => {
     if (!quillRef) return;
     const quill = quillRef.getEditor ? quillRef.getEditor() : quillRef;
     if (!quill) return;
-
-    // Build a plain HTML table with placeholder text
     const headerCells = Array.from({ length: cols }, (_, c) =>
       `<td style="border:1px solid #adb5bd;padding:6px 10px;min-width:80px;font-weight:600;background:#f0f0f0;">Header ${c + 1}</td>`
     ).join('');
@@ -788,56 +827,42 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
         `<td style="border:1px solid #adb5bd;padding:6px 10px;min-width:80px;">Row ${r + 1}, Col ${c + 1}</td>`
       ).join('')}</tr>`
     ).join('');
-
-    const tableHtml = `<table style="border-collapse:collapse;width:100%;margin:10px 0;table-layout:fixed;">
-      <thead><tr>${headerCells}</tr></thead>
-      <tbody>${bodyRows}</tbody>
-    </table><p><br></p>`;
-
-    // Get cursor position and insert HTML
+    const tableHtml = `<table style="border-collapse:collapse;width:100%;margin:10px 0;table-layout:fixed;"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table><p><br></p>`;
     const range = quill.getSelection(true);
     const index = range ? range.index : quill.getLength();
     quill.clipboard.dangerouslyPasteHTML(index, tableHtml);
-    // Move cursor after the table
     quill.setSelection(index + 1, 0);
   }, [quillRef]);
 
-  // Insert raw HTML — for complex blocks (tables, styled divs) we append to a
-  // separate blocks array that lives outside Quill's sanitizer.
-  // targetSectionId === null → preamble; otherwise → that section's blocks.
-  const insertHtmlAtCursor = useCallback((html: string, bypassQuill = false, blockType: 'table' | 'extract' = 'extract', tableData?: TableBlockData, extractData?: ExtractBlockData) => {
-    if (bypassQuill) {
-      const newBlock: AppendedBlock = {
-        id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        type: blockType,
-        html,
-        tableData,
-        extractData,
-      };
-      if (targetSectionId === null) {
-        setPreambleBlocks(prev => [...prev, newBlock]);
-      } else {
-        setEditorSections(prev => prev.map(s =>
-          s.id === targetSectionId ? { ...s, blocks: [...s.blocks, newBlock] } : s
-        ));
-      }
+  // Complex blocks remain outside the Section content textarea so their typed
+  // metadata survives editing and the existing HTML save format stays intact.
+  const appendBlockToTargetSection = useCallback((
+    html: string,
+    blockType: 'table' | 'extract',
+    tableData?: TableBlockData,
+    extractData?: ExtractBlockData,
+  ) => {
+    const newBlock: AppendedBlock = {
+      id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: blockType,
+      html,
+      tableData,
+      extractData,
+    };
+    if (!targetSectionId) {
+      if (!sectionOnly) setPreambleBlocks(prev => [...prev, newBlock]);
       return;
     }
-    if (!quillRef) {
-      setHtmlContent(prev => prev + html);
-      return;
-    }
-    const quill = quillRef.getEditor ? quillRef.getEditor() : quillRef;
-    if (!quill) { setHtmlContent(prev => prev + html); return; }
-    const range = quill.getSelection(true);
-    const index = range ? range.index : quill.getLength();
-    quill.clipboard.dangerouslyPasteHTML(index, html);
-    quill.setSelection(index + 1, 0);
-  }, [quillRef, targetSectionId]);
+    setEditorSections(prev => prev.map(section =>
+      section.id === targetSectionId
+        ? { ...section, blocks: [...section.blocks, newBlock] }
+        : section
+    ));
+  }, [sectionOnly, targetSectionId]);
 
   useEffect(() => {
     import('react-quill-new').then(mod => {
-      const modules = {
+      setQuillModules({
         toolbar: {
           container: [
             [{ header: [1, 2, 3, false] }],
@@ -851,19 +876,15 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
             ['table'],
             ['clean'],
           ],
-          handlers: {
-            table: () => insertTable(3, 3),
-          },
+          handlers: { table: () => insertTable(3, 3) },
         },
-      };
-      setQuillModules(modules);
+      });
       setReactQuill(() => mod.default);
     });
   }, [insertTable]);
 
   // Load existing content when editing.
-  // Parse the saved HTML into preamble + per-section EditorSections.
-  const apiPrefix = useContext(ApiPrefixContext);
+  // Parse the saved HTML into per-section EditorSections.
   useEffect(() => {
     if (existingNote) {
       setLoading(true);
@@ -935,15 +956,19 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
           if (sectionIndices.length === 0) {
             // No sections — everything is preamble
             const { quillHtml, blocks } = parseNodes(childNodes);
-            setHtmlContent(quillHtml);
-            setPreambleBlocks(blocks);
-            setEditorSections([]);
+            if (sectionOnly) {
+              setHtmlContent('');
+              setPreambleBlocks([]);
+              setEditorSections([createIntroductionSection(quillHtml, blocks)]);
+            } else {
+              setHtmlContent(quillHtml);
+              setPreambleBlocks(blocks);
+              setEditorSections([]);
+            }
           } else {
             // Preamble = nodes before first section h2
             const preambleNodes = childNodes.slice(0, sectionIndices[0]);
             const { quillHtml: pHtml, blocks: pBlocks } = parseNodes(preambleNodes);
-            setHtmlContent(pHtml);
-            setPreambleBlocks(pBlocks);
 
             // Each section
             const loadedSections: EditorSection[] = [];
@@ -974,20 +999,79 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
               loadedSections.push({ id: secId, slNo, heading, quillHtml, blocks });
             });
 
-            setEditorSections(loadedSections.sort((a, b) => a.slNo - b.slNo));
+            const sortedSections = loadedSections.sort((a, b) => a.slNo - b.slNo);
+            const hasLegacyPreamble =
+              pBlocks.length > 0 ||
+              pHtml.replace(/<p>\s*<br\s*\/?>\s*<\/p>/gi, '').trim().length > 0;
+            if (sectionOnly) {
+              setHtmlContent('');
+              setPreambleBlocks([]);
+              setEditorSections(
+                hasLegacyPreamble
+                  ? [
+                      createIntroductionSection(pHtml, pBlocks),
+                      ...sortedSections.map(section => ({ ...section, slNo: section.slNo + 1 })),
+                    ]
+                  : sortedSections
+              );
+            } else {
+              setHtmlContent(pHtml);
+              setPreambleBlocks(pBlocks);
+              setEditorSections(sortedSections);
+            }
           }
         })
-        .catch(() => setHtmlContent(''))
+        .catch(() => {
+          setHtmlContent('');
+          setPreambleBlocks([]);
+          setEditorSections(sectionOnly ? [createIntroductionSection()] : []);
+        })
         .finally(() => setLoading(false));
     }
-  }, [existingNote, apiPrefix]);
+  }, [existingNote, apiPrefix, sectionOnly]);
 
   const isEmpty = (html: string) => {
     const stripped = html.replace(/<[^>]*>/g, '').trim();
     return !stripped || stripped === '<br>';
   };
 
-  const preambleBlocksHtml = preambleBlocks.map(b => b.html).join('');
+  const preambleBlocksHtml = preambleBlocks.map(block => block.html).join('');
+
+  useEffect(() => {
+    if (!sectionOnly || tab !== 'preview') return;
+
+    const previewSource = serializeNoteContent(editorSections);
+    if (isEmpty(previewSource)) {
+      setCompiledPreviewHtml('');
+      setPreviewError('');
+      setPreviewLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewError('');
+
+    api.post('/admin/grammar/preview-markdown', {
+      markdown_text: previewSource,
+      title,
+      description: existingNote?.description || translationFor?.description || undefined,
+    })
+      .then(response => {
+        if (!cancelled) setCompiledPreviewHtml(response.data.html || '');
+      })
+      .catch((error: any) => {
+        if (!cancelled) {
+          setCompiledPreviewHtml('');
+          setPreviewError(error.response?.data?.detail || 'Failed to compile preview');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [editorSections, existingNote?.description, sectionOnly, tab, title, translationFor?.description]);
 
   // Inject raw HTML directly into Quill by setting it as the editor value
   const handleInjectRawHtml = () => {
@@ -997,7 +1081,15 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
     const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     if (bodyMatch) html = bodyMatch[1].trim();
     // Set directly — Quill's controlled value prop parses HTML correctly
-    setHtmlContent(html);
+    if (sectionOnly) {
+      setEditorSections(prev => {
+        if (prev.length === 0) return [createIntroductionSection(html)];
+        const firstSection = [...prev].sort((a, b) => a.slNo - b.slNo)[0];
+        return prev.map(section => section.id === firstSection.id ? { ...section, quillHtml: html } : section);
+      });
+    } else {
+      setHtmlContent(html);
+    }
     setRawHtmlInput('');
     setShowRawHtmlPanel(false);
     setTab('write');
@@ -1007,34 +1099,13 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const handleSave = async () => {
     if (!title.trim()) { showToast(false, 'Title is required'); return; }
     if (!conceptId.trim()) { showToast(false, 'Concept ID is required'); return; }
+    if (sectionOnly && editorSections.length === 0) { showToast(false, 'Add at least one Section before saving'); return; }
 
-    // Convert plain text (from section textareas) to HTML paragraphs.
-    // If the content already contains HTML tags it's left as-is (Quill output).
-    const plainTextToHtml = (text: string): string => {
-      if (!text.trim()) return '';
-      // If it already looks like HTML, don't double-wrap
-      if (/<[a-z][\s\S]*>/i.test(text)) return text;
-      // Split on blank lines → paragraphs; single newlines → <br>
-      return text
-        .split(/\n{2,}/)
-        .map(para => `<p>${para.replace(/\n/g, '<br>')}</p>`)
-        .join('');
-    };
-
-    // Build combined HTML:
-    // 1. Preamble: quill html + preamble blocks
-    // 2. Each section: <h2> + <div data-section-content> wrapping textarea text + blocks
-    const preamblePart = htmlContent + preambleBlocksHtml;
-    const sectionsPart = [...editorSections]
-      .sort((a, b) => a.slNo - b.slNo)
-      .map(s => {
-        const sectionBlocksHtml = s.blocks.map(b => b.html).join('');
-        const sectionContent = plainTextToHtml(s.quillHtml);
-        return `<h2 data-section-slno="${s.slNo}" data-section-id="${s.id}">${s.heading}</h2>` +
-          `<div data-section-content="${s.id}">${sectionContent}${sectionBlocksHtml}</div>`;
-      })
-      .join('');
-    const combinedContent = preamblePart + sectionsPart;
+    const combinedContent = serializeNoteContent(
+      editorSections,
+      sectionOnly ? '' : htmlContent,
+      sectionOnly ? [] : preambleBlocks,
+    );
     if (isEmpty(combinedContent)) { showToast(false, 'Content cannot be empty'); return; }
     setSaving(true);
     try {
@@ -1096,6 +1167,33 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
 
         {/* Right: dark mode + save */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {!!translations?.length && (
+            <select
+              value={existingNote ? String(existingNote.id) : 'new'}
+              onChange={e => {
+                const selected = translations.find(note => note.id === Number(e.target.value));
+                if (selected) onSelectTranslation?.(selected);
+              }}
+              title="Explanation language"
+              style={{ padding: '6px 10px', border: `1px solid ${border}`, borderRadius: 6, background: inputBg, color: textPrimary, fontSize: 12 }}
+            >
+              {isTranslation && <option value="new">New translation</option>}
+              {translations.map(note => (
+                <option key={note.id} value={note.id}>
+                  {KNOWN_LANGS.find(lang => lang.code === note.known_lang)?.label || note.known_lang.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          )}
+          {!!translations?.length && !isTranslation && translations.length < KNOWN_LANGS.length && (
+            <button
+              onClick={() => onAddTranslation?.(translations[0], translations.map(note => note.known_lang))}
+              style={{ padding: '6px 12px', border: `1px solid ${border}`, borderRadius: 6, background: '#1f6feb22', color: '#60a5fa', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+            >
+              <Plus size={13} style={{ display: 'inline', marginRight: 5 }} />
+              Add Translation
+            </button>
+          )}
           <button
             onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('editor_dark', next ? '1' : '0'); }}
             title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -1112,18 +1210,20 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       </div>
 
       {/* ── Meta fields ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', padding: '0.875rem 1.5rem', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: apiPrefix === 'grammar' ? '1fr 1fr' : '1fr 1fr 1fr', gap: '1rem', padding: '0.875rem 1.5rem', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0 }}>
         <div>
           <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Title *</label>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Perfect Nouns in French"
             style={{ width: '100%', padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: inputBg, color: textPrimary }} />
         </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Concept ID *</label>
-          <input value={conceptId} onChange={e => setConceptId(e.target.value)}
-            placeholder="e.g. fr-a1-nouns-perfect" disabled={conceptLocked}
-            style={{ width: '100%', padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: conceptLocked ? (dm ? '#1c2128' : '#f8f9fa') : inputBg, color: textPrimary, opacity: conceptLocked ? 0.7 : 1 }} />
-        </div>
+        {apiPrefix !== 'grammar' && (
+          <div>
+            <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Concept ID *</label>
+            <input value={conceptId} onChange={e => setConceptId(e.target.value)}
+              placeholder="e.g. fr-a1-nouns-perfect" disabled={conceptLocked}
+              style={{ width: '100%', padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: conceptLocked ? (dm ? '#1c2128' : '#f8f9fa') : inputBg, color: textPrimary, opacity: conceptLocked ? 0.7 : 1 }} />
+          </div>
+        )}
         <div>
           <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Explanation Language</label>
           <select value={knownLang} onChange={e => setKnownLang(e.target.value)} disabled={!!existingNote}
@@ -1154,25 +1254,29 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
               style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#ffa90a22', color: '#ffa90a', cursor: 'pointer', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
               📑 Add Section
             </button>
-            <span style={{ color: border, fontSize: 14 }}>|</span>
-            <button
-              onClick={() => { setTargetSectionId(null); setShowBoxModal(true); }}
-              title="Insert a highlighted callout box"
-              style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#fff8e622', color: '#ffa90a', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-              📦 Box
-            </button>
-            <button
-              onClick={() => { setTargetSectionId(null); setEditingBlock(null); setShowTableModal(true); }}
-              title="Insert a vocabulary table with audio and hover-translate"
-              style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#2563eb22', color: '#60a5fa', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-              📋 Table
-            </button>
-            <button
-              onClick={() => { setTargetSectionId(null); setEditingBlock(null); setShowExtractModal(true); }}
-              title="Insert a styled extract block with optional image"
-              style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#05966922', color: '#34d399', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-              🖼 Extract
-            </button>
+            {!sectionOnly && (
+              <>
+                <span style={{ color: border, fontSize: 14 }}>|</span>
+                <button
+                  onClick={() => { setTargetSectionId(null); setShowBoxModal(true); }}
+                  title="Insert a highlighted callout box"
+                  style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#fff8e622', color: '#ffa90a', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  📦 Box
+                </button>
+                <button
+                  onClick={() => { setTargetSectionId(null); setEditingBlock(null); setShowTableModal(true); }}
+                  title="Insert a vocabulary table with audio and hover-translate"
+                  style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#2563eb22', color: '#60a5fa', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  📋 Table
+                </button>
+                <button
+                  onClick={() => { setTargetSectionId(null); setEditingBlock(null); setShowExtractModal(true); }}
+                  title="Insert a styled extract block with optional image"
+                  style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#05966922', color: '#34d399', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  🖼 Extract
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -1186,7 +1290,9 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       {/* ── Paste HTML panel ── */}
       {showRawHtmlPanel && (
         <div style={{ padding: '10px 1.5rem', borderBottom: `1px solid ${border}`, background: dm ? '#1c2128' : '#f0f6ff', flexShrink: 0 }}>
-          <p style={{ fontSize: 12, color: textMuted, marginBottom: 6 }}>Paste raw HTML — click <strong>Inject</strong> to load into editor.</p>
+          <p style={{ fontSize: 12, color: textMuted, marginBottom: 6 }}>
+            Paste raw HTML — click <strong>Inject</strong> to load it into {sectionOnly ? 'the first Section' : 'the editor'}.
+          </p>
           <div style={{ display: 'flex', gap: 8 }}>
             <textarea value={rawHtmlInput} onChange={e => setRawHtmlInput(e.target.value)}
               placeholder="<h1>Title</h1><p>Content...</p>" rows={3}
@@ -1245,78 +1351,80 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
               }
             `}</style>
 
-            {/* ── Preamble area (Quill + preamble blocks) ── */}
-            {ReactQuill && quillModules ? (
-              <ReactQuill
-                ref={(el: any) => { if (el && el !== quillRef) setQuillRef(el); }}
-                theme="snow"
-                value={htmlContent}
-                onChange={setHtmlContent}
-                modules={quillModules}
-                formats={QUILL_FORMATS}
-                placeholder="Start writing your note here… Use the toolbar above for formatting."
-                style={{ flexShrink: 0, marginTop: '1rem' }}
-              />
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', color: textMuted }}>
-                <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', marginRight: 8 }} />
-                Loading editor…
-              </div>
-            )}
-
-            {/* ── Preamble blocks (tables / extracts before any section) ── */}
-            {preambleBlocks.length > 0 && (
-              <div style={{ marginTop: 8, borderTop: `1px dashed ${border}`, paddingTop: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, color: textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Preamble blocks (Table / Extract)
-                  </span>
-                  <button
-                    onClick={() => setPreambleBlocks([])}
-                    title="Remove all preamble blocks"
-                    style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
-                    ✕ Clear all
-                  </button>
-                </div>
-                {preambleBlocks.map((block, idx) => (
-                  <div key={block.id} style={{ marginBottom: 10, borderRadius: 8, border: `1px solid ${border}`, overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: dm ? '#1c2128' : '#f0f0f0', borderBottom: `1px solid ${border}` }}>
-                      <span style={{ fontSize: 11, color: textMuted, fontWeight: 600 }}>
-                        {block.type === 'table' ? '📋 Vocabulary Table' : '🖼 Extract'} #{idx + 1}
-                      </span>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        {block.type === 'table' && block.tableData && (
-                          <button
-                            onClick={() => { setEditingBlock({ sectionId: null, index: idx }); setTargetSectionId(null); setShowTableModal(true); }}
-                            title="Edit this table"
-                            style={{ fontSize: 11, color: '#2563eb', background: '#2563eb18', border: '1px solid #2563eb44', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
-                            ✏️ Edit
-                          </button>
-                        )}
-                        {block.type === 'extract' && block.extractData && (
-                          <button
-                            onClick={() => { setEditingBlock({ sectionId: null, index: idx }); setTargetSectionId(null); setShowExtractModal(true); }}
-                            title="Edit this extract"
-                            style={{ fontSize: 11, color: '#059669', background: '#05966918', border: '1px solid #05966944', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
-                            ✏️ Edit
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setPreambleBlocks(prev => prev.filter((_, i) => i !== idx))}
-                          title="Remove this block"
-                          style={{ fontSize: 11, color: '#ef4444', background: '#ef444418', border: '1px solid #ef444444', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
-                          ✕ Remove
-                        </button>
-                      </div>
-                    </div>
-                    <div
-                      className="note-preview note-preview-inline"
-                      style={{ background: dm ? '#1c2128' : '#f9f5f0', fontSize: 14 }}
-                      dangerouslySetInnerHTML={{ __html: block.html }}
-                    />
+            {!sectionOnly && (
+              <>
+                {ReactQuill && quillModules ? (
+                  <ReactQuill
+                    ref={(el: any) => { if (el && el !== quillRef) setQuillRef(el); }}
+                    theme="snow"
+                    value={htmlContent}
+                    onChange={setHtmlContent}
+                    modules={quillModules}
+                    formats={QUILL_FORMATS}
+                    placeholder="Start writing your note here… Use the toolbar above for formatting."
+                    style={{ flexShrink: 0, marginTop: '1rem' }}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', color: textMuted }}>
+                    <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', marginRight: 8 }} />
+                    Loading editor…
                   </div>
-                ))}
-              </div>
+                )}
+
+                {preambleBlocks.length > 0 && (
+                  <div style={{ marginTop: 8, borderTop: `1px dashed ${border}`, paddingTop: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Preamble blocks (Table / Extract)
+                      </span>
+                      <button
+                        onClick={() => setPreambleBlocks([])}
+                        title="Remove all preamble blocks"
+                        style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
+                        ✕ Clear all
+                      </button>
+                    </div>
+                    {preambleBlocks.map((block, idx) => (
+                      <div key={block.id} style={{ marginBottom: 10, borderRadius: 8, border: `1px solid ${border}`, overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: dm ? '#1c2128' : '#f0f0f0', borderBottom: `1px solid ${border}` }}>
+                          <span style={{ fontSize: 11, color: textMuted, fontWeight: 600 }}>
+                            {block.type === 'table' ? '📋 Vocabulary Table' : '🖼 Extract'} #{idx + 1}
+                          </span>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            {block.type === 'table' && block.tableData && (
+                              <button
+                                onClick={() => { setEditingBlock({ sectionId: null, index: idx }); setTargetSectionId(null); setShowTableModal(true); }}
+                                title="Edit this table"
+                                style={{ fontSize: 11, color: '#2563eb', background: '#2563eb18', border: '1px solid #2563eb44', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
+                                ✏️ Edit
+                              </button>
+                            )}
+                            {block.type === 'extract' && block.extractData && (
+                              <button
+                                onClick={() => { setEditingBlock({ sectionId: null, index: idx }); setTargetSectionId(null); setShowExtractModal(true); }}
+                                title="Edit this extract"
+                                style={{ fontSize: 11, color: '#059669', background: '#05966918', border: '1px solid #05966944', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
+                                ✏️ Edit
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setPreambleBlocks(prev => prev.filter((_, i) => i !== idx))}
+                              title="Remove this block"
+                              style={{ fontSize: 11, color: '#ef4444', background: '#ef444418', border: '1px solid #ef444444', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
+                              ✕ Remove
+                            </button>
+                          </div>
+                        </div>
+                        <div
+                          className="note-preview note-preview-inline"
+                          style={{ background: dm ? '#1c2128' : '#f9f5f0', fontSize: 14 }}
+                          dangerouslySetInnerHTML={{ __html: block.html }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
 
             {/* ── Section cards ── */}
@@ -1335,8 +1443,9 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', fontSize: 14, padding: '2px 4px' }}>✏️</button>
                     <button
                       onClick={() => setEditorSections(prev => prev.filter(s => s.id !== sec.id))}
-                      title="Delete section"
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 14, padding: '2px 4px' }}>✕</button>
+                      disabled={sectionOnly && editorSections.length === 1}
+                      title={sectionOnly && editorSections.length === 1 ? 'Every note must contain at least one Section' : 'Delete section'}
+                      style={{ background: 'none', border: 'none', cursor: sectionOnly && editorSections.length === 1 ? 'not-allowed' : 'pointer', color: '#ef4444', fontSize: 14, padding: '2px 4px', opacity: sectionOnly && editorSections.length === 1 ? 0.35 : 1 }}>✕</button>
                   </div>
                 </div>
 
@@ -1408,7 +1517,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
 
                 {/* Add content row for this section */}
                 <div style={{ display: 'flex', gap: 6, padding: '8px 14px', borderTop: `1px solid ${dm ? '#30363d' : '#e5e7eb'}`, background: dm ? '#161b22' : '#fafafa' }}>
-                  <span style={{ fontSize: 11, color: textMuted, alignSelf: 'center', marginRight: 4 }}>Add content:</span>
+                  <span style={{ fontSize: 11, color: textMuted, alignSelf: 'center', marginRight: 4 }}>Add to this Section:</span>
                   <button
                     onClick={() => { setTargetSectionId(sec.id); setShowBoxModal(true); }}
                     style={{ padding: '3px 10px', border: `1px solid ${border}`, borderRadius: 5, background: '#fff8e622', color: '#ffa90a', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
@@ -1430,7 +1539,25 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
           </div>
         ) : (
           <div style={{ flex: 1, overflowY: 'auto', background: previewBg }}>
-            {(() => {
+            {sectionOnly ? (
+              previewLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300, color: textMuted }}>
+                  <Loader2 size={22} style={{ animation: 'spin 1s linear infinite', marginRight: 8 }} />
+                  Compiling preview…
+                </div>
+              ) : previewError ? (
+                <div className="alert alert-error" style={{ margin: '1.5rem' }}>{previewError}</div>
+              ) : compiledPreviewHtml ? (
+                <iframe
+                  title="Compiled grammar note preview"
+                  srcDoc={compiledPreviewHtml}
+                  sandbox="allow-scripts allow-same-origin"
+                  style={{ display: 'block', width: '100%', height: '100%', minHeight: 500, border: 0, background: '#f9f5f0' }}
+                />
+              ) : (
+                <div style={{ textAlign: 'center', padding: '3rem', color: textMuted }}>Nothing to preview yet — write something first.</div>
+              )
+            ) : (() => {
               const sortedSections = [...editorSections].sort((a, b) => a.slNo - b.slNo);
               const tocHtml = sortedSections.length > 0
                 ? `<aside class="note-preview-sidebar">
@@ -1493,17 +1620,25 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       {showBoxModal && (
         <BoxModal
           onInsert={(html) => {
-            if (targetSectionId !== null) {
+            if (targetSectionId) {
               setEditorSections(prev => prev.map(s =>
                 s.id === targetSectionId
                   ? { ...s, quillHtml: s.quillHtml + html }
                   : s
               ));
-            } else {
-              insertHtmlAtCursor(html, false);
+            } else if (!sectionOnly) {
+              const quill = quillRef?.getEditor ? quillRef.getEditor() : quillRef;
+              if (quill) {
+                const range = quill.getSelection(true);
+                const index = range ? range.index : quill.getLength();
+                quill.clipboard.dangerouslyPasteHTML(index, html);
+                quill.setSelection(index + 1, 0);
+              } else {
+                setHtmlContent(prev => prev + html);
+              }
             }
           }}
-          onClose={() => setShowBoxModal(false)}
+          onClose={() => { setShowBoxModal(false); setTargetSectionId(null); }}
           darkMode={darkMode}
         />
       )}
@@ -1511,10 +1646,9 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
         <VocabTableModal
           onInsert={(html, tableData) => {
             if (editingBlock !== null) {
-              // Editing existing block
               if (editingBlock.sectionId === null) {
-                setPreambleBlocks(prev => prev.map((b, i) =>
-                  i === editingBlock.index ? { ...b, html, tableData } : b
+                setPreambleBlocks(prev => prev.map((block, index) =>
+                  index === editingBlock.index ? { ...block, html, tableData } : block
                 ));
               } else {
                 setEditorSections(prev => prev.map(s =>
@@ -1525,16 +1659,16 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
               }
               setEditingBlock(null);
             } else {
-              insertHtmlAtCursor(html, true, 'table', tableData, undefined);
+              appendBlockToTargetSection(html, 'table', tableData, undefined);
             }
           }}
-          onClose={() => { setShowTableModal(false); setEditingBlock(null); }}
+          onClose={() => { setShowTableModal(false); setEditingBlock(null); setTargetSectionId(null); }}
           darkMode={darkMode}
-          initialData={editingBlock !== null ? (
-            editingBlock.sectionId === null
+          initialData={editingBlock !== null
+            ? editingBlock.sectionId === null
               ? preambleBlocks[editingBlock.index]?.tableData
               : editorSections.find(s => s.id === editingBlock.sectionId)?.blocks[editingBlock.index]?.tableData
-          ) : undefined}
+            : undefined}
         />
       )}
       {showExtractModal && (
@@ -1542,8 +1676,8 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
           onInsert={(html, extractData) => {
             if (editingBlock !== null) {
               if (editingBlock.sectionId === null) {
-                setPreambleBlocks(prev => prev.map((b, i) =>
-                  i === editingBlock.index ? { ...b, html, extractData } : b
+                setPreambleBlocks(prev => prev.map((block, index) =>
+                  index === editingBlock.index ? { ...block, html, extractData } : block
                 ));
               } else {
                 setEditorSections(prev => prev.map(s =>
@@ -1554,16 +1688,16 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
               }
               setEditingBlock(null);
             } else {
-              insertHtmlAtCursor(html, true, 'extract', undefined, extractData);
+              appendBlockToTargetSection(html, 'extract', undefined, extractData);
             }
           }}
-          onClose={() => { setShowExtractModal(false); setEditingBlock(null); }}
+          onClose={() => { setShowExtractModal(false); setEditingBlock(null); setTargetSectionId(null); }}
           darkMode={darkMode}
-          initialData={editingBlock !== null ? (
-            editingBlock.sectionId === null
+          initialData={editingBlock !== null
+            ? editingBlock.sectionId === null
               ? preambleBlocks[editingBlock.index]?.extractData
               : editorSections.find(s => s.id === editingBlock.sectionId)?.blocks[editingBlock.index]?.extractData
-          ) : undefined}
+            : undefined}
         />
       )}
     </div>
@@ -1574,7 +1708,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
 function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
   subtopic: Subtopic;
   onBack: () => void;
-  onOpenEditor: (state: { existingNote: Note | null; translationFor: Note | null; takenLangs: string[] }) => void;
+  onOpenEditor: (state: { existingNote: Note | null; translationFor: Note | null; takenLangs: string[]; translations: Note[] }) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
   const apiPrefix = useContext(ApiPrefixContext);
@@ -1582,6 +1716,7 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<Note | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const autoOpenedRef = React.useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1596,6 +1731,20 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
   }, [subtopic.id, apiPrefix]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { autoOpenedRef.current = false; }, [subtopic.id]);
+
+  // Grammar subtopics own one logical note. Open its preferred translation
+  // directly instead of rendering the concept list. Existing translations
+  // remain separate rows and are available from the editor language selector.
+  useEffect(() => {
+    if (apiPrefix !== 'grammar' || loading || notes.length === 0 || autoOpenedRef.current) return;
+    const canonicalConceptId = notes[0].concept_id;
+    const translations = notes.filter(note => note.concept_id === canonicalConceptId);
+    const preferred = translations.find(note => note.known_lang === 'en') || translations[0];
+    if (!preferred) return;
+    autoOpenedRef.current = true;
+    onOpenEditor({ existingNote: preferred, translationFor: null, takenLangs: [], translations });
+  }, [apiPrefix, loading, notes, onOpenEditor]);
 
   // Group notes by concept_id
   const grouped = notes.reduce<Record<string, Note[]>>((acc, n) => {
@@ -1635,9 +1784,11 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
           <h2 style={{ margin: 0 }}>{subtopic.name_en}</h2>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>Notes & Translations</p>
         </div>
-        <button className="btn btn-primary" onClick={() => onOpenEditor({ existingNote: null, translationFor: null, takenLangs: [] })}>
-          <Plus size={16} style={{ display: 'inline', marginRight: 6 }} /> Create Note
-        </button>
+        {!loading && (apiPrefix !== 'grammar' || notes.length === 0) && (
+          <button className="btn btn-primary" onClick={() => onOpenEditor({ existingNote: null, translationFor: null, takenLangs: [], translations: [] })}>
+            <Plus size={16} style={{ display: 'inline', marginRight: 6 }} /> Create Note
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -1645,12 +1796,17 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
           <Loader2 size={24} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 8px', display: 'block' }} />
           Loading notes...
         </div>
+      ) : apiPrefix === 'grammar' && notes.length > 0 ? (
+        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+          <Loader2 size={24} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 8px', display: 'block' }} />
+          Opening note...
+        </div>
       ) : Object.keys(grouped).length === 0 ? (
         <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)', border: '2px dashed var(--border)', borderRadius: 12 }}>
           <Globe size={40} style={{ opacity: 0.3, margin: '0 auto 12px', display: 'block' }} />
           <p style={{ fontWeight: 600, marginBottom: 8 }}>No notes yet</p>
           <p style={{ fontSize: 13, marginBottom: 16 }}>Create the first note for this subtopic.</p>
-          <button className="btn btn-primary" onClick={() => onOpenEditor({ existingNote: null, translationFor: null, takenLangs: [] })}>
+          <button className="btn btn-primary" onClick={() => onOpenEditor({ existingNote: null, translationFor: null, takenLangs: [], translations: [] })}>
             <Plus size={14} style={{ display: 'inline', marginRight: 6 }} /> Create Note
           </button>
         </div>
@@ -1665,7 +1821,7 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
                   <code style={{ fontSize: 12, color: 'var(--text-muted)' }}>{conceptId}</code>
                 </div>
                 <button
-                  onClick={() => onOpenEditor({ existingNote: null, translationFor: conceptNotes[0], takenLangs: conceptNotes.map(n => n.known_lang) })}
+                  onClick={() => onOpenEditor({ existingNote: null, translationFor: conceptNotes[0], takenLangs: conceptNotes.map(n => n.known_lang), translations: conceptNotes })}
                   style={{ ...iconBtn('#1f6feb'), width: 'auto', padding: '0 12px', gap: 6, fontSize: 13 }}>
                   <Plus size={14} /> Add Translation
                 </button>
@@ -1696,7 +1852,7 @@ function NotesView({ subtopic, onBack, onOpenEditor, showToast }: {
                         <ExternalLink size={14} />
                       </a>
                       {/* Edit */}
-                      <button title="Edit" onClick={() => onOpenEditor({ existingNote: note, translationFor: null, takenLangs: [] })} style={iconBtn('#f59e0b')}>
+                      <button title="Edit" onClick={() => onOpenEditor({ existingNote: note, translationFor: null, takenLangs: [], translations: conceptNotes })} style={iconBtn('#f59e0b')}>
                         <Pencil size={14} />
                       </button>
                       {/* Delete */}
@@ -2144,8 +2300,8 @@ export default function ContentManager({ pageTitle, pageDescription, apiPrefix =
         <NotesView
           subtopic={selectedSubtopic}
           onBack={() => { setView('subtopics'); setSelectedSubtopic(null); }}
-          onOpenEditor={({ existingNote, translationFor, takenLangs }) => {
-            setEditorState({ subtopicId: selectedSubtopic.id, subtopicName: selectedSubtopic.name_en, learningLang, existingNote, translationFor, takenLangs });
+          onOpenEditor={({ existingNote, translationFor, takenLangs, translations }) => {
+            setEditorState({ subtopicId: selectedSubtopic.id, subtopicName: selectedSubtopic.name_en, learningLang, existingNote, translationFor, takenLangs, translations });
             setView('editor');
           }}
           showToast={showToast}
@@ -2161,14 +2317,44 @@ export default function ContentManager({ pageTitle, pageDescription, apiPrefix =
           />
         ) : (
           <NoteEditorView
+            key={editorState.existingNote ? `note-${editorState.existingNote.id}` : editorState.translationFor ? `translation-${editorState.translationFor.concept_id}` : 'new-note'}
             subtopicId={editorState.subtopicId}
             subtopicName={editorState.subtopicName}
             learningLang={editorState.learningLang}
             existingNote={editorState.existingNote}
             translationFor={editorState.translationFor}
             takenLangs={editorState.takenLangs}
-            onClose={() => { setView('notes'); setEditorState(null); }}
-            onSaved={() => { setView('notes'); setEditorState(null); }}
+            translations={editorState.translations}
+            onSelectTranslation={note => setEditorState(prev => prev ? {
+              ...prev,
+              existingNote: note,
+              translationFor: null,
+              takenLangs: [],
+            } : prev)}
+            onAddTranslation={(source, existingLangs) => setEditorState(prev => prev ? {
+              ...prev,
+              existingNote: null,
+              translationFor: source,
+              takenLangs: existingLangs,
+            } : prev)}
+            onClose={() => {
+              setEditorState(null);
+              if (apiPrefix === 'grammar') {
+                setView('subtopics');
+                setSelectedSubtopic(null);
+              } else {
+                setView('notes');
+              }
+            }}
+            onSaved={() => {
+              setEditorState(null);
+              if (apiPrefix === 'grammar') {
+                setView('subtopics');
+                setSelectedSubtopic(null);
+              } else {
+                setView('notes');
+              }
+            }}
             showToast={showToast}
           />
         )
