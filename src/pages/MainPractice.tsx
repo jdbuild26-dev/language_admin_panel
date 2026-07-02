@@ -1,14 +1,40 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Eye, Pencil, Trash2, X, Save, Download, BarChart3, MessageSquare, Power, AlertCircle, CheckCircle2, Upload, FileSpreadsheet, CloudUpload, Sparkles, Check, Loader2, ImageIcon } from 'lucide-react';
-import api from '../services/api';
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Eye,
+  Pencil,
+  Trash2,
+  X,
+  Save,
+  Download,
+  BarChart3,
+  MessageSquare,
+  Power,
+  AlertCircle,
+  CheckCircle2,
+  Upload,
+  FileSpreadsheet,
+  CloudUpload,
+  Sparkles,
+  Check,
+  Loader2,
+  ImageIcon,
+} from "lucide-react";
+import api from "../services/api";
 
-const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'] as const;
-const CATEGORIES = ['Reading', 'Listening', 'Writing', 'Speaking'] as const;
-type CefrLevel = typeof CEFR_LEVELS[number];
-type Category = typeof CATEGORIES[number];
-type Slide = 'main' | 'subtypes' | 'exercises' | 'create';
+const CEFR_LEVELS = ["A1", "A2", "B1", "B2"] as const;
+const CATEGORIES = ["Reading", "Listening", "Writing", "Speaking"] as const;
+type CefrLevel = (typeof CEFR_LEVELS)[number];
+type Category = (typeof CATEGORIES)[number];
+type Slide = "main" | "subtypes" | "exercises" | "create";
 
-interface QuestionType { slug: string; name: string | null; is_active: boolean; }
+interface QuestionType {
+  slug: string;
+  name: string | null;
+  is_active: boolean;
+}
 
 interface ExerciseSubtype {
   id: string;
@@ -47,56 +73,58 @@ interface Prompt {
 
 interface AiExercise extends Record<string, any> {
   ExerciseID: string;
-  dbStatus?: 'ready' | 'saving' | 'saved' | 'error';
+  dbStatus?: "ready" | "saving" | "saved" | "error";
 }
 
-interface ExcelRow { [key: string]: string | number | boolean | null; }
+interface ExcelRow {
+  [key: string]: string | number | boolean | null;
+}
 
 // ─── Skill → type_slug mapping ────────────────────────────────────────────────
 // Mirrors the live practice page (language-app.rust.vercel.app/practice).
 // Update this whenever new exercise types are added to the practice page.
 const SKILL_SLUGS: Record<Category, string[]> = {
   Reading: [
-    'translate_bubbles',
-    'highlight_text',
-    'diagram_mapping',
-    'image_mcq',
-    'match_desc_to_image',
-    'image_labelling',
-    'passage_mcq',
-    'complete_passage_dropdown',
-    'fill_blanks',
-    'reorder_sentences',
-    'conversation_dialogue',
+    "translate_bubbles",
+    "highlight_text",
+    "diagram_mapping",
+    "image_mcq",
+    "match_desc_to_image",
+    "image_labelling",
+    "passage_mcq",
+    "complete_passage_dropdown",
+    "fill_blanks",
+    "reorder_sentences",
+    "conversation_dialogue",
   ],
   Listening: [
-    'listen_select',
-    'type_what_you_hear',
-    'listen_fill_blanks_dropdown',
-    'listen_bubble',
-    'listen_order',
-    'listen_passage',
-    'listen_interactive',
-    'listening_conversation',
+    "listen_select",
+    "type_what_you_hear",
+    "listen_fill_blanks_dropdown",
+    "listen_bubble",
+    "listen_order",
+    "listen_passage",
+    "listen_interactive",
+    "listening_conversation",
   ],
   Writing: [
-    'translate_typed',
-    'correct_spelling',
-    'write_fill_blanks',
-    'write_topic',
-    'write_image',
-    'write_documents',
-    'write_interactive',
-    'writing_conversation',
-    'write_analysis',
-    'summarise_audio',
+    "translate_typed",
+    "correct_spelling",
+    "write_fill_blanks",
+    "write_topic",
+    "write_image",
+    "write_documents",
+    "write_interactive",
+    "writing_conversation",
+    "write_analysis",
+    "summarise_audio",
   ],
   Speaking: [
-    'speak_translate',
-    'speak_topic',
-    'speak_image',
-    'speak_interactive',
-    'speaking_conversation',
+    "speak_translate",
+    "speak_topic",
+    "speak_image",
+    "speak_interactive",
+    "speaking_conversation",
   ],
 };
 
@@ -105,43 +133,43 @@ const SKILL_SLUGS: Record<Category, string[]> = {
 // shows the same label the learner sees in the app.
 const SLUG_DISPLAY_NAMES: Record<string, string> = {
   // Reading
-  translate_bubbles:          'Translate the Sentence',
-  highlight_text:             'Highlight the Sentence',
-  diagram_mapping:            'Diagram Labelling',
-  image_mcq:                  'Match Image to Description',
-  match_desc_to_image:        'Match Description to Image',
-  image_labelling:            'Image Labelling',
-  passage_mcq:                'Reading Comprehension',
-  complete_passage_dropdown:  'Complete the Passage',
-  fill_blanks:                'Fill in the Blanks Passage',
-  reorder_sentences:          'Reorder Sentences',
-  conversation_dialogue:      'Running Conversation',
+  translate_bubbles: "Translate the Sentence",
+  highlight_text: "Highlight the Sentence",
+  diagram_mapping: "Diagram Labelling",
+  image_mcq: "Match Image to Description",
+  match_desc_to_image: "Match Description to Image",
+  image_labelling: "Image Labelling",
+  passage_mcq: "Reading Comprehension",
+  complete_passage_dropdown: "Complete the Passage",
+  fill_blanks: "Fill in the Blanks Passage",
+  reorder_sentences: "Reorder Sentences",
+  conversation_dialogue: "Running Conversation",
   // Listening
-  listen_select:              'Listen and Select',
-  type_what_you_hear:         'Listen and Type',
-  listen_fill_blanks_dropdown:'Audio Fill in the Blanks 2',
-  listen_bubble:              'What do you hear?',
-  listen_order:               'Listen and Order',
-  listen_passage:             'Passage Questions',
-  listen_interactive:         'Interactive Listening',
-  listening_conversation:     'Running Conversation',
+  listen_select: "Listen and Select",
+  type_what_you_hear: "Listen and Type",
+  listen_fill_blanks_dropdown: "Audio Fill in the Blanks 2",
+  listen_bubble: "What do you hear?",
+  listen_order: "Listen and Order",
+  listen_passage: "Passage Questions",
+  listen_interactive: "Interactive Listening",
+  listening_conversation: "Running Conversation",
   // Writing
-  translate_typed:            'Translate the Sentence',
-  correct_spelling:           'Fix the Spelling',
-  write_fill_blanks:          'Fill in the Blanks',
-  write_topic:                'Write About Topic',
-  write_image:                'Write About Image',
-  write_documents:            'Write Documents',
-  write_interactive:          'Interactive Writing',
-  writing_conversation:       'Writing Conversation',
-  write_analysis:             'Write About Data',
-  summarise_audio:            'Summarise What You Hear',
+  translate_typed: "Translate the Sentence",
+  correct_spelling: "Fix the Spelling",
+  write_fill_blanks: "Fill in the Blanks",
+  write_topic: "Write About Topic",
+  write_image: "Write About Image",
+  write_documents: "Write Documents",
+  write_interactive: "Interactive Writing",
+  writing_conversation: "Writing Conversation",
+  write_analysis: "Write About Data",
+  summarise_audio: "Summarise What You Hear",
   // Speaking
-  speak_translate:            'Translate by Speaking',
-  speak_topic:                'Speak About Topic',
-  speak_image:                'Speak About Image',
-  speak_interactive:          'Interactive Speaking',
-  speaking_conversation:      'Speaking Conversation',
+  speak_translate: "Translate by Speaking",
+  speak_topic: "Speak About Topic",
+  speak_image: "Speak About Image",
+  speak_interactive: "Interactive Speaking",
+  speaking_conversation: "Speaking Conversation",
 };
 
 /** Returns the canonical display name for an exercise type slug. */
@@ -150,44 +178,116 @@ function getExerciseName(qt: QuestionType): string {
 }
 
 const IMAGE_EXERCISE_TYPES = [
-  'diagram_mapping',
-  'image_mcq',
-  'match_desc_to_image',
-  'image_labelling',
-  'match_image_description',
-  'write_image',
-  'speak_image',
-  'image_mcq'
+  "diagram_mapping",
+  "image_mcq",
+  "match_desc_to_image",
+  "image_labelling",
+  "match_image_description",
+  "write_image",
+  "speak_image",
+  "image_mcq",
 ];
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
-function Toast({ ok, msg, onDone }: { ok: boolean; msg: string; onDone: () => void }) {
-  useEffect(() => { const t = setTimeout(onDone, 3500); return () => clearTimeout(t); }, [onDone]);
+function Toast({
+  ok,
+  msg,
+  onDone,
+}: {
+  ok: boolean;
+  msg: string;
+  onDone: () => void;
+}) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 3500);
+    return () => clearTimeout(t);
+  }, [onDone]);
   return (
-    <div className={`alert ${ok ? 'alert-success' : 'alert-error'}`}
-      style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, minWidth: 280, boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
-      {ok ? <CheckCircle2 size={16} className="inline mr-2" /> : <AlertCircle size={16} className="inline mr-2" />}
+    <div
+      className={`alert ${ok ? "alert-success" : "alert-error"}`}
+      style={{
+        position: "fixed",
+        bottom: 24,
+        right: 24,
+        zIndex: 9999,
+        minWidth: 280,
+        boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+      }}
+    >
+      {ok ? (
+        <CheckCircle2 size={16} className="inline mr-2" />
+      ) : (
+        <AlertCircle size={16} className="inline mr-2" />
+      )}
       {msg}
     </div>
   );
 }
 
 // ─── Confirm Modal ────────────────────────────────────────────────────────────
-function ConfirmModal({ title, body, onConfirm, onCancel, loading }: {
-  title: string; body: string; onConfirm: () => void; onCancel: () => void; loading?: boolean;
+function ConfirmModal({
+  title,
+  body,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  title: string;
+  body: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
 }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div className="card" style={{ maxWidth: 420, width: '90%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.65)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div className="card" style={{ maxWidth: 420, width: "90%" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
           <h3 style={{ margin: 0 }}>{title}</h3>
-          <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
+          <button
+            onClick={onCancel}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+            }}
+          >
+            <X size={18} />
+          </button>
         </div>
-        <p style={{ marginBottom: 20, color: 'var(--text-muted)' }}>{body}</p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={onCancel} disabled={loading}>Cancel</button>
-          <button className="btn" style={{ background: '#dc2626', color: '#fff', border: 'none' }} onClick={onConfirm} disabled={loading}>
-            {loading ? 'Processing...' : 'Confirm'}
+        <p style={{ marginBottom: 20, color: "var(--text-muted)" }}>{body}</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="btn btn-secondary"
+            onClick={onCancel}
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            className="btn"
+            style={{ background: "#dc2626", color: "#fff", border: "none" }}
+            onClick={onConfirm}
+            disabled={loading}
+          >
+            {loading ? "Processing..." : "Confirm"}
           </button>
         </div>
       </div>
@@ -196,52 +296,186 @@ function ConfirmModal({ title, body, onConfirm, onCancel, loading }: {
 }
 
 // ─── Analytics Modal ─────────────────────────────────────────────────────────
-function AnalyticsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void }) {
-  const [data, setData] = useState<{ total: number; by_level: Record<string, number> } | null>(null);
+function AnalyticsModal({
+  qt,
+  onClose,
+}: {
+  qt: QuestionType;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<{
+    total: number;
+    by_level: Record<string, number>;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    api.get(`/admin/question-types/${qt.slug}/analytics`)
-      .then(r => setData(r.data))
-      .catch(() => setError('Failed to load analytics'))
+    api
+      .get(`/admin/question-types/${qt.slug}/analytics`)
+      .then((r) => setData(r.data))
+      .catch(() => setError("Failed to load analytics"))
       .finally(() => setLoading(false));
   }, [qt.slug]);
 
   const maxCount = data ? Math.max(...Object.values(data.by_level), 1) : 1;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div className="card" style={{ maxWidth: 480, width: '90%', position: 'relative' }}>
-        <button onClick={onClose} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.65)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        className="card"
+        style={{ maxWidth: 480, width: "90%", position: "relative" }}
+      >
+        <button
+          onClick={onClose}
+          style={{
+            position: "absolute",
+            top: 12,
+            right: 12,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text-muted)",
+          }}
+        >
+          <X size={18} />
+        </button>
         <h3 style={{ marginBottom: 4 }}>Analytics</h3>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: '1.5rem', fontFamily: 'monospace' }}>{qt.slug}</p>
+        <p
+          style={{
+            fontSize: 13,
+            color: "var(--text-muted)",
+            marginBottom: "1.5rem",
+            fontFamily: "monospace",
+          }}
+        >
+          {qt.slug}
+        </p>
 
-        {loading && <p style={{ color: 'var(--text-muted)' }}>Loading...</p>}
-        {error && <p style={{ color: 'var(--error)' }}>{error}</p>}
+        {loading && <p style={{ color: "var(--text-muted)" }}>Loading...</p>}
+        {error && <p style={{ color: "var(--error)" }}>{error}</p>}
         {data && (
           <>
-            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-              <div style={{ flex: 1, background: 'var(--bg)', borderRadius: 8, padding: '1rem', textAlign: 'center' }}>
-                <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--white)' }}>{data.total}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Total Exercises</div>
+            <div
+              style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  background: "var(--bg)",
+                  borderRadius: 8,
+                  padding: "1rem",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 700,
+                    color: "var(--white)",
+                  }}
+                >
+                  {data.total}
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    marginTop: 4,
+                  }}
+                >
+                  Total Exercises
+                </div>
               </div>
-              <div style={{ flex: 1, background: 'var(--bg)', borderRadius: 8, padding: '1rem', textAlign: 'center' }}>
-                <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--white)' }}>{Object.keys(data.by_level).length}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Levels with Data</div>
+              <div
+                style={{
+                  flex: 1,
+                  background: "var(--bg)",
+                  borderRadius: 8,
+                  padding: "1rem",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 700,
+                    color: "var(--white)",
+                  }}
+                >
+                  {Object.keys(data.by_level).length}
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    marginTop: 4,
+                  }}
+                >
+                  Levels with Data
+                </div>
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {CEFR_LEVELS.map(lvl => {
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {CEFR_LEVELS.map((lvl) => {
                 const count = data.by_level[lvl] || 0;
                 const pct = Math.round((count / maxCount) * 100);
                 return (
-                  <div key={lvl} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ width: 28, fontWeight: 700, fontSize: 13, color: 'var(--text-muted)' }}>{lvl}</span>
-                    <div style={{ flex: 1, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: count > 0 ? 'var(--accent)' : 'transparent', borderRadius: 4, transition: 'width 0.4s ease' }} />
+                  <div
+                    key={lvl}
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <span
+                      style={{
+                        width: 28,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      {lvl}
+                    </span>
+                    <div
+                      style={{
+                        flex: 1,
+                        height: 8,
+                        background: "var(--border)",
+                        borderRadius: 4,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${pct}%`,
+                          background:
+                            count > 0 ? "var(--accent)" : "transparent",
+                          borderRadius: 4,
+                          transition: "width 0.4s ease",
+                        }}
+                      />
                     </div>
-                    <span style={{ width: 36, textAlign: 'right', fontSize: 13, fontWeight: 600, color: count > 0 ? 'var(--white)' : 'var(--text-muted)' }}>{count}</span>
+                    <span
+                      style={{
+                        width: 36,
+                        textAlign: "right",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: count > 0 ? "var(--white)" : "var(--text-muted)",
+                      }}
+                    >
+                      {count}
+                    </span>
                   </div>
                 );
               })}
@@ -254,31 +488,40 @@ function AnalyticsModal({ qt, onClose }: { qt: QuestionType; onClose: () => void
 }
 
 // ─── AI Prompts Modal (editable) ─────────────────────────────────────────────
-function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: () => void; showToast: (ok: boolean, msg: string) => void }) {
+function PromptsModal({
+  qt,
+  onClose,
+  showToast,
+}: {
+  qt: QuestionType;
+  onClose: () => void;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
   const [data, setData] = useState<{ prompt: Prompt } | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [openLevel, setOpenLevel] = useState<string>('A1');
+  const [openLevel, setOpenLevel] = useState<string>("A1");
 
   const load = useCallback(() => {
     setLoading(true);
-    api.get(`/admin/question-types/${qt.slug}/prompt`)
-      .then(r => {
+    api
+      .get(`/admin/question-types/${qt.slug}/prompt`)
+      .then((r) => {
         setData(r.data);
         const p = r.data?.prompt;
         if (p) {
           const flat: Record<string, string> = {
-            topic: p.topic || '',
-            slug: p.slug || '',
-            ai_role: p.ai_role || '',
-            user_role: p.user_role || '',
+            topic: p.topic || "",
+            slug: p.slug || "",
+            ai_role: p.ai_role || "",
+            user_role: p.user_role || "",
           };
-          CEFR_LEVELS.forEach(lvl => {
+          CEFR_LEVELS.forEach((lvl) => {
             const k = lvl.toLowerCase();
-            flat[`instruction_${k}`] = p[`instruction_${k}`] || '';
-            flat[`ai_prompt_${k}`] = p[`ai_prompt_${k}`] || '';
+            flat[`instruction_${k}`] = p[`instruction_${k}`] || "";
+            flat[`ai_prompt_${k}`] = p[`ai_prompt_${k}`] || "";
           });
           setForm(flat);
         }
@@ -287,7 +530,9 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       .finally(() => setLoading(false));
   }, [qt.slug]);
 
-  useEffect(() => { load(); }, [qt.slug, load]);
+  useEffect(() => {
+    load();
+  }, [qt.slug, load]);
 
   const prompt = data?.prompt;
 
@@ -296,59 +541,135 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
     try {
       if (prompt?.id) {
         await api.put(`/admin/prompts/${prompt.id}`, form);
-        showToast(true, 'Prompt saved');
+        showToast(true, "Prompt saved");
       } else {
         // Create new prompt with slug matching the exercise type
-        await api.post('/admin/prompts', { ...form, slug: qt.slug, topic: form.topic || getExerciseName(qt) });
-        showToast(true, 'Prompt created');
+        await api.post("/admin/prompts", {
+          ...form,
+          slug: qt.slug,
+          topic: form.topic || getExerciseName(qt),
+        });
+        showToast(true, "Prompt created");
       }
       setEditing(false);
       load();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
-      showToast(false, err.response?.data?.detail || 'Save failed');
+      showToast(false, err.response?.data?.detail || "Save failed");
     } finally {
       setSaving(false);
     }
   };
 
   const startCreate = () => {
-    const flat: Record<string, string> = { topic: getExerciseName(qt), slug: qt.slug, ai_role: '', user_role: '' };
-    CEFR_LEVELS.forEach(lvl => {
+    const flat: Record<string, string> = {
+      topic: getExerciseName(qt),
+      slug: qt.slug,
+      ai_role: "",
+      user_role: "",
+    };
+    CEFR_LEVELS.forEach((lvl) => {
       const k = lvl.toLowerCase();
-      flat[`instruction_${k}`] = '';
-      flat[`ai_prompt_${k}`] = '';
+      flat[`instruction_${k}`] = "";
+      flat[`ai_prompt_${k}`] = "";
     });
     setForm(flat);
     setEditing(true);
   };
 
   const fieldStyle: React.CSSProperties = {
-    width: '100%', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)',
-    borderRadius: 4, padding: '5px 8px', color: 'var(--text)', fontFamily: 'inherit',
+    width: "100%",
+    fontSize: 13,
+    background: "var(--card-bg)",
+    border: "1px solid var(--border)",
+    borderRadius: 4,
+    padding: "5px 8px",
+    color: "var(--text)",
+    fontFamily: "inherit",
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, overflowY: 'auto', padding: '2rem 1rem' }}>
-      <div className="card" style={{ maxWidth: 680, width: '95%', position: 'relative' }}>
-        <button onClick={onClose} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.65)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        overflowY: "auto",
+        padding: "2rem 1rem",
+      }}
+    >
+      <div
+        className="card"
+        style={{ maxWidth: 680, width: "95%", position: "relative" }}
+      >
+        <button
+          onClick={onClose}
+          style={{
+            position: "absolute",
+            top: 12,
+            right: 12,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text-muted)",
+          }}
+        >
+          <X size={18} />
+        </button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 4,
+          }}
+        >
           <h3 style={{ margin: 0 }}>AI Prompts</h3>
           {!loading && prompt && !editing && (
-            <button onClick={() => setEditing(true)} style={{ ...iconBtnStyle('#f59e0b'), width: 28, height: 28 }} title="Edit prompt">
+            <button
+              onClick={() => setEditing(true)}
+              style={{ ...iconBtnStyle("#f59e0b"), width: 28, height: 28 }}
+              title="Edit prompt"
+            >
               <Pencil size={13} />
             </button>
           )}
         </div>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: '1.5rem', fontFamily: 'monospace' }}>{qt.slug}</p>
+        <p
+          style={{
+            fontSize: 13,
+            color: "var(--text-muted)",
+            marginBottom: "1.5rem",
+            fontFamily: "monospace",
+          }}
+        >
+          {qt.slug}
+        </p>
 
-        {loading && <p style={{ color: 'var(--text-muted)' }}>Loading...</p>}
+        {loading && <p style={{ color: "var(--text-muted)" }}>Loading...</p>}
 
         {!loading && !prompt && !editing && (
-          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-            <MessageSquare size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
+          <div
+            style={{
+              textAlign: "center",
+              padding: "2rem",
+              color: "var(--text-muted)",
+            }}
+          >
+            <MessageSquare
+              size={32}
+              style={{ opacity: 0.3, marginBottom: 8 }}
+            />
             <p>No AI prompt configured for this exercise type.</p>
-            <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={startCreate}>
+            <button
+              className="btn btn-primary"
+              style={{ marginTop: "1rem" }}
+              onClick={startCreate}
+            >
               <Plus size={14} className="inline mr-1" /> Create Prompt
             </button>
           </div>
@@ -357,31 +678,133 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         {/* ── View mode ── */}
         {prompt && !editing && (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: '1rem' }}>
-              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '0.75rem' }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Topic</div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{prompt.topic}</div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                marginBottom: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  background: "var(--bg)",
+                  borderRadius: 8,
+                  padding: "0.75rem",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    marginBottom: 4,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Topic
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>
+                  {prompt.topic}
+                </div>
               </div>
-              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '0.75rem' }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Slug</div>
-                <div style={{ fontSize: 13, fontFamily: 'monospace' }}>{prompt.slug}</div>
+              <div
+                style={{
+                  background: "var(--bg)",
+                  borderRadius: 8,
+                  padding: "0.75rem",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    marginBottom: 4,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Slug
+                </div>
+                <div style={{ fontSize: 13, fontFamily: "monospace" }}>
+                  {prompt.slug}
+                </div>
               </div>
             </div>
             {prompt.ai_role && (
-              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: 13 }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>AI ROLE: </span>{prompt.ai_role}
+              <div
+                style={{
+                  background: "var(--bg)",
+                  borderRadius: 8,
+                  padding: "0.75rem",
+                  marginBottom: "1rem",
+                  fontSize: 13,
+                }}
+              >
+                <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+                  AI ROLE:{" "}
+                </span>
+                {prompt.ai_role}
               </div>
             )}
-            {CEFR_LEVELS.map(lvl => {
+            {CEFR_LEVELS.map((lvl) => {
               const key = lvl.toLowerCase();
               const inst = prompt[`instruction_${key}`];
               const aiP = prompt[`ai_prompt_${key}`];
               if (!inst && !aiP) return null;
               return (
-                <div key={lvl} style={{ marginBottom: '1rem', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-                  <div style={{ background: 'rgba(31,111,235,0.1)', padding: '6px 12px', fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>{lvl}</div>
-                  {inst && <div style={{ padding: '8px 12px', fontSize: 13, borderBottom: aiP ? '1px solid var(--border)' : 'none' }}><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>INSTRUCTION: </span>{inst}</div>}
-                  {aiP && <div style={{ padding: '8px 12px', fontSize: 13, whiteSpace: 'pre-wrap' }}><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>AI PROMPT: </span>{aiP}</div>}
+                <div
+                  key={lvl}
+                  style={{
+                    marginBottom: "1rem",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      background: "rgba(31,111,235,0.1)",
+                      padding: "6px 12px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "var(--accent)",
+                    }}
+                  >
+                    {lvl}
+                  </div>
+                  {inst && (
+                    <div
+                      style={{
+                        padding: "8px 12px",
+                        fontSize: 13,
+                        borderBottom: aiP ? "1px solid var(--border)" : "none",
+                      }}
+                    >
+                      <span
+                        style={{ color: "var(--text-muted)", fontSize: 11 }}
+                      >
+                        INSTRUCTION:{" "}
+                      </span>
+                      {inst}
+                    </div>
+                  )}
+                  {aiP && (
+                    <div
+                      style={{
+                        padding: "8px 12px",
+                        fontSize: 13,
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      <span
+                        style={{ color: "var(--text-muted)", fontSize: 11 }}
+                      >
+                        AI PROMPT:{" "}
+                      </span>
+                      {aiP}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -391,48 +814,117 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
         {/* ── Edit / Create mode ── */}
         {editing && (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: '1rem' }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                marginBottom: "1rem",
+              }}
+            >
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: 11 }}>Topic</label>
-                <input style={fieldStyle} value={form.topic || ''} onChange={e => setForm(f => ({ ...f, topic: e.target.value }))} />
+                <label className="form-label" style={{ fontSize: 11 }}>
+                  Topic
+                </label>
+                <input
+                  style={fieldStyle}
+                  value={form.topic || ""}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, topic: e.target.value }))
+                  }
+                />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: 11 }}>AI Role</label>
-                <input style={fieldStyle} value={form.ai_role || ''} onChange={e => setForm(f => ({ ...f, ai_role: e.target.value }))} placeholder="e.g. French language tutor" />
+                <label className="form-label" style={{ fontSize: 11 }}>
+                  AI Role
+                </label>
+                <input
+                  style={fieldStyle}
+                  value={form.ai_role || ""}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, ai_role: e.target.value }))
+                  }
+                  placeholder="e.g. French language tutor"
+                />
               </div>
             </div>
 
             {/* Per-level accordion */}
-            {CEFR_LEVELS.map(lvl => {
+            {CEFR_LEVELS.map((lvl) => {
               const k = lvl.toLowerCase();
               const isOpen = openLevel === lvl;
               return (
-                <div key={lvl} style={{ marginBottom: 8, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                <div
+                  key={lvl}
+                  style={{
+                    marginBottom: 8,
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    overflow: "hidden",
+                  }}
+                >
                   <button
-                    onClick={() => setOpenLevel(isOpen ? '' : lvl)}
-                    style={{ width: '100%', background: isOpen ? 'rgba(31,111,235,0.12)' : 'var(--card-bg)', border: 'none', cursor: 'pointer', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text)' }}>
-                    <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>{lvl}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isOpen ? '▲' : '▼'}</span>
+                    onClick={() => setOpenLevel(isOpen ? "" : lvl)}
+                    style={{
+                      width: "100%",
+                      background: isOpen
+                        ? "rgba(31,111,235,0.12)"
+                        : "var(--card-bg)",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "8px 12px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      color: "var(--text)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: "var(--accent)",
+                      }}
+                    >
+                      {lvl}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {isOpen ? "▲" : "▼"}
+                    </span>
                   </button>
                   {isOpen && (
-                    <div style={{ padding: '12px' }}>
+                    <div style={{ padding: "12px" }}>
                       <div className="form-group" style={{ marginBottom: 8 }}>
-                        <label className="form-label" style={{ fontSize: 11 }}>User Instruction</label>
+                        <label className="form-label" style={{ fontSize: 11 }}>
+                          User Instruction
+                        </label>
                         <textarea
                           rows={2}
-                          style={{ ...fieldStyle, resize: 'vertical' }}
-                          value={form[`instruction_${k}`] || ''}
-                          onChange={e => setForm(f => ({ ...f, [`instruction_${k}`]: e.target.value }))}
+                          style={{ ...fieldStyle, resize: "vertical" }}
+                          value={form[`instruction_${k}`] || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              [`instruction_${k}`]: e.target.value,
+                            }))
+                          }
                           placeholder={`Instruction shown to user at ${lvl} level`}
                         />
                       </div>
                       <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: 11 }}>AI System Prompt</label>
+                        <label className="form-label" style={{ fontSize: 11 }}>
+                          AI System Prompt
+                        </label>
                         <textarea
                           rows={5}
-                          style={{ ...fieldStyle, resize: 'vertical' }}
-                          value={form[`ai_prompt_${k}`] || ''}
-                          onChange={e => setForm(f => ({ ...f, [`ai_prompt_${k}`]: e.target.value }))}
+                          style={{ ...fieldStyle, resize: "vertical" }}
+                          value={form[`ai_prompt_${k}`] || ""}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              [`ai_prompt_${k}`]: e.target.value,
+                            }))
+                          }
                           placeholder={`System prompt sent to AI for ${lvl} evaluation`}
                         />
                       </div>
@@ -442,10 +934,23 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
               );
             })}
 
-            <div style={{ display: 'flex', gap: 8, marginTop: '1rem' }}>
-              <button className="btn btn-secondary" onClick={() => { setEditing(false); if (!prompt) onClose(); }}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                <Save size={14} className="inline mr-1" />{saving ? 'Saving...' : 'Save Prompt'}
+            <div style={{ display: "flex", gap: 8, marginTop: "1rem" }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setEditing(false);
+                  if (!prompt) onClose();
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={saving}
+              >
+                <Save size={14} className="inline mr-1" />
+                {saving ? "Saving..." : "Save Prompt"}
               </button>
             </div>
           </div>
@@ -456,43 +961,204 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
 }
 
 // ─── AI Detailed Preview Modal ────────────────────────────────────────────────
-  function AIDetailedPreviewModal({ exercises, onClose }: { exercises: any[]; onClose: () => void }) {
-    return (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '2rem' }}>
-        <div className="card" style={{ maxWidth: 1000, width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', border: '1px solid var(--border)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
-          <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Eye size={20} style={{ color: 'var(--accent)' }} />
-              <h3 style={{ margin: 0 }}>Detailed Response Preview</h3>
-            </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={20} /></button>
+function AIDetailedPreviewModal({
+  exercises,
+  onClose,
+}: {
+  exercises: any[];
+  onClose: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.85)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1100,
+        padding: "2rem",
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          maxWidth: 1000,
+          width: "100%",
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
+          padding: 0,
+          overflow: "hidden",
+          border: "1px solid var(--border)",
+          boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
+        }}
+      >
+        <div
+          style={{
+            padding: "1.25rem 1.5rem",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            background: "rgba(255,255,255,0.02)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Eye size={20} style={{ color: "var(--accent)" }} />
+            <h3 style={{ margin: 0 }}>Detailed Response Preview</h3>
           </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+              padding: 4,
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            {exercises.map((ex, i) => (
-              <div key={i} style={{ background: 'rgba(255,255,255,0.015)', borderRadius: 12, padding: '1.5rem', border: '1px solid var(--border)' }}>
-                <div style={{ marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h4 style={{ margin: 0, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 10, fontSize: 16 }}>
-                    <span style={{ background: 'var(--accent)', color: 'white', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>{i + 1}</span>
-                    Exercise ID: {ex.ExerciseID || 'N/A'}
-                  </h4>
-                </div>
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "1.5rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "2rem",
+          }}
+        >
+          {exercises.map((ex, i) => (
+            <div
+              key={i}
+              style={{
+                background: "rgba(255,255,255,0.015)",
+                borderRadius: 12,
+                padding: "1.5rem",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <div
+                style={{
+                  marginBottom: "1.25rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <h4
+                  style={{
+                    margin: 0,
+                    color: "var(--accent)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    fontSize: 16,
+                  }}
+                >
+                  <span
+                    style={{
+                      background: "var(--accent)",
+                      color: "white",
+                      width: 26,
+                      height: 26,
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 13,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                  Exercise ID: {ex.ExerciseID || "N/A"}
+                </h4>
+              </div>
 
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', width: '25%', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.05em' }}>Key</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: 11, letterSpacing: '0.05em' }}>Value (Raw)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(ex).filter(([k]) => k !== 'dbStatus').map(([k, v]) => (
-                        <tr key={k} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                          <td style={{ padding: '10px 12px', fontWeight: 600, color: 'rgba(255,255,255,0.7)', verticalAlign: 'top', fontFamily: 'monospace', fontSize: 12 }}>{k}</td>
-                          <td style={{ padding: '10px 12px', color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-                            {typeof v === 'object' && v !== null ? (
-                              <pre style={{ margin: 0, fontSize: 12, background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.05)', overflowX: 'auto' }}>
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: 13,
+                  }}
+                >
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid var(--border)" }}>
+                      <th
+                        style={{
+                          padding: "10px 12px",
+                          textAlign: "left",
+                          width: "25%",
+                          color: "var(--text-muted)",
+                          textTransform: "uppercase",
+                          fontSize: 11,
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        Key
+                      </th>
+                      <th
+                        style={{
+                          padding: "10px 12px",
+                          textAlign: "left",
+                          color: "var(--text-muted)",
+                          textTransform: "uppercase",
+                          fontSize: 11,
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        Value (Raw)
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(ex)
+                      .filter(([k]) => k !== "dbStatus")
+                      .map(([k, v]) => (
+                        <tr
+                          key={k}
+                          style={{
+                            borderBottom: "1px solid rgba(255,255,255,0.05)",
+                          }}
+                        >
+                          <td
+                            style={{
+                              padding: "10px 12px",
+                              fontWeight: 600,
+                              color: "rgba(255,255,255,0.7)",
+                              verticalAlign: "top",
+                              fontFamily: "monospace",
+                              fontSize: 12,
+                            }}
+                          >
+                            {k}
+                          </td>
+                          <td
+                            style={{
+                              padding: "10px 12px",
+                              color: "var(--text)",
+                              whiteSpace: "pre-wrap",
+                            }}
+                          >
+                            {typeof v === "object" && v !== null ? (
+                              <pre
+                                style={{
+                                  margin: 0,
+                                  fontSize: 12,
+                                  background: "rgba(0,0,0,0.3)",
+                                  padding: "10px",
+                                  borderRadius: 6,
+                                  border: "1px solid rgba(255,255,255,0.05)",
+                                  overflowX: "auto",
+                                }}
+                              >
                                 {JSON.stringify(v, null, 2)}
                               </pre>
                             ) : (
@@ -501,675 +1167,623 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                           </td>
                         </tr>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                  </tbody>
+                </table>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
+        </div>
 
-          <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid var(--border)', textAlign: 'right', background: 'rgba(255,255,255,0.02)' }}>
-            <button className="btn btn-secondary" onClick={onClose}>Close Preview</button>
-          </div>
+        <div
+          style={{
+            padding: "1.25rem 1.5rem",
+            borderTop: "1px solid var(--border)",
+            textAlign: "right",
+            background: "rgba(255,255,255,0.02)",
+          }}
+        >
+          <button className="btn btn-secondary" onClick={onClose}>
+            Close Preview
+          </button>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  // ─── AI Generator Modal ──────────────────────────────────────────────────────
-  function AIGeneratorModal({ qt, subtype, level, category, onClose, showToast }: {
-    qt: QuestionType; subtype?: ExerciseSubtype; level: string; category: string; onClose: () => void; showToast: (ok: boolean, msg: string) => void;
-  }) {
-    const [loading, setLoading] = useState(false);
-    const [savingAll, setSavingAll] = useState(false);
-    const [exercises, setExercises] = useState<AiExercise[]>([]);
-    const [showDetailed, setShowDetailed] = useState(false);
-    const [previewExIndex, setPreviewExIndex] = useState<number | null>(null);
-    const [lastExtId, setLastExtId] = useState<string | null>(null);
-    const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
-    const batchActive = useRef(false);
-    const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
-    
-    useEffect(() => {
-      api.get('/admin/exercise-subtypes', { params: { type_slug: qt.slug, level, skill: category } })
-        .then(r => setSubtypes(r.data.items || []))
-        .catch(() => {});
-    }, [qt.slug, level, category]);
+// ─── AI Generator Modal ──────────────────────────────────────────────────────
+function AIGeneratorModal({
+  qt,
+  subtype,
+  level,
+  category,
+  onClose,
+  showToast,
+}: {
+  qt: QuestionType;
+  subtype?: ExerciseSubtype;
+  level: string;
+  category: string;
+  onClose: () => void;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [exercises, setExercises] = useState<AiExercise[]>([]);
+  const [showDetailed, setShowDetailed] = useState(false);
+  const [previewExIndex, setPreviewExIndex] = useState<number | null>(null);
+  const [lastExtId, setLastExtId] = useState<string | null>(null);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const batchActive = useRef(false);
+  const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
 
-    const [form, setForm] = useState({
-      subtype_slug: subtype?.subtype_slug || '',
-      topic: '',
-      grammar: '',
-      count: 5,
-      custom: '',
-      targetLang: 'French',
-      langCode: 'FR'
-    });
-
-    useEffect(() => {
-      api.get('/admin/exercises', {
-        params: { type_slug: qt.slug, level: level, page: 1, page_size: 1 }
+  useEffect(() => {
+    api
+      .get("/admin/exercise-subtypes", {
+        params: { type_slug: qt.slug, level, skill: category },
       })
-        .then(res => {
-          const total = res.data.total;
-          if (total > 0) {
-            api.get('/admin/exercises', {
-              params: { type_slug: qt.slug, level: level, page: Math.ceil(total / 50), page_size: 50 }
-            }).then(res2 => {
+      .then((r) => setSubtypes(r.data.items || []))
+      .catch(() => {});
+  }, [qt.slug, level, category]);
+
+  const [form, setForm] = useState({
+    subtype_slug: subtype?.subtype_slug || "",
+    topic: "",
+    grammar: "",
+    count: 5,
+    custom: "",
+    targetLang: "French",
+    langCode: "FR",
+  });
+
+  useEffect(() => {
+    api
+      .get("/admin/exercises", {
+        params: { type_slug: qt.slug, level: level, page: 1, page_size: 1 },
+      })
+      .then((res) => {
+        const total = res.data.total;
+        if (total > 0) {
+          api
+            .get("/admin/exercises", {
+              params: {
+                type_slug: qt.slug,
+                level: level,
+                page: Math.ceil(total / 50),
+                page_size: 50,
+              },
+            })
+            .then((res2) => {
               const items = res2.data.items;
               if (items && items.length > 0) {
                 const last = items[items.length - 1].external_id;
                 setLastExtId(last);
               }
             });
-          }
-        });
-    }, [qt.slug, level]);
-
-    const handleGenerate = async () => {
-      if (!form.topic) {
-        showToast(false, 'Please provide a topic');
-        return;
-      }
-      
-      const BATCH_SIZE = qt.slug === 'translate_bubbles' ? 35 : 10;
-      const totalCycles = Math.ceil(form.count / BATCH_SIZE);
-      
-      setLoading(true);
-      batchActive.current = true;
-      setBatchProgress({ current: 0, total: totalCycles });
-      
-      let currentLastExtId = lastExtId;
-      
-      for (let i = 0; i < totalCycles; i++) {
-        if (!batchActive.current) break; // Check for cancellation
-        
-        const currentCount = Math.min(BATCH_SIZE, form.count - i * BATCH_SIZE);
-        setBatchProgress({ current: i + 1, total: totalCycles });
-        
-        try {
-          const res = await api.post('/admin/generate-exercises', null, {
-            params: {
-              target_lang: form.targetLang,
-              lang_code: form.langCode,
-              level: level,
-              exercise_tag: form.topic,
-              vocab_tag: form.topic,
-              grammar_tag: form.grammar,
-              count: currentCount,
-              custom_instructions: form.custom,
-              exercise_type: qt.slug,
-              last_ext_id: currentLastExtId
-            }
-          });
-          
-          const newExs = (res.data.exercises || []).map((ex: Record<string, unknown>) => ({ ...ex, dbStatus: 'ready' }));
-          
-          setExercises(prev => [...prev, ...newExs]);
-          
-          if (newExs.length > 0) {
-            currentLastExtId = newExs[newExs.length - 1].ExerciseID;
-            setLastExtId(currentLastExtId);
-          }
-          
-          showToast(true, `Cycle ${i + 1}/${totalCycles}: Generated ${newExs.length} exercises`);
-        } catch (e: unknown) {
-          const err = e as { response?: { data?: { detail?: string } } };
-          showToast(false, `Cycle ${i + 1} failed: ${err.response?.data?.detail || 'Generation failed'}`);
-          if (i === 0) break; // if first cycle fails completely, stop
         }
+      });
+  }, [qt.slug, level]);
+
+  const handleGenerate = async () => {
+    if (!form.topic) {
+      showToast(false, "Please provide a topic");
+      return;
+    }
+
+    const BATCH_SIZE = qt.slug === "translate_bubbles" ? 35 : 10;
+    const totalCycles = Math.ceil(form.count / BATCH_SIZE);
+
+    setLoading(true);
+    batchActive.current = true;
+    setBatchProgress({ current: 0, total: totalCycles });
+
+    let currentLastExtId = lastExtId;
+
+    for (let i = 0; i < totalCycles; i++) {
+      if (!batchActive.current) break; // Check for cancellation
+
+      const currentCount = Math.min(BATCH_SIZE, form.count - i * BATCH_SIZE);
+      setBatchProgress({ current: i + 1, total: totalCycles });
+
+      try {
+        const res = await api.post("/admin/generate-exercises", null, {
+          params: {
+            target_lang: form.targetLang,
+            lang_code: form.langCode,
+            level: level,
+            exercise_tag: form.topic,
+            vocab_tag: form.topic,
+            grammar_tag: form.grammar,
+            count: currentCount,
+            custom_instructions: form.custom,
+            exercise_type: qt.slug,
+            last_ext_id: currentLastExtId,
+          },
+        });
+
+        const newExs = (res.data.exercises || []).map(
+          (ex: Record<string, unknown>) => ({ ...ex, dbStatus: "ready" }),
+        );
+
+        setExercises((prev) => [...prev, ...newExs]);
+
+        if (newExs.length > 0) {
+          currentLastExtId = newExs[newExs.length - 1].ExerciseID;
+          setLastExtId(currentLastExtId);
+        }
+
+        showToast(
+          true,
+          `Cycle ${i + 1}/${totalCycles}: Generated ${newExs.length} exercises`,
+        );
+      } catch (e: unknown) {
+        const err = e as { response?: { data?: { detail?: string } } };
+        showToast(
+          false,
+          `Cycle ${i + 1} failed: ${err.response?.data?.detail || "Generation failed"}`,
+        );
+        if (i === 0) break; // if first cycle fails completely, stop
       }
-      
-      setLoading(false);
-      batchActive.current = false;
-      setBatchProgress({ current: 0, total: 0 });
-    };
+    }
 
-    const stopBatch = () => {
-      batchActive.current = false;
-      setLoading(false);
-      showToast(true, 'Batch generation stopped.');
-    };
+    setLoading(false);
+    batchActive.current = false;
+    setBatchProgress({ current: 0, total: 0 });
+  };
 
-    const exportToCSV = () => {
-      if (exercises.length === 0) return;
-      const headers = Object.keys(exercises[0]).filter(k => k !== 'dbStatus');
-      const csvContent = [
-        headers.join(','),
-        ...exercises.map(ex => 
-          headers.map(h => {
+  const stopBatch = () => {
+    batchActive.current = false;
+    setLoading(false);
+    showToast(true, "Batch generation stopped.");
+  };
+
+  const exportToCSV = () => {
+    if (exercises.length === 0) return;
+    const headers = Object.keys(exercises[0]).filter((k) => k !== "dbStatus");
+    const csvContent = [
+      headers.join(","),
+      ...exercises.map((ex) =>
+        headers
+          .map((h) => {
             let val = ex[h];
-            if (Array.isArray(val)) val = val.join('+');
+            if (Array.isArray(val)) val = val.join("+");
             if (val === null || val === undefined) val = "";
             const strVal = String(val).replace(/"/g, '""');
             return `"${strVal}"`;
-          }).join(',')
-        )
-      ].join('\n');
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute("download", `ai_generated_${qt.slug}_${Date.now()}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    };
+          })
+          .join(","),
+      ),
+    ].join("\n");
 
-    const saveToDB = async (index: number) => {
-      const ex = exercises[index];
-      const newExs = [...exercises];
-      newExs[index].dbStatus = 'saving';
-      setExercises(newExs);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `ai_generated_${qt.slug}_${Date.now()}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-      try {
-        // Dynamically build CSV from AI response keys
-        const headers = Object.keys(ex).filter(k => k !== 'dbStatus');
-        const values = headers.map(h => {
-          const val = ex[h];
-          if (Array.isArray(val)) return val.join('+');
-          return val ?? "";
-        });
+  const saveToDB = async (index: number) => {
+    const ex = exercises[index];
+    const newExs = [...exercises];
+    newExs[index].dbStatus = "saving";
+    setExercises(newExs);
 
-        const csvContent = headers.join(',') + '\n' + values.map(v => `"${v}"`).join(',');
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const formData = new FormData();
-        formData.append('file', blob, 'exercise.csv');
-        formData.append('skill', category);
-        formData.append('type_slug', qt.slug);
-        formData.append('category', 'main');
-
-        await api.post('/admin/sync/exercises', formData);
-
-        const finalExs = [...exercises];
-        finalExs[index].dbStatus = 'saved';
-        setExercises(finalExs);
-      } catch (e: unknown) {
-        const finalExs = [...exercises];
-        finalExs[index].dbStatus = 'error';
-        setExercises(finalExs);
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Save failed');
-      }
-    };
-
-    const saveAll = async () => {
-      const unsavedIndices = exercises.map((ex, i) => ex.dbStatus !== 'saved' ? i : -1).filter(i => i !== -1);
-      if (unsavedIndices.length === 0) {
-        showToast(true, 'Nothing to save');
-        return;
-      }
-
-      setSavingAll(true);
-      
-      setExercises(prev => {
-        const next = [...prev];
-        unsavedIndices.forEach(i => next[i].dbStatus = 'saving');
-        return next;
+    try {
+      // Dynamically build CSV from AI response keys
+      const headers = Object.keys(ex).filter((k) => k !== "dbStatus");
+      const values = headers.map((h) => {
+        const val = ex[h];
+        if (Array.isArray(val)) return val.join("+");
+        return val ?? "";
       });
 
-      try {
-        const headers = Object.keys(exercises[unsavedIndices[0]]).filter(k => k !== 'dbStatus');
-        
-        const csvRows = [headers.join(',')];
-        unsavedIndices.forEach(i => {
-          const ex = exercises[i];
-          const rowValues = headers.map(h => {
-            let val = ex[h];
-            if (Array.isArray(val)) val = val.join('+');
-            if (val === null || val === undefined) val = "";
-            const strVal = String(val).replace(/"/g, '""');
-            return `"${strVal}"`;
-          });
-          csvRows.push(rowValues.join(','));
+      const csvContent =
+        headers.join(",") + "\n" + values.map((v) => `"${v}"`).join(",");
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const formData = new FormData();
+      formData.append("file", blob, "exercise.csv");
+      formData.append("skill", category);
+      formData.append("type_slug", qt.slug);
+      formData.append("category", "main");
+
+      await api.post("/admin/sync/exercises", formData);
+
+      const finalExs = [...exercises];
+      finalExs[index].dbStatus = "saved";
+      setExercises(finalExs);
+    } catch (e: unknown) {
+      const finalExs = [...exercises];
+      finalExs[index].dbStatus = "error";
+      setExercises(finalExs);
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || "Save failed");
+    }
+  };
+
+  const saveAll = async () => {
+    const unsavedIndices = exercises
+      .map((ex, i) => (ex.dbStatus !== "saved" ? i : -1))
+      .filter((i) => i !== -1);
+    if (unsavedIndices.length === 0) {
+      showToast(true, "Nothing to save");
+      return;
+    }
+
+    setSavingAll(true);
+
+    setExercises((prev) => {
+      const next = [...prev];
+      unsavedIndices.forEach((i) => (next[i].dbStatus = "saving"));
+      return next;
+    });
+
+    try {
+      const headers = Object.keys(exercises[unsavedIndices[0]]).filter(
+        (k) => k !== "dbStatus",
+      );
+
+      const csvRows = [headers.join(",")];
+      unsavedIndices.forEach((i) => {
+        const ex = exercises[i];
+        const rowValues = headers.map((h) => {
+          let val = ex[h];
+          if (Array.isArray(val)) val = val.join("+");
+          if (val === null || val === undefined) val = "";
+          const strVal = String(val).replace(/"/g, '""');
+          return `"${strVal}"`;
         });
-        
-        const csvContent = csvRows.join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const formData = new FormData();
-        formData.append('file', blob, 'bulk_exercises.csv');
-        formData.append('skill', category);
-        formData.append('type_slug', qt.slug);
-        formData.append('category', 'main');
+        csvRows.push(rowValues.join(","));
+      });
 
-        await api.post('/admin/sync/exercises', formData);
+      const csvContent = csvRows.join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const formData = new FormData();
+      formData.append("file", blob, "bulk_exercises.csv");
+      formData.append("skill", category);
+      formData.append("type_slug", qt.slug);
+      formData.append("category", "main");
 
-        setExercises(prev => {
-          const next = [...prev];
-          unsavedIndices.forEach(i => next[i].dbStatus = 'saved');
-          return next;
-        });
-        showToast(true, `Successfully bulk saved ${unsavedIndices.length} exercises to the database.`);
-      } catch (e: unknown) {
-        setExercises(prev => {
-          const next = [...prev];
-          unsavedIndices.forEach(i => next[i].dbStatus = 'error');
-          return next;
-        });
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Bulk save failed');
-      } finally {
-        setSavingAll(false);
-      }
-    };
+      await api.post("/admin/sync/exercises", formData);
 
-    return (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, overflowY: 'auto', padding: '2rem 1rem' }}>
-        <div className="card" style={{ maxWidth: 1000, width: '95%', position: 'relative', maxHeight: '90vh', overflowY: 'auto' }}>
-          <button onClick={onClose} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.5rem' }}>
-            <Sparkles size={24} style={{ color: 'var(--accent)' }} />
-            <h2 style={{ margin: 0 }}>AI Exercise Generator</h2>
+      setExercises((prev) => {
+        const next = [...prev];
+        unsavedIndices.forEach((i) => (next[i].dbStatus = "saved"));
+        return next;
+      });
+      showToast(
+        true,
+        `Successfully bulk saved ${unsavedIndices.length} exercises to the database.`,
+      );
+    } catch (e: unknown) {
+      setExercises((prev) => {
+        const next = [...prev];
+        unsavedIndices.forEach((i) => (next[i].dbStatus = "error"));
+        return next;
+      });
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || "Bulk save failed");
+    } finally {
+      setSavingAll(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.65)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        overflowY: "auto",
+        padding: "2rem 1rem",
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          maxWidth: 1000,
+          width: "95%",
+          position: "relative",
+          maxHeight: "90vh",
+          overflowY: "auto",
+        }}
+      >
+        <button
+          onClick={onClose}
+          style={{
+            position: "absolute",
+            top: 12,
+            right: 12,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text-muted)",
+          }}
+        >
+          <X size={18} />
+        </button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: "1.5rem",
+          }}
+        >
+          <Sparkles size={24} style={{ color: "var(--accent)" }} />
+          <h2 style={{ margin: 0 }}>AI Exercise Generator</h2>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            gap: "1rem",
+            marginBottom: "1.5rem",
+          }}
+        >
+          <div className="form-group">
+            <label className="form-label">Subtype (Optional)</label>
+            <select
+              className="form-control"
+              value={form.subtype_slug}
+              onChange={(e) =>
+                setForm({ ...form, subtype_slug: e.target.value })
+              }
+            >
+              <option value="">-- None --</option>
+              {subtypes.map((s) => (
+                <option key={s.id} value={s.subtype_slug}>
+                  {s.name_en} ({s.subtype_slug})
+                </option>
+              ))}
+            </select>
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-            <div className="form-group">
-              <label className="form-label">Subtype (Optional)</label>
-              <select className="form-control" value={form.subtype_slug} onChange={e => setForm({ ...form, subtype_slug: e.target.value })}>
-                <option value="">-- None --</option>
-                {subtypes.map(s => <option key={s.id} value={s.subtype_slug}>{s.name_en} ({s.subtype_slug})</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Topic / Exercise Tag</label>
-              <input className="form-control" value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="e.g. Professional communication" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Grammar Focus (Optional)</label>
-              <input className="form-control" value={form.grammar} onChange={e => setForm({ ...form, grammar: e.target.value })} placeholder="e.g. Subjunctive" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Count (Total)</label>
-              <input type="number" className="form-control" value={form.count} onChange={e => setForm({ ...form, count: parseInt(e.target.value) || 1 })} min={1} max={1000} />
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, marginBottom: '2rem', alignItems: 'center' }}>
-            {!loading ? (
-              <button className="btn btn-primary" onClick={handleGenerate}>
-                Generate Exercises
-              </button>
-            ) : (
-              <button className="btn btn-primary" onClick={stopBatch} style={{ background: '#ef4444' }}>
-                Stop Batch ({batchProgress.current}/{batchProgress.total})
-              </button>
-            )}
-            {exercises.length > 0 && (
-              <>
-                <button className="btn btn-secondary" onClick={() => { setPreviewExIndex(null); setShowDetailed(true); }} style={{ background: 'rgba(31,111,235,0.15)', color: 'var(--accent)', border: '1px solid rgba(31,111,235,0.3)' }}>
-                  <Eye size={18} className="inline mr-1" /> Detailed Preview
-                </button>
-                <button className="btn btn-secondary" onClick={saveAll} disabled={savingAll}>
-                  {savingAll ? 'Saving...' : 'Save All to DB'}
-                </button>
-                <button className="btn btn-secondary" onClick={exportToCSV} style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }}>
-                  <Download size={18} className="inline mr-1" /> Export CSV
-                </button>
-              </>
-            )}
-          </div>
-
-          {exercises.length > 0 && (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.05)', borderBottom: '1px solid var(--border)' }}>
-                    <th style={{ padding: '10px', textAlign: 'left' }}>ID</th>
-                    <th style={{ padding: '10px', textAlign: 'left' }}>Content Preview</th>
-                    <th style={{ padding: '10px', textAlign: 'center' }}>Status</th>
-                    <th style={{ padding: '10px', textAlign: 'right' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {exercises.map((ex, i) => {
-                    // Find a good preview field (first one that looks like content)
-                    const previewKey = Object.keys(ex).find(k => {
-                      const lk = k.toLowerCase();
-                      if (lk.includes('type') || lk.includes('id') || lk.includes('tag') || lk.includes('level') || lk.includes('dbstatus')) return false;
-                      return lk.includes('sentence') || lk.includes('text') || lk.includes('paragraph') || lk.includes('passage') || lk.includes('prompt') || lk.includes('question') || lk.includes('pairs') || lk.includes('mapping');
-                    }) || Object.keys(ex).find(k => !['dbstatus', 'id', 'external_id', 'exerciseid'].includes(k.toLowerCase()));
-                    const preview = previewKey ? String(ex[previewKey]).substring(0, 100) + (String(ex[previewKey]).length > 100 ? '...' : '') : 'No preview';
-
-                    return (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '10px', fontFamily: 'monospace' }}>{ex.ExerciseID}</td>
-                        <td style={{ padding: '10px' }}>
-                          <div style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-muted)' }}>{previewKey || 'Content'}</div>
-                          <div>{preview}</div>
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                          {ex.dbStatus === 'saving' && <span style={{ color: 'var(--accent)' }}>Saving...</span>}
-                          {ex.dbStatus === 'saved' && <Check size={16} style={{ color: '#10b981', margin: '0 auto' }} />}
-                          {ex.dbStatus === 'error' && <span style={{ color: '#ef4444' }}>Error</span>}
-                          {ex.dbStatus === 'ready' && <span style={{ color: 'var(--text-muted)' }}>Ready</span>}
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                            <button title="View Details" onClick={() => { setPreviewExIndex(i); setShowDetailed(true); }}
-                              style={{ ...iconBtnStyle('var(--accent)'), width: 28, height: 28 }}>
-                              <Eye size={14} />
-                            </button>
-                            <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: 12, height: 28 }}
-                              onClick={() => saveToDB(i)} disabled={ex.dbStatus === 'saving' || ex.dbStatus === 'saved'}>
-                              {ex.dbStatus === 'saved' ? 'Saved' : 'Save'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {showDetailed && (
-            <AIDetailedPreviewModal
-              exercises={previewExIndex !== null ? [exercises[previewExIndex]] : exercises}
-              onClose={() => setShowDetailed(false)}
+          <div className="form-group">
+            <label className="form-label">Topic / Exercise Tag</label>
+            <input
+              className="form-control"
+              value={form.topic}
+              onChange={(e) => setForm({ ...form, topic: e.target.value })}
+              placeholder="e.g. Professional communication"
             />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Grammar Focus (Optional)</label>
+            <input
+              className="form-control"
+              value={form.grammar}
+              onChange={(e) => setForm({ ...form, grammar: e.target.value })}
+              placeholder="e.g. Subjunctive"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Count (Total)</label>
+            <input
+              type="number"
+              className="form-control"
+              value={form.count}
+              onChange={(e) =>
+                setForm({ ...form, count: parseInt(e.target.value) || 1 })
+              }
+              min={1}
+              max={1000}
+            />
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginBottom: "2rem",
+            alignItems: "center",
+          }}
+        >
+          {!loading ? (
+            <button className="btn btn-primary" onClick={handleGenerate}>
+              Generate Exercises
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary"
+              onClick={stopBatch}
+              style={{ background: "#ef4444" }}
+            >
+              Stop Batch ({batchProgress.current}/{batchProgress.total})
+            </button>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Slide 1: Main Practice ───────────────────────────────────────────────────
-  function Slide1Main({
-    level, setLevel, category, setCategory, questionTypes, setQuestionTypes, onEdit, onAiGenerate, showToast,
-  }: {
-    level: CefrLevel; setLevel: (l: CefrLevel) => void;
-    category: Category; setCategory: (c: Category) => void;
-    questionTypes: QuestionType[];
-    setQuestionTypes: React.Dispatch<React.SetStateAction<QuestionType[]>>;
-    onEdit: (qt: QuestionType) => void;
-    onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
-    showToast: (ok: boolean, msg: string) => void;
-  }) {
-    // Fetch available slugs — kept for potential future use but not used for filtering in admin
-    const [slugsLoading, setSlugsLoading] = useState(false);
-
-    // Modal state
-    const [analyticsQt, setAnalyticsQt] = useState<QuestionType | null>(null);
-    const [promptsQt, setPromptsQt] = useState<QuestionType | null>(null);
-    const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
-
-    const handleToggleActive = async (qt: QuestionType) => {
-      setTogglingSlug(qt.slug);
-      try {
-        const r = await api.post(`/admin/question-types/${qt.slug}/toggle-active`);
-        // Use the is_active value returned by the backend
-        setQuestionTypes(prev => prev.map(q => q.slug === qt.slug ? { ...q, is_active: r.data.is_active } : q));
-      } catch {
-        // silently fail — toast is in parent
-      } finally {
-        setTogglingSlug(null);
-      }
-    };
-
-    useEffect(() => {
-      setSlugsLoading(true);
-      api.get('/tag-topics/available-types', { params: { level: level.toLowerCase(), language: 'fr' } })
-        .finally(() => setSlugsLoading(false));
-    }, [level]);
-
-    // Filter: must be in this category's slug list
-    // Note: we do NOT filter by availableSlugs here — that's for the student practice page.
-    // The admin panel should show all configured exercise types so admins can upload content.
-    // Merge DB types with SKILL_SLUGS so types not yet in DB still appear.
-    const dbSlugs = new Set(questionTypes.map(qt => qt.slug));
-    const allSlugsForCategory = SKILL_SLUGS[category] || [];
-    const mergedTypes: QuestionType[] = [
-      // DB types that are in this category
-      ...questionTypes.filter(qt => allSlugsForCategory.includes(qt.slug)),
-      // Slugs in SKILL_SLUGS but not yet in DB — show as placeholder
-      ...allSlugsForCategory
-        .filter(slug => !dbSlugs.has(slug))
-        .map(slug => ({ slug, name: slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), is_active: true })),
-    ];
-    const visibleTypes = mergedTypes;
-
-    return (
-      <div>
-        {/* Filters row */}
-        <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 80 }}>CEFR Level</span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {CEFR_LEVELS.map(l => (
-                <button key={l} onClick={() => setLevel(l)}
-                  style={{
-                    padding: '6px 18px', borderRadius: 8, border: '1px solid var(--border)',
-                    background: level === l ? 'var(--primary)' : 'var(--card-bg)',
-                    color: level === l ? '#fff' : 'var(--text)', cursor: 'pointer',
-                    fontWeight: level === l ? 700 : 400, fontSize: 14, transition: 'all 0.15s',
-                  }}>
-                  {l}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 80 }}>Category</span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {CATEGORIES.map(c => (
-                <button key={c} onClick={() => setCategory(c)}
-                  style={{
-                    padding: '6px 18px', borderRadius: 8, border: '1px solid var(--border)',
-                    background: category === c ? 'var(--accent)' : 'var(--card-bg)',
-                    color: category === c ? '#fff' : 'var(--text)', cursor: 'pointer',
-                    fontWeight: category === c ? 700 : 400, fontSize: 14, transition: 'all 0.15s',
-                  }}>
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Practice Exercises table */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.25rem' }}>
-          <h2 style={{ margin: 0 }}>Practice Exercises</h2>
-          {slugsLoading && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading...</span>}
-        </div>
-        <div className="card" style={{ padding: 0, overflow: 'hidden', opacity: slugsLoading ? 0.5 : 1, transition: 'opacity 0.2s' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', width: 60 }}>Sl No</th>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>Exercise</th>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>Main Type - slug</th>
-                <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', width: 180 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleTypes.length === 0 ? (
-                <tr><td colSpan={4} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No exercise types found for {category}.</td></tr>
-              ) : (
-                visibleTypes.map((qt, idx) => (
-                  <tr key={qt.slug} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.1s', opacity: qt.is_active ? 1 : 0.45 }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{idx + 1}</td>
-                    <td style={{ padding: '12px 16px', fontWeight: 600 }}>
-                      {getExerciseName(qt)}
-                      {!qt.is_active && (
-                        <span style={{ marginLeft: 8, fontSize: 11, background: '#ef444422', color: '#ef4444', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>
-                          DEACTIVATED
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 13, color: 'var(--text-muted)' }}>
-                      {level}_{qt.slug}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        {/* Analytics */}
-                        <button title="Analytics" onClick={() => setAnalyticsQt(qt)} style={iconBtnStyle('#1f6feb')}>
-                          <BarChart3 size={15} />
-                        </button>
-                        {/* AI Prompts */}
-                        <button title="AI Prompts" onClick={() => setPromptsQt(qt)} style={iconBtnStyle('#2ea043')}>
-                          <MessageSquare size={15} />
-                        </button>
-                        {/* AI Generator */}
-                        <button title="AI Generate" onClick={() => onAiGenerate(qt)} style={iconBtnStyle('#a855f7')}>
-                          <Sparkles size={15} />
-                        </button>
-                        {/* Edit - opens Slide 2 */}
-                        <button title="Edit subtypes" onClick={() => onEdit(qt)} style={iconBtnStyle('#f59e0b')}>
-                          <Pencil size={15} />
-                        </button>
-                        {/* Activate / Deactivate */}
-                        <button
-                          title={qt.is_active ? 'Deactivate (hides from practice page)' : 'Activate (shows on practice page)'}
-                          onClick={() => handleToggleActive(qt)}
-                          disabled={togglingSlug === qt.slug}
-                          style={{
-                            ...iconBtnStyle(qt.is_active ? '#ef4444' : '#2ea043'),
-                            opacity: togglingSlug === qt.slug ? 0.5 : 1,
-                          }}>
-                          <Power size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Modals */}
-        {analyticsQt && <AnalyticsModal qt={analyticsQt} onClose={() => setAnalyticsQt(null)} />}
-        {promptsQt && <PromptsModal qt={promptsQt} onClose={() => setPromptsQt(null)} showToast={showToast} />}
-      </div>
-    );
-  }
-
-  function iconBtnStyle(color: string): React.CSSProperties {
-    return {
-      width: 32, height: 32, borderRadius: 6, border: 'none', cursor: 'pointer',
-      background: `${color}22`, color: color,
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      transition: 'all 0.15s',
-    };
-  }
-
-  // ─── Write Image Upload Panel ─────────────────────────────────────────────────
-  function WriteImageUploadPanel({
-    exerciseType, level, subtypeSlug, showToast,
-  }: {
-    exerciseType: QuestionType; level: CefrLevel; subtypeSlug?: string;
-    showToast: (ok: boolean, msg: string) => void;
-  }) {
-    const [exercises, setExercises] = useState<ExerciseRow[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [uploading, setUploading] = useState<string | null>(null); // exerciseId being uploaded
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const pendingExId = useRef<string | null>(null);
-
-    const loadExercises = async () => {
-      setLoading(true);
-      try {
-        const params: Record<string, string | number> = {
-          type_slug: exerciseType.slug, level, page: 1, page_size: 50,
-        };
-        if (subtypeSlug) params.subtype_slug = subtypeSlug;
-        const r = await api.get('/admin/exercises', { params });
-        setExercises(r.data.items || []);
-      } catch {
-        setExercises([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const handleUploadClick = (exId: string) => {
-      pendingExId.current = exId;
-      fileInputRef.current?.click();
-    };
-
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      const exId = pendingExId.current;
-      if (!file || !exId) return;
-      e.target.value = '';
-
-      setUploading(exId);
-      try {
-        // 1. Upload to Cloudinary
-        const fd = new FormData();
-        fd.append('file', file);
-        const uploadRes = await api.post('/admin/upload-image', fd);
-        const imageUrl = uploadRes.data.url;
-
-        // 2. Patch the exercise content with the new image URL
-        await api.patch(`/admin/exercises/${exId}/image-url`, { image_url: imageUrl });
-
-        // 3. Update local state
-        setExercises(prev => prev.map(ex =>
-          ex.external_id === exId ? { ...ex, image_url: imageUrl } : ex
-        ));
-        showToast(true, `Image uploaded for ${exId}`);
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Upload failed');
-      } finally {
-        setUploading(null);
-        pendingExId.current = null;
-      }
-    };
-
-    return (
-      <div>
-        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            Upload images for each exercise. Images are stored on Cloudinary.
-          </p>
-          <button className="btn btn-secondary" style={{ fontSize: 13, padding: '5px 12px' }} onClick={loadExercises} disabled={loading}>
-            {loading ? 'Loading…' : 'Load Exercises'}
-          </button>
+          {exercises.length > 0 && (
+            <>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setPreviewExIndex(null);
+                  setShowDetailed(true);
+                }}
+                style={{
+                  background: "rgba(31,111,235,0.15)",
+                  color: "var(--accent)",
+                  border: "1px solid rgba(31,111,235,0.3)",
+                }}
+              >
+                <Eye size={18} className="inline mr-1" /> Detailed Preview
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={saveAll}
+                disabled={savingAll}
+              >
+                {savingAll ? "Saving..." : "Save All to DB"}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={exportToCSV}
+                style={{
+                  background: "rgba(16,185,129,0.15)",
+                  color: "#10b981",
+                  border: "1px solid rgba(16,185,129,0.3)",
+                }}
+              >
+                <Download size={18} className="inline mr-1" /> Export CSV
+              </button>
+            </>
+          )}
         </div>
 
         {exercises.length > 0 && (
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <div style={{ overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 13,
+              }}
+            >
               <thead>
-                <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>ID</th>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Current Image</th>
-                  <th style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 600 }}>Action</th>
+                <tr
+                  style={{
+                    background: "rgba(255,255,255,0.05)",
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  <th style={{ padding: "10px", textAlign: "left" }}>ID</th>
+                  <th style={{ padding: "10px", textAlign: "left" }}>
+                    Content Preview
+                  </th>
+                  <th style={{ padding: "10px", textAlign: "center" }}>
+                    Status
+                  </th>
+                  <th style={{ padding: "10px", textAlign: "right" }}>
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {exercises.map(ex => {
-                  const imgUrl = ex.image_url || ex.content?.image_url || '';
-                  const isUploading = uploading === ex.external_id;
+                {exercises.map((ex, i) => {
+                  // Find a good preview field (first one that looks like content)
+                  const previewKey =
+                    Object.keys(ex).find((k) => {
+                      const lk = k.toLowerCase();
+                      if (
+                        lk.includes("type") ||
+                        lk.includes("id") ||
+                        lk.includes("tag") ||
+                        lk.includes("level") ||
+                        lk.includes("dbstatus")
+                      )
+                        return false;
+                      return (
+                        lk.includes("sentence") ||
+                        lk.includes("text") ||
+                        lk.includes("paragraph") ||
+                        lk.includes("passage") ||
+                        lk.includes("prompt") ||
+                        lk.includes("question") ||
+                        lk.includes("pairs") ||
+                        lk.includes("mapping")
+                      );
+                    }) ||
+                    Object.keys(ex).find(
+                      (k) =>
+                        ![
+                          "dbstatus",
+                          "id",
+                          "external_id",
+                          "exerciseid",
+                        ].includes(k.toLowerCase()),
+                    );
+                  const preview = previewKey
+                    ? String(ex[previewKey]).substring(0, 100) +
+                      (String(ex[previewKey]).length > 100 ? "..." : "")
+                    : "No preview";
+
                   return (
-                    <tr key={ex.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontWeight: 600 }}>{ex.external_id}</td>
-                      <td style={{ padding: '10px 14px' }}>
-                        {imgUrl ? (
-                          <img src={imgUrl} alt="" style={{ height: 48, width: 72, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
-                        ) : (
-                          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No image</span>
+                    <tr
+                      key={i}
+                      style={{ borderBottom: "1px solid var(--border)" }}
+                    >
+                      <td style={{ padding: "10px", fontFamily: "monospace" }}>
+                        {ex.ExerciseID}
+                      </td>
+                      <td style={{ padding: "10px" }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          {previewKey || "Content"}
+                        </div>
+                        <div>{preview}</div>
+                      </td>
+                      <td style={{ padding: "10px", textAlign: "center" }}>
+                        {ex.dbStatus === "saving" && (
+                          <span style={{ color: "var(--accent)" }}>
+                            Saving...
+                          </span>
+                        )}
+                        {ex.dbStatus === "saved" && (
+                          <Check
+                            size={16}
+                            style={{ color: "#10b981", margin: "0 auto" }}
+                          />
+                        )}
+                        {ex.dbStatus === "error" && (
+                          <span style={{ color: "#ef4444" }}>Error</span>
+                        )}
+                        {ex.dbStatus === "ready" && (
+                          <span style={{ color: "var(--text-muted)" }}>
+                            Ready
+                          </span>
                         )}
                       </td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ fontSize: 12, padding: '4px 10px', opacity: isUploading ? 0.6 : 1 }}
-                          onClick={() => handleUploadClick(ex.external_id)}
-                          disabled={isUploading}
+                      <td style={{ padding: "10px", textAlign: "right" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            justifyContent: "flex-end",
+                          }}
                         >
-                          <CloudUpload size={13} style={{ display: 'inline', marginRight: 4 }} />
-                          {isUploading ? 'Uploading…' : imgUrl ? 'Replace' : 'Upload'}
-                        </button>
+                          <button
+                            title="View Details"
+                            onClick={() => {
+                              setPreviewExIndex(i);
+                              setShowDetailed(true);
+                            }}
+                            style={{
+                              ...iconBtnStyle("var(--accent)"),
+                              width: 28,
+                              height: 28,
+                            }}
+                          >
+                            <Eye size={14} />
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: 12,
+                              height: 28,
+                            }}
+                            onClick={() => saveToDB(i)}
+                            disabled={
+                              ex.dbStatus === "saving" ||
+                              ex.dbStatus === "saved"
+                            }
+                          >
+                            {ex.dbStatus === "saved" ? "Saved" : "Save"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1178,757 +1792,2167 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
             </table>
           </div>
         )}
+
+        {showDetailed && (
+          <AIDetailedPreviewModal
+            exercises={
+              previewExIndex !== null ? [exercises[previewExIndex]] : exercises
+            }
+            onClose={() => setShowDetailed(false)}
+          />
+        )}
       </div>
+    </div>
   );
 }
 
+// ─── Slide 1: Main Practice ───────────────────────────────────────────────────
+function Slide1Main({
+  level,
+  setLevel,
+  category,
+  setCategory,
+  questionTypes,
+  setQuestionTypes,
+  onEdit,
+  onAiGenerate,
+  showToast,
+}: {
+  level: CefrLevel;
+  setLevel: (l: CefrLevel) => void;
+  category: Category;
+  setCategory: (c: Category) => void;
+  questionTypes: QuestionType[];
+  setQuestionTypes: React.Dispatch<React.SetStateAction<QuestionType[]>>;
+  onEdit: (qt: QuestionType) => void;
+  onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  // Fetch available slugs — kept for potential future use but not used for filtering in admin
+  const [slugsLoading, setSlugsLoading] = useState(false);
 
+  // Modal state
+  const [analyticsQt, setAnalyticsQt] = useState<QuestionType | null>(null);
+  const [promptsQt, setPromptsQt] = useState<QuestionType | null>(null);
+  const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
 
-  // ─── Direct CSV Upload (for exercise types like correct_spelling) ─────────────
-  function DirectCsvUpload({
-    exerciseType, category, subtypeSlug, showToast,
-  }: {
-    exerciseType: QuestionType; category: Category;
-    subtypeSlug?: string;
-    showToast: (ok: boolean, msg: string) => void;
-  }) {
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [uploading, setUploading] = useState(false);
-    const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
-
-    const handleFile = async (file: File) => {
-      setUploading(true);
-      setProgress(null);
-      try {
-        const fd = new FormData();
-        fd.append('file', file, file.name);
-        fd.append('skill', category);
-        fd.append('type_slug', exerciseType.slug);
-        fd.append('category', 'main');
-        if (subtypeSlug) fd.append('subtype_slug', subtypeSlug);
-        setProgress({ current: 0, total: 1 });
-        const result = await api.post('/admin/sync/exercises', fd);
-        const count = result.data?.message?.match(/\d+/)?.[0] ?? '?';
-        setProgress({ current: 1, total: 1 });
-        showToast(true, `Uploaded ${count} exercises`);
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Upload failed');
-      } finally {
-        setUploading(false);
-        setProgress(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    };
-
-    return (
-      <>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv"
-          style={{ display: 'none' }}
-          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-        />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="btn btn-secondary"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '6px 14px', opacity: uploading ? 0.7 : 1 }}
-          title="Upload Fix the Spelling CSV"
-        >
-          <CloudUpload size={15} />
-          {uploading
-            ? progress
-              ? `${progress.current}/${progress.total}`
-              : 'Uploading…'
-            : 'Upload CSV'}
-        </button>
-      </>
-    );
-  }
-
-  // ─── Two-CSV Upload (passages CSV first, then exercises CSV) ─────────────────
-  // Used for: conversation_dialogue, image_labelling, listening_conversation,
-  //           speaking_conversation — any type that needs a passages/scenario
-  //           CSV merged with the exercises CSV via shared ExerciseID.
-  const TWO_CSV_SLUGS = new Set([
-    'conversation_dialogue', 'image_labelling', 'listening_conversation',
-    'speaking_conversation', 'running_conversation', 'passage_mcq',
-    'fill_blanks', 'listen_passage', 'listen_interactive',
-    // Writing/Speaking conversation & interactive — same 2-CSV format as listening_conversation
-    'writing_conversation', 'write_interactive', 'speak_interactive',
-  ]);
-
-  function TwoCsvUpload({
-    exerciseType, category, subtypeSlug, showToast,
-  }: {
-    exerciseType: QuestionType; category: Category; subtypeSlug?: string;
-    showToast: (ok: boolean, msg: string) => void;
-  }) {
-    const [open, setOpen] = useState(false);
-    const [file1, setFile1] = useState<File | null>(null);
-    const [file2, setFile2] = useState<File | null>(null);
-    const [uploading, setUploading] = useState(false);
-    const ref1 = useRef<HTMLInputElement>(null);
-    const ref2 = useRef<HTMLInputElement>(null);
-
-    const reset = () => { setFile1(null); setFile2(null); };
-
-    const handleUpload = async () => {
-      if (!file2) { showToast(false, 'Please select the exercises CSV (required)'); return; }
-      setUploading(true);
-      try {
-        const fd = new FormData();
-        fd.append('file', file2, file2.name);          // exercises CSV (required)
-        if (file1) fd.append('file2', file1, file1.name); // passages CSV (optional, sent as file2)
-        fd.append('skill', category);
-        fd.append('type_slug', exerciseType.slug);
-        fd.append('category', 'main');
-        if (subtypeSlug) fd.append('subtype_slug', subtypeSlug);
-        const res = await api.post('/admin/sync/exercises', fd);
-        const count = res.data?.message?.match(/\d+/)?.[0] ?? '?';
-        showToast(true, `Done — ${count} exercises saved`);
-        reset();
-        setOpen(false);
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Upload failed');
-      } finally {
-        setUploading(false);
-      }
-    };
-
-    if (!open) {
-      return (
-        <button
-          onClick={() => setOpen(true)}
-          className="btn btn-secondary"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '6px 14px' }}
-          title="2-CSV upload: passages first, then exercises"
-        >
-          <FileSpreadsheet size={15} />
-          2-CSV Upload
-        </button>
+  const handleToggleActive = async (qt: QuestionType) => {
+    setTogglingSlug(qt.slug);
+    try {
+      const r = await api.post(
+        `/admin/question-types/${qt.slug}/toggle-active`,
       );
+      // Use the is_active value returned by the backend
+      setQuestionTypes((prev) =>
+        prev.map((q) =>
+          q.slug === qt.slug ? { ...q, is_active: r.data.is_active } : q,
+        ),
+      );
+    } catch {
+      // silently fail — toast is in parent
+    } finally {
+      setTogglingSlug(null);
     }
+  };
 
-    return (
-      <div style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200,
-      }}>
-        <div className="card" style={{ maxWidth: 480, width: '92%', padding: '1.5rem' }}>
-          {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h3 style={{ margin: 0, fontSize: 16 }}>2-CSV Upload — {getExerciseName(exerciseType)}</h3>
-            <button onClick={() => { reset(); setOpen(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
-          </div>
+  useEffect(() => {
+    setSlugsLoading(true);
+    api
+      .get("/tag-topics/available-types", {
+        params: { level: level.toLowerCase(), language: "fr" },
+      })
+      .finally(() => setSlugsLoading(false));
+  }, [level]);
 
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.6 }}>
-            Select both CSVs and upload together. The <strong>passages/scenarios CSV</strong> is optional — if provided it will be merged with the exercises using the shared <code>ExerciseID</code>.
-          </p>
+  // Filter: must be in this category's slug list
+  // Note: we do NOT filter by availableSlugs here — that's for the student practice page.
+  // The admin panel should show all configured exercise types so admins can upload content.
+  // Merge DB types with SKILL_SLUGS so types not yet in DB still appear.
+  const dbSlugs = new Set(questionTypes.map((qt) => qt.slug));
+  const allSlugsForCategory = SKILL_SLUGS[category] || [];
+  const mergedTypes: QuestionType[] = [
+    // DB types that are in this category
+    ...questionTypes.filter((qt) => allSlugsForCategory.includes(qt.slug)),
+    // Slugs in SKILL_SLUGS but not yet in DB — show as placeholder
+    ...allSlugsForCategory
+      .filter((slug) => !dbSlugs.has(slug))
+      .map((slug) => ({
+        slug,
+        name: slug.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+        is_active: true,
+      })),
+  ];
+  const visibleTypes = mergedTypes;
 
-          {/* Passages CSV (optional) */}
-          <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>
-              Passages / Scenarios CSV <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional)</span>
-            </label>
-            <input ref={ref1} type="file" accept=".csv" style={{ display: 'none' }}
-              onChange={e => setFile1(e.target.files?.[0] ?? null)} />
-            <div onClick={() => ref1.current?.click()}
-              style={{ border: '2px dashed var(--border)', borderRadius: 8, padding: '1rem', textAlign: 'center', cursor: 'pointer', background: file1 ? 'rgba(34,197,94,0.05)' : 'transparent' }}>
-              <FileSpreadsheet size={20} style={{ opacity: 0.5, marginBottom: 4 }} />
-              <div style={{ fontSize: 13, color: file1 ? '#4ade80' : 'var(--text-muted)' }}>
-                {file1 ? file1.name : 'Click to select passages CSV'}
-              </div>
-            </div>
-          </div>
-
-          {/* Exercises CSV (required) */}
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>
-              Exercises CSV <span style={{ color: '#ef4444' }}>*</span>
-            </label>
-            <input ref={ref2} type="file" accept=".csv" style={{ display: 'none' }}
-              onChange={e => setFile2(e.target.files?.[0] ?? null)} />
-            <div onClick={() => ref2.current?.click()}
-              style={{ border: '2px dashed var(--border)', borderRadius: 8, padding: '1rem', textAlign: 'center', cursor: 'pointer', background: file2 ? 'rgba(34,197,94,0.05)' : 'transparent' }}>
-              <FileSpreadsheet size={20} style={{ opacity: 0.5, marginBottom: 4 }} />
-              <div style={{ fontSize: 13, color: file2 ? '#4ade80' : 'var(--text-muted)' }}>
-                {file2 ? file2.name : 'Click to select exercises CSV'}
-              </div>
-            </div>
-          </div>
-
-          <button
-            className="btn btn-primary" style={{ width: '100%' }}
-            disabled={!file2 || uploading}
-            onClick={handleUpload}
+  return (
+    <div>
+      {/* Filters row */}
+      <div
+        style={{
+          display: "flex",
+          gap: "2rem",
+          alignItems: "center",
+          marginBottom: "2rem",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <span
+            style={{
+              fontWeight: 600,
+              color: "var(--text-muted)",
+              fontSize: 14,
+              minWidth: 80,
+            }}
           >
-            {uploading ? 'Uploading…' : 'Upload & Save Exercises'}
-          </button>
+            CEFR Level
+          </span>
+          <div style={{ display: "flex", gap: 6 }}>
+            {CEFR_LEVELS.map((l) => (
+              <button
+                key={l}
+                onClick={() => setLevel(l)}
+                style={{
+                  padding: "6px 18px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: level === l ? "var(--primary)" : "var(--card-bg)",
+                  color: level === l ? "#fff" : "var(--text)",
+                  cursor: "pointer",
+                  fontWeight: level === l ? 700 : 400,
+                  fontSize: 14,
+                  transition: "all 0.15s",
+                }}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <span
+            style={{
+              fontWeight: 600,
+              color: "var(--text-muted)",
+              fontSize: 14,
+              minWidth: 80,
+            }}
+          >
+            Category
+          </span>
+          <div style={{ display: "flex", gap: 6 }}>
+            {CATEGORIES.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCategory(c)}
+                style={{
+                  padding: "6px 18px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background:
+                    category === c ? "var(--accent)" : "var(--card-bg)",
+                  color: category === c ? "#fff" : "var(--text)",
+                  cursor: "pointer",
+                  fontWeight: category === c ? 700 : 400,
+                  fontSize: 14,
+                  transition: "all 0.15s",
+                }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    );
-  }
 
-  // ─── Slide 2: Subtypes List ───────────────────────────────────────────────────
-  function Slide2Subtypes({
-    level, category, exerciseType,
-    onBack, onView, onCreate, onAiGenerate,
-    showToast,
-  }: {
-    level: CefrLevel; category: Category; exerciseType: QuestionType;
-    onBack: () => void; onView: (sub: ExerciseSubtype) => void; onCreate: () => void; onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
-    showToast: (ok: boolean, msg: string) => void;
-  }) {
-    const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [confirmDelete, setConfirmDelete] = useState<ExerciseSubtype | null>(null);
-    const [deleteLoading, setDeleteLoading] = useState(false);
-
-    const load = useCallback(async () => {
-      setLoading(true);
-      try {
-        const r = await api.get('/admin/exercise-subtypes', {
-          params: { type_slug: exerciseType.slug, level, skill: category }
-        });
-        setSubtypes(r.data.items || []);
-      } catch {
-        // If endpoint doesn't exist yet, show empty state
-        setSubtypes([]);
-      } finally {
-        setLoading(false);
-      }
-    }, [exerciseType.slug, level, category]);
-
-    useEffect(() => { load(); }, [load]);
-
-    const handleDelete = async () => {
-      if (!confirmDelete) return;
-      setDeleteLoading(true);
-      try {
-        await api.delete(`/admin/exercise-subtypes/${confirmDelete.id}`);
-        showToast(true, `Deleted "${confirmDelete.name_en}"`);
-        setSubtypes(prev => prev.filter(s => s.id !== confirmDelete.id));
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Delete failed');
-      } finally {
-        setDeleteLoading(false);
-        setConfirmDelete(null);
-      }
-    };
-
-    const handleToggleActive = async (sub: ExerciseSubtype) => {
-      try {
-        const r = await api.patch(`/admin/exercise-subtypes/${sub.id}/toggle-active`);
-        setSubtypes(prev => prev.map(s => s.id === sub.id ? { ...s, is_active: r.data.is_active } : s));
-        showToast(true, `${sub.is_active ? 'Deactivated' : 'Activated'} "${sub.name_en}"`);
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Update failed');
-      }
-    };
-
-    return (
-      <div>
-        {/* Breadcrumb header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.5rem' }}>
-          <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14 }}>
-            <ChevronLeft size={16} /> Back
-          </button>
-          <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-            CEFR Level: <strong style={{ color: 'var(--white)' }}>{level}</strong>
-            &nbsp;&nbsp;Category: <strong style={{ color: 'var(--white)' }}>{category}</strong>
+      {/* Practice Exercises table */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: "1.25rem",
+        }}
+      >
+        <h2 style={{ margin: 0 }}>Practice Exercises</h2>
+        {slugsLoading && (
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            Loading...
           </span>
-        </div>
+        )}
+      </div>
+      <div
+        className="card"
+        style={{
+          padding: 0,
+          overflow: "hidden",
+          opacity: slugsLoading ? 0.5 : 1,
+          transition: "opacity 0.2s",
+        }}
+      >
+        <table
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}
+        >
+          <thead>
+            <tr
+              style={{
+                background: "rgba(255,255,255,0.03)",
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <th
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  width: 60,
+                }}
+              >
+                Sl No
+              </th>
+              <th
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                }}
+              >
+                Exercise
+              </th>
+              <th
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                }}
+              >
+                Main Type - slug
+              </th>
+              <th
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "right",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  width: 180,
+                }}
+              >
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleTypes.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={4}
+                  style={{
+                    padding: "2rem",
+                    textAlign: "center",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  No exercise types found for {category}.
+                </td>
+              </tr>
+            ) : (
+              visibleTypes.map((qt, idx) => (
+                <tr
+                  key={qt.slug}
+                  style={{
+                    borderBottom: "1px solid var(--border)",
+                    transition: "background 0.1s",
+                    opacity: qt.is_active ? 1 : 0.45,
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background =
+                      "rgba(255,255,255,0.02)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
+                >
+                  <td
+                    style={{ padding: "12px 16px", color: "var(--text-muted)" }}
+                  >
+                    {idx + 1}
+                  </td>
+                  <td style={{ padding: "12px 16px", fontWeight: 600 }}>
+                    {getExerciseName(qt)}
+                    {!qt.is_active && (
+                      <span
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 11,
+                          background: "#ef444422",
+                          color: "#ef4444",
+                          borderRadius: 4,
+                          padding: "2px 6px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        DEACTIVATED
+                      </span>
+                    )}
+                  </td>
+                  <td
+                    style={{
+                      padding: "12px 16px",
+                      fontFamily: "monospace",
+                      fontSize: 13,
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {level}_{qt.slug}
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      {/* Analytics */}
+                      <button
+                        title="Analytics"
+                        onClick={() => setAnalyticsQt(qt)}
+                        style={iconBtnStyle("#1f6feb")}
+                      >
+                        <BarChart3 size={15} />
+                      </button>
+                      {/* AI Prompts */}
+                      <button
+                        title="AI Prompts"
+                        onClick={() => setPromptsQt(qt)}
+                        style={iconBtnStyle("#2ea043")}
+                      >
+                        <MessageSquare size={15} />
+                      </button>
+                      {/* AI Generator */}
+                      <button
+                        title="AI Generate"
+                        onClick={() => onAiGenerate(qt)}
+                        style={iconBtnStyle("#a855f7")}
+                      >
+                        <Sparkles size={15} />
+                      </button>
+                      {/* Edit - opens Slide 2 */}
+                      <button
+                        title="Edit subtypes"
+                        onClick={() => onEdit(qt)}
+                        style={iconBtnStyle("#f59e0b")}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      {/* Activate / Deactivate */}
+                      <button
+                        title={
+                          qt.is_active
+                            ? "Deactivate (hides from practice page)"
+                            : "Activate (shows on practice page)"
+                        }
+                        onClick={() => handleToggleActive(qt)}
+                        disabled={togglingSlug === qt.slug}
+                        style={{
+                          ...iconBtnStyle(qt.is_active ? "#ef4444" : "#2ea043"),
+                          opacity: togglingSlug === qt.slug ? 0.5 : 1,
+                        }}
+                      >
+                        <Power size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
+      {/* Modals */}
+      {analyticsQt && (
+        <AnalyticsModal qt={analyticsQt} onClose={() => setAnalyticsQt(null)} />
+      )}
+      {promptsQt && (
+        <PromptsModal
+          qt={promptsQt}
+          onClose={() => setPromptsQt(null)}
+          showToast={showToast}
+        />
+      )}
+    </div>
+  );
+}
 
+function iconBtnStyle(color: string): React.CSSProperties {
+  return {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    background: `${color}22`,
+    color: color,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "all 0.15s",
+  };
+}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ margin: 0 }}>{getExerciseName(exerciseType)}</h2>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {/* Upload buttons removed from subtype list — use Create Subtype (+) to upload with a proper subtype slug */}
-            <button onClick={() => onAiGenerate(exerciseType)} title="AI Generate exercises"
-              style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.9 }}>
-              <Sparkles size={18} />
-            </button>
-            <button onClick={onCreate} title="Create new subtype"
-              style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--primary)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Plus size={18} />
-            </button>
-          </div>
-        </div>
+// ─── Write Image Upload Panel ─────────────────────────────────────────────────
+function WriteImageUploadPanel({
+  exerciseType,
+  level,
+  subtypeSlug,
+  showToast,
+}: {
+  exerciseType: QuestionType;
+  level: CefrLevel;
+  subtypeSlug?: string;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  const [exercises, setExercises] = useState<ExerciseRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null); // exerciseId being uploaded
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingExId = useRef<string | null>(null);
 
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+  const loadExercises = async () => {
+    setLoading(true);
+    try {
+      const params: Record<string, string | number> = {
+        type_slug: exerciseType.slug,
+        level,
+        page: 1,
+        page_size: 50,
+      };
+      if (subtypeSlug) params.subtype_slug = subtypeSlug;
+      const r = await api.get("/admin/exercises", { params });
+      setExercises(r.data.items || []);
+    } catch {
+      setExercises([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadClick = (exId: string) => {
+    pendingExId.current = exId;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const exId = pendingExId.current;
+    if (!file || !exId) return;
+    e.target.value = "";
+
+    setUploading(exId);
+    try {
+      // 1. Upload to Cloudinary
+      const fd = new FormData();
+      fd.append("file", file);
+      const uploadRes = await api.post("/admin/upload-image", fd);
+      const imageUrl = uploadRes.data.url;
+
+      // 2. Patch the exercise content with the new image URL
+      await api.patch(`/admin/exercises/${exId}/image-url`, {
+        image_url: imageUrl,
+      });
+
+      // 3. Update local state
+      setExercises((prev) =>
+        prev.map((ex) =>
+          ex.external_id === exId ? { ...ex, image_url: imageUrl } : ex,
+        ),
+      );
+      showToast(true, `Image uploaded for ${exId}`);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || "Upload failed");
+    } finally {
+      setUploading(null);
+      pendingExId.current = null;
+    }
+  };
+
+  return (
+    <div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+      />
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "1rem",
+        }}
+      >
+        <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          Upload images for each exercise. Images are stored on Cloudinary.
+        </p>
+        <button
+          className="btn btn-secondary"
+          style={{ fontSize: 13, padding: "5px 12px" }}
+          onClick={loadExercises}
+          disabled={loading}
+        >
+          {loading ? "Loading…" : "Load Exercises"}
+        </button>
+      </div>
+
+      {exercises.length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <table
+            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}
+          >
             <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', width: 60 }}>Sl No</th>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>Exercise</th>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>Identifier</th>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>SubType - slug</th>
-                <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', width: 140 }}>Actions</th>
+              <tr
+                style={{
+                  background: "rgba(255,255,255,0.03)",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <th
+                  style={{
+                    padding: "10px 14px",
+                    textAlign: "left",
+                    color: "var(--text-muted)",
+                    fontWeight: 600,
+                  }}
+                >
+                  ID
+                </th>
+                <th
+                  style={{
+                    padding: "10px 14px",
+                    textAlign: "left",
+                    color: "var(--text-muted)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Current Image
+                </th>
+                <th
+                  style={{
+                    padding: "10px 14px",
+                    textAlign: "right",
+                    color: "var(--text-muted)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                <tr><td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
-              ) : subtypes.length === 0 ? (
-                <tr><td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  No subtypes yet. Click <strong>+</strong> to create one.
-                </td></tr>
-              ) : (
-                subtypes.map((sub, idx) => (
-                  <tr key={sub.id} style={{ borderBottom: '1px solid var(--border)', opacity: sub.is_active ? 1 : 0.5 }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{idx + 1}</td>
-                    <td style={{ padding: '12px 16px', fontWeight: 600 }}>{sub.name_en}</td>
-                    <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 13, color: 'var(--text-muted)' }}>
-                      {sub.identifier_start} – {sub.identifier_end}
+              {exercises.map((ex) => {
+                const imgUrl = ex.image_url || ex.content?.image_url || "";
+                const isUploading = uploading === ex.external_id;
+                return (
+                  <tr
+                    key={ex.id}
+                    style={{ borderBottom: "1px solid var(--border)" }}
+                  >
+                    <td
+                      style={{
+                        padding: "10px 14px",
+                        fontFamily: "monospace",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {ex.external_id}
                     </td>
-                    <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 13 }}>
-                      <span style={{ textDecoration: 'underline', textDecorationStyle: 'dotted' }}>{sub.subtype_slug}</span>
+                    <td style={{ padding: "10px 14px" }}>
+                      {imgUrl ? (
+                        <img
+                          src={imgUrl}
+                          alt=""
+                          style={{
+                            height: 48,
+                            width: 72,
+                            objectFit: "cover",
+                            borderRadius: 6,
+                            border: "1px solid var(--border)",
+                          }}
+                        />
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "var(--text-muted)",
+                            fontStyle: "italic",
+                          }}
+                        >
+                          No image
+                        </span>
+                      )}
                     </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        <button title="View exercises" onClick={() => onView(sub)} style={iconBtnStyle('#60a5fa')}>
-                          <Eye size={15} />
-                        </button>
-                        <button title={sub.is_active ? 'Deactivate' : 'Activate'} onClick={() => handleToggleActive(sub)}
-                          style={iconBtnStyle(sub.is_active ? '#ef4444' : '#2ea043')}>
-                          <Power size={15} />
-                        </button>
-                        <button title="Delete" onClick={() => setConfirmDelete(sub)} style={iconBtnStyle('#ef4444')}>
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
+                    <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                      <button
+                        className="btn btn-secondary"
+                        style={{
+                          fontSize: 12,
+                          padding: "4px 10px",
+                          opacity: isUploading ? 0.6 : 1,
+                        }}
+                        onClick={() => handleUploadClick(ex.external_id)}
+                        disabled={isUploading}
+                      >
+                        <CloudUpload
+                          size={13}
+                          style={{ display: "inline", marginRight: 4 }}
+                        />
+                        {isUploading
+                          ? "Uploading…"
+                          : imgUrl
+                            ? "Replace"
+                            : "Upload"}
+                      </button>
                     </td>
                   </tr>
-                ))
-              )}
+                );
+              })}
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
 
-        {confirmDelete && (
-          <ConfirmModal
-            title="Delete Subtype"
-            body={`Delete "${confirmDelete.name_en}"? This will also remove all associated exercises. This cannot be undone.`}
-            onConfirm={handleDelete}
-            onCancel={() => setConfirmDelete(null)}
-            loading={deleteLoading}
-          />
-        )}
+// ─── Direct CSV Upload (for exercise types like correct_spelling) ─────────────
+function DirectCsvUpload({
+  exerciseType,
+  category,
+  subtypeSlug,
+  showToast,
+}: {
+  exerciseType: QuestionType;
+  category: Category;
+  subtypeSlug?: string;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
 
-        {/* Image upload panel for write_image */}
-        {exerciseType.slug === 'write_image' && (
-          <div style={{ marginTop: '2rem' }}>
-            <h3 style={{ marginBottom: '0.75rem', fontSize: 16 }}>Image Management</h3>
-            <WriteImageUploadPanel
-              exerciseType={exerciseType}
-              level={level}
-              showToast={showToast}
-            />
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ─── Slide 3: Exercise List (View) ────────────────────────────────────────────
-
-  // Language config — order determines display order in paired rows
-  const LANG_SUFFIXES = ['_EN', '_FR', '_DE', '_ES'] as const;
-  type LangSuffix = typeof LANG_SUFFIXES[number];
-  const LANG_LABELS: Record<LangSuffix, string> = { _EN: 'EN', _FR: 'FR', _DE: 'DE', _ES: 'ES' };
-  const LANG_COLORS: Record<LangSuffix, string> = {
-    _EN: '#60a5fa', _FR: '#a78bfa', _DE: '#34d399', _ES: '#fb923c',
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    setProgress(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      fd.append("skill", category);
+      fd.append("type_slug", exerciseType.slug);
+      fd.append("category", "main");
+      if (subtypeSlug) fd.append("subtype_slug", subtypeSlug);
+      setProgress({ current: 0, total: 1 });
+      const result = await api.post("/admin/sync/exercises", fd);
+      const count = result.data?.message?.match(/\d+/)?.[0] ?? "?";
+      setProgress({ current: 1, total: 1 });
+      showToast(true, `Uploaded ${count} exercises`);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || "Upload failed");
+    } finally {
+      setUploading(false);
+      setProgress(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
-  // Keys that are language-agnostic (Part 1: Data Master)
-  const DATA_MASTER_KEYS = [
-    'ExerciseID', 'Question Type', 'Level', 'Category', 'QuestionType',
-    'Difficulty', 'Exercise Tag', 'TimeLimitSeconds', 'Time', 'Character Limit',
-    'Min_Words_1', 'Min_Words_2', 'Min_Words_3', 'Min_Words_4', 'Min_Words_5',
-  ];
+  return (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+        }}
+      />
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+        className="btn btn-secondary"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          padding: "6px 14px",
+          opacity: uploading ? 0.7 : 1,
+        }}
+        title="Upload Fix the Spelling CSV"
+      >
+        <CloudUpload size={15} />
+        {uploading
+          ? progress
+            ? `${progress.current}/${progress.total}`
+            : "Uploading…"
+          : "Upload CSV"}
+      </button>
+    </>
+  );
+}
 
-  /** Strip language suffix from a key, return { base, lang } or null if no suffix */
-  function parseLangKey(key: string): { base: string; lang: LangSuffix } | null {
-    for (const suffix of LANG_SUFFIXES) {
-      if (key.endsWith(suffix)) return { base: key.slice(0, -suffix.length), lang: suffix };
+// ─── Two-CSV Upload (passages CSV first, then exercises CSV) ─────────────────
+// Used for: conversation_dialogue, image_labelling, listening_conversation,
+//           speaking_conversation — any type that needs a passages/scenario
+//           CSV merged with the exercises CSV via shared ExerciseID.
+const TWO_CSV_SLUGS = new Set([
+  "conversation_dialogue",
+  "image_labelling",
+  "listening_conversation",
+  "speaking_conversation",
+  "running_conversation",
+  "passage_mcq",
+  "fill_blanks",
+  "listen_passage",
+  "listen_interactive",
+  // Writing/Speaking conversation & interactive — same 2-CSV format as listening_conversation
+  "writing_conversation",
+  "write_interactive",
+  "speak_interactive",
+]);
+
+function TwoCsvUpload({
+  exerciseType,
+  category,
+  subtypeSlug,
+  showToast,
+}: {
+  exerciseType: QuestionType;
+  category: Category;
+  subtypeSlug?: string;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [file1, setFile1] = useState<File | null>(null);
+  const [file2, setFile2] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const ref1 = useRef<HTMLInputElement>(null);
+  const ref2 = useRef<HTMLInputElement>(null);
+
+  const reset = () => {
+    setFile1(null);
+    setFile2(null);
+  };
+
+  const handleUpload = async () => {
+    if (!file2) {
+      showToast(false, "Please select the exercises CSV (required)");
+      return;
     }
-    return null;
-  }
-
-  /** Group row keys into: masterKeys, pairedGroups (base → langs present), unpaired */
-  function groupRowKeys(row: ExcelRow, visibleLanguages: readonly LangSuffix[] | LangSuffix[]): {
-    masterKeys: string[];
-    pairedGroups: { base: string; langs: LangSuffix[] }[];
-    unpaired: string[];
-  } {
-    const masterKeys = DATA_MASTER_KEYS.filter(k => k in row);
-    const remaining = Object.keys(row).filter(k => !DATA_MASTER_KEYS.includes(k));
-
-    const baseMap = new Map<string, LangSuffix[]>();
-    const unpaired: string[] = [];
-
-    for (const key of remaining) {
-      const parsed = parseLangKey(key);
-      if (parsed && visibleLanguages.includes(parsed.lang)) {
-        const existing = baseMap.get(parsed.base) ?? [];
-        existing.push(parsed.lang);
-        baseMap.set(parsed.base, existing);
-      } else if (!parsed) {
-        unpaired.push(key);
-      }
-      // Skip keys with languages not visible to this user
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file2, file2.name); // exercises CSV (required)
+      if (file1) fd.append("file2", file1, file1.name); // passages CSV (optional, sent as file2)
+      fd.append("skill", category);
+      fd.append("type_slug", exerciseType.slug);
+      fd.append("category", "main");
+      if (subtypeSlug) fd.append("subtype_slug", subtypeSlug);
+      const res = await api.post("/admin/sync/exercises", fd);
+      const count = res.data?.message?.match(/\d+/)?.[0] ?? "?";
+      showToast(true, `Done — ${count} exercises saved`);
+      reset();
+      setOpen(false);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || "Upload failed");
+    } finally {
+      setUploading(false);
     }
+  };
 
-    // Sort langs within each group by visibleLanguages order (EN first, then target)
-    const pairedGroups = Array.from(baseMap.entries()).map(([base, langs]) => ({
-      base,
-      langs: visibleLanguages.filter(l => langs.includes(l)),
-    })).filter(group => group.langs.length > 0); // Only show groups with visible languages
-
-    return { masterKeys, pairedGroups, unpaired };
-  }
-
-  function ImageUploader({ onUploaded, existingUrl, isEditMode }: { onUploaded: (url: string) => void; existingUrl?: string; isEditMode: boolean }) {
-    const inputRef = useRef<HTMLInputElement>(null);
-    const [preview, setPreview] = useState<string | null>(existingUrl || null);
-    const [uploading, setUploading] = useState(false);
-    const [error, setError] = useState('');
-
-    useEffect(() => {
-      setPreview(existingUrl || null);
-    }, [existingUrl]);
-
-    const handleFile = async (file: File) => {
-      if (!isEditMode) return;
-      setError('');
-      const localUrl = URL.createObjectURL(file);
-      setPreview(localUrl);
-      setUploading(true);
-      try {
-        const form = new FormData();
-        form.append('file', file);
-        const res = await api.post<{ url: string }>('/admin/upload-image', form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        onUploaded(res.data.url);
-        setPreview(res.data.url);
-      } catch (e: any) {
-        setError(e.response?.data?.detail || 'Upload failed');
-        setPreview(existingUrl || null);
-      } finally {
-        setUploading(false);
-      }
-    };
-
+  if (!open) {
     return (
-      <div style={{ marginBottom: '1rem', padding: '0 20px', marginTop: '1rem' }}>
-        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-          Exercise Image
-        </p>
+      <button
+        onClick={() => setOpen(true)}
+        className="btn btn-secondary"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          padding: "6px 14px",
+        }}
+        title="2-CSV upload: passages first, then exercises"
+      >
+        <FileSpreadsheet size={15} />
+        2-CSV Upload
+      </button>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.7)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1200,
+      }}
+    >
+      <div
+        className="card"
+        style={{ maxWidth: 480, width: "92%", padding: "1.5rem" }}
+      >
+        {/* Header */}
         <div
-          onClick={() => isEditMode && inputRef.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); if (isEditMode) { const f = e.dataTransfer.files[0]; if (f) handleFile(f); } }}
           style={{
-            border: isEditMode ? '2px dashed var(--border)' : '1px solid var(--border)',
-            borderRadius: 12, padding: '1rem',
-            textAlign: 'center', cursor: isEditMode ? 'pointer' : 'default', background: 'rgba(255,255,255,0.02)',
-            minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "1rem",
           }}
         >
-          {uploading ? (
-            <><Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} /><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Uploading...</span></>
-          ) : preview ? (
-            <img src={preview} alt="preview" style={{ maxHeight: 200, maxWidth: '100%', borderRadius: 8, objectFit: 'contain' }} />
-          ) : (
-            <><ImageIcon size={28} style={{ opacity: 0.3 }} /><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{isEditMode ? 'Click or drag to upload image' : 'No image uploaded'}</span></>
-          )}
+          <h3 style={{ margin: 0, fontSize: 16 }}>
+            2-CSV Upload — {getExerciseName(exerciseType)}
+          </h3>
+          <button
+            onClick={() => {
+              reset();
+              setOpen(false);
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+            }}
+          >
+            <X size={18} />
+          </button>
         </div>
-        <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-        {error && <div style={{ color: '#f87171', fontSize: 12, marginTop: 4 }}>{error}</div>}
+
+        <p
+          style={{
+            fontSize: 13,
+            color: "var(--text-muted)",
+            marginBottom: "1rem",
+            lineHeight: 1.6,
+          }}
+        >
+          Select both CSVs and upload together. The{" "}
+          <strong>passages/scenarios CSV</strong> is optional — if provided it
+          will be merged with the exercises using the shared{" "}
+          <code>ExerciseID</code>.
+        </p>
+
+        {/* Passages CSV (optional) */}
+        <div style={{ marginBottom: "0.75rem" }}>
+          <label
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              display: "block",
+              marginBottom: 4,
+            }}
+          >
+            Passages / Scenarios CSV{" "}
+            <span style={{ fontWeight: 400, textTransform: "none" }}>
+              (optional)
+            </span>
+          </label>
+          <input
+            ref={ref1}
+            type="file"
+            accept=".csv"
+            style={{ display: "none" }}
+            onChange={(e) => setFile1(e.target.files?.[0] ?? null)}
+          />
+          <div
+            onClick={() => ref1.current?.click()}
+            style={{
+              border: "2px dashed var(--border)",
+              borderRadius: 8,
+              padding: "1rem",
+              textAlign: "center",
+              cursor: "pointer",
+              background: file1 ? "rgba(34,197,94,0.05)" : "transparent",
+            }}
+          >
+            <FileSpreadsheet
+              size={20}
+              style={{ opacity: 0.5, marginBottom: 4 }}
+            />
+            <div
+              style={{
+                fontSize: 13,
+                color: file1 ? "#4ade80" : "var(--text-muted)",
+              }}
+            >
+              {file1 ? file1.name : "Click to select passages CSV"}
+            </div>
+          </div>
+        </div>
+
+        {/* Exercises CSV (required) */}
+        <div style={{ marginBottom: "1rem" }}>
+          <label
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              display: "block",
+              marginBottom: 4,
+            }}
+          >
+            Exercises CSV <span style={{ color: "#ef4444" }}>*</span>
+          </label>
+          <input
+            ref={ref2}
+            type="file"
+            accept=".csv"
+            style={{ display: "none" }}
+            onChange={(e) => setFile2(e.target.files?.[0] ?? null)}
+          />
+          <div
+            onClick={() => ref2.current?.click()}
+            style={{
+              border: "2px dashed var(--border)",
+              borderRadius: 8,
+              padding: "1rem",
+              textAlign: "center",
+              cursor: "pointer",
+              background: file2 ? "rgba(34,197,94,0.05)" : "transparent",
+            }}
+          >
+            <FileSpreadsheet
+              size={20}
+              style={{ opacity: 0.5, marginBottom: 4 }}
+            />
+            <div
+              style={{
+                fontSize: 13,
+                color: file2 ? "#4ade80" : "var(--text-muted)",
+              }}
+            >
+              {file2 ? file2.name : "Click to select exercises CSV"}
+            </div>
+          </div>
+        </div>
+
+        <button
+          className="btn btn-primary"
+          style={{ width: "100%" }}
+          disabled={!file2 || uploading}
+          onClick={handleUpload}
+        >
+          {uploading ? "Uploading…" : "Upload & Save Exercises"}
+        </button>
       </div>
-    );
+    </div>
+  );
+}
+
+// ─── Slide 2: Subtypes List ───────────────────────────────────────────────────
+function Slide2Subtypes({
+  level,
+  category,
+  exerciseType,
+  onBack,
+  onView,
+  onCreate,
+  onAiGenerate,
+  showToast,
+}: {
+  level: CefrLevel;
+  category: Category;
+  exerciseType: QuestionType;
+  onBack: () => void;
+  onView: (sub: ExerciseSubtype) => void;
+  onCreate: () => void;
+  onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  const [subtypes, setSubtypes] = useState<ExerciseSubtype[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState<ExerciseSubtype | null>(
+    null,
+  );
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await api.get("/admin/exercise-subtypes", {
+        params: { type_slug: exerciseType.slug, level, skill: category },
+      });
+      setSubtypes(r.data.items || []);
+    } catch {
+      // If endpoint doesn't exist yet, show empty state
+      setSubtypes([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [exerciseType.slug, level, category]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    setDeleteLoading(true);
+    try {
+      await api.delete(`/admin/exercise-subtypes/${confirmDelete.id}`);
+      showToast(true, `Deleted "${confirmDelete.name_en}"`);
+      setSubtypes((prev) => prev.filter((s) => s.id !== confirmDelete.id));
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || "Delete failed");
+    } finally {
+      setDeleteLoading(false);
+      setConfirmDelete(null);
+    }
+  };
+
+  const handleToggleActive = async (sub: ExerciseSubtype) => {
+    try {
+      const r = await api.patch(
+        `/admin/exercise-subtypes/${sub.id}/toggle-active`,
+      );
+      setSubtypes((prev) =>
+        prev.map((s) =>
+          s.id === sub.id ? { ...s, is_active: r.data.is_active } : s,
+        ),
+      );
+      showToast(
+        true,
+        `${sub.is_active ? "Deactivated" : "Activated"} "${sub.name_en}"`,
+      );
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || "Update failed");
+    }
+  };
+
+  return (
+    <div>
+      {/* Breadcrumb header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: "0.5rem",
+        }}
+      >
+        <button
+          onClick={onBack}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text-muted)",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            fontSize: 14,
+          }}
+        >
+          <ChevronLeft size={16} /> Back
+        </button>
+        <span style={{ color: "var(--text-muted)", fontSize: 14 }}>
+          CEFR Level: <strong style={{ color: "var(--white)" }}>{level}</strong>
+          &nbsp;&nbsp;Category:{" "}
+          <strong style={{ color: "var(--white)" }}>{category}</strong>
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <h2 style={{ margin: 0 }}>{getExerciseName(exerciseType)}</h2>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* Upload buttons removed from subtype list — use Create Subtype (+) to upload with a proper subtype slug */}
+          <button
+            onClick={() => onAiGenerate(exerciseType)}
+            title="AI Generate exercises"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "var(--accent)",
+              border: "none",
+              cursor: "pointer",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: 0.9,
+            }}
+          >
+            <Sparkles size={18} />
+          </button>
+          <button
+            onClick={onCreate}
+            title="Create new subtype"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "var(--primary)",
+              border: "none",
+              cursor: "pointer",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Plus size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <table
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}
+        >
+          <thead>
+            <tr
+              style={{
+                background: "rgba(255,255,255,0.03)",
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <th
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  width: 60,
+                }}
+              >
+                Sl No
+              </th>
+              <th
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                }}
+              >
+                Exercise
+              </th>
+              <th
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                }}
+              >
+                Identifier
+              </th>
+              <th
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                }}
+              >
+                SubType - slug
+              </th>
+              <th
+                style={{
+                  padding: "12px 16px",
+                  textAlign: "right",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  width: 140,
+                }}
+              >
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td
+                  colSpan={5}
+                  style={{
+                    padding: "2rem",
+                    textAlign: "center",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  Loading...
+                </td>
+              </tr>
+            ) : subtypes.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={5}
+                  style={{
+                    padding: "2rem",
+                    textAlign: "center",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  No subtypes yet. Click <strong>+</strong> to create one.
+                </td>
+              </tr>
+            ) : (
+              subtypes.map((sub, idx) => (
+                <tr
+                  key={sub.id}
+                  style={{
+                    borderBottom: "1px solid var(--border)",
+                    opacity: sub.is_active ? 1 : 0.5,
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background =
+                      "rgba(255,255,255,0.02)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
+                >
+                  <td
+                    style={{ padding: "12px 16px", color: "var(--text-muted)" }}
+                  >
+                    {idx + 1}
+                  </td>
+                  <td style={{ padding: "12px 16px", fontWeight: 600 }}>
+                    {sub.name_en}
+                  </td>
+                  <td
+                    style={{
+                      padding: "12px 16px",
+                      fontFamily: "monospace",
+                      fontSize: 13,
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {sub.identifier_start} – {sub.identifier_end}
+                  </td>
+                  <td
+                    style={{
+                      padding: "12px 16px",
+                      fontFamily: "monospace",
+                      fontSize: 13,
+                    }}
+                  >
+                    <span
+                      style={{
+                        textDecoration: "underline",
+                        textDecorationStyle: "dotted",
+                      }}
+                    >
+                      {sub.subtype_slug}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <button
+                        title="View exercises"
+                        onClick={() => onView(sub)}
+                        style={iconBtnStyle("#60a5fa")}
+                      >
+                        <Eye size={15} />
+                      </button>
+                      <button
+                        title={sub.is_active ? "Deactivate" : "Activate"}
+                        onClick={() => handleToggleActive(sub)}
+                        style={iconBtnStyle(
+                          sub.is_active ? "#ef4444" : "#2ea043",
+                        )}
+                      >
+                        <Power size={15} />
+                      </button>
+                      <button
+                        title="Delete"
+                        onClick={() => setConfirmDelete(sub)}
+                        style={iconBtnStyle("#ef4444")}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete Subtype"
+          body={`Delete "${confirmDelete.name_en}"? This will also remove all associated exercises. This cannot be undone.`}
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(null)}
+          loading={deleteLoading}
+        />
+      )}
+
+      {/* Image upload panel for write_image */}
+      {exerciseType.slug === "write_image" && (
+        <div style={{ marginTop: "2rem" }}>
+          <h3 style={{ marginBottom: "0.75rem", fontSize: 16 }}>
+            Image Management
+          </h3>
+          <WriteImageUploadPanel
+            exerciseType={exerciseType}
+            level={level}
+            showToast={showToast}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Slide 3: Exercise List (View) ────────────────────────────────────────────
+
+// Language config — order determines display order in paired rows
+const LANG_SUFFIXES = ["_EN", "_FR", "_DE", "_ES"] as const;
+type LangSuffix = (typeof LANG_SUFFIXES)[number];
+const LANG_LABELS: Record<LangSuffix, string> = {
+  _EN: "EN",
+  _FR: "FR",
+  _DE: "DE",
+  _ES: "ES",
+};
+const LANG_COLORS: Record<LangSuffix, string> = {
+  _EN: "#60a5fa",
+  _FR: "#a78bfa",
+  _DE: "#34d399",
+  _ES: "#fb923c",
+};
+
+// Keys that are language-agnostic (Part 1: Data Master)
+const DATA_MASTER_KEYS = [
+  "ExerciseID",
+  "Question Type",
+  "Level",
+  "Category",
+  "QuestionType",
+  "Difficulty",
+  "Exercise Tag",
+  "TimeLimitSeconds",
+  "Time",
+  "Character Limit",
+  "Min_Words_1",
+  "Min_Words_2",
+  "Min_Words_3",
+  "Min_Words_4",
+  "Min_Words_5",
+];
+
+/** Strip language suffix from a key, return { base, lang } or null if no suffix */
+function parseLangKey(key: string): { base: string; lang: LangSuffix } | null {
+  for (const suffix of LANG_SUFFIXES) {
+    if (key.endsWith(suffix))
+      return { base: key.slice(0, -suffix.length), lang: suffix };
+  }
+  return null;
+}
+
+/** Group row keys into: masterKeys, pairedGroups (base → langs present), unpaired */
+function groupRowKeys(
+  row: ExcelRow,
+  visibleLanguages: readonly LangSuffix[] | LangSuffix[],
+): {
+  masterKeys: string[];
+  pairedGroups: { base: string; langs: LangSuffix[] }[];
+  unpaired: string[];
+} {
+  const masterKeys = DATA_MASTER_KEYS.filter((k) => k in row);
+  const remaining = Object.keys(row).filter(
+    (k) => !DATA_MASTER_KEYS.includes(k),
+  );
+
+  const baseMap = new Map<string, LangSuffix[]>();
+  const unpaired: string[] = [];
+
+  for (const key of remaining) {
+    const parsed = parseLangKey(key);
+    if (parsed && visibleLanguages.includes(parsed.lang)) {
+      const existing = baseMap.get(parsed.base) ?? [];
+      existing.push(parsed.lang);
+      baseMap.set(parsed.base, existing);
+    } else if (!parsed) {
+      unpaired.push(key);
+    }
+    // Skip keys with languages not visible to this user
   }
 
-  // ─── View/Edit Modal ──────────────────────────────────────────────────────────
-  function ViewEditModal({ externalId, onClose, onSaved }: { externalId: string; onClose: () => void; onSaved: () => void }) {
-    const [row, setRow] = useState<ExcelRow | null>(null);
-    const [originalRow, setOriginalRow] = useState<ExcelRow | null>(null);
-    const [typeSlug, setTypeSlug] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const [saved, setSaved] = useState(false);
-    const [isEditMode, setIsEditMode] = useState(false);
-    const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
-    const [isDirty, setIsDirty] = useState(false);
+  // Sort langs within each group by visibleLanguages order (EN first, then target)
+  const pairedGroups = Array.from(baseMap.entries())
+    .map(([base, langs]) => ({
+      base,
+      langs: visibleLanguages.filter((l) => langs.includes(l)),
+    }))
+    .filter((group) => group.langs.length > 0); // Only show groups with visible languages
 
-    // TODO: Get from user auth context - for now simulate different teacher roles
-    // This would come from your auth system: const { userRole, userLanguage } = useAuth();
-    const [testRole, setTestRole] = useState<'admin' | 'teacher'>('admin');
-    const [testLang, setTestLang] = useState<LangSuffix | null>(null);
-    
-    const userRole = testRole;
-    const userLanguage = testLang;
-    
-    // Filter languages based on user role
-    const visibleLanguages = userRole === 'admin' 
-      ? LANG_SUFFIXES 
-      : userLanguage 
-        ? ['_EN', userLanguage] as LangSuffix[]
-        : ['_EN'] as LangSuffix[];
+  return { masterKeys, pairedGroups, unpaired };
+}
 
-    const imageKey = row ? Object.keys(row).find(k => 
-      ['image link from cloudinary', 'imageurl', 'image_url', 'image link'].includes(k.toLowerCase())
-    ) : null;
+function ImageUploader({
+  onUploaded,
+  existingUrl,
+  isEditMode,
+}: {
+  onUploaded: (url: string) => void;
+  existingUrl?: string;
+  isEditMode: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<string | null>(existingUrl || null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
 
-    const handleImageUploaded = (url: string) => {
-      if (imageKey) {
-        handleChange(imageKey, url);
-      } else {
-        handleChange('Image link from Cloudinary', url);
-      }
-    };
+  useEffect(() => {
+    setPreview(existingUrl || null);
+  }, [existingUrl]);
 
-    const load = useCallback(async () => {
-      if (!externalId.trim()) return;
-      setLoading(true); setError(''); setRow(null); setSaved(false); setIsDirty(false);
-      try {
-        const r = await api.get(`/admin/exercises/${externalId.trim()}/excel-row`);
-        setRow(r.data.row);
-        setOriginalRow(r.data.row);
-        setTypeSlug(r.data.type_slug || '');
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        setError(err.response?.data?.detail || 'Failed to load');
-      } finally { setLoading(false); }
-    }, [externalId]);
+  const handleFile = async (file: File) => {
+    if (!isEditMode) return;
+    setError("");
+    const localUrl = URL.createObjectURL(file);
+    setPreview(localUrl);
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await api.post<{ url: string }>("/admin/upload-image", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      onUploaded(res.data.url);
+      setPreview(res.data.url);
+    } catch (e: any) {
+      setError(e.response?.data?.detail || "Upload failed");
+      setPreview(existingUrl || null);
+    } finally {
+      setUploading(false);
+    }
+  };
 
-    useEffect(() => { load(); }, [load]);
+  return (
+    <div style={{ marginBottom: "1rem", padding: "0 20px", marginTop: "1rem" }}>
+      <p
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: "var(--text-muted)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          marginBottom: 8,
+        }}
+      >
+        Exercise Image
+      </p>
+      <div
+        onClick={() => isEditMode && inputRef.current?.click()}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (isEditMode) {
+            const f = e.dataTransfer.files[0];
+            if (f) handleFile(f);
+          }
+        }}
+        style={{
+          border: isEditMode
+            ? "2px dashed var(--border)"
+            : "1px solid var(--border)",
+          borderRadius: 12,
+          padding: "1rem",
+          textAlign: "center",
+          cursor: isEditMode ? "pointer" : "default",
+          background: "rgba(255,255,255,0.02)",
+          minHeight: 120,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+        }}
+      >
+        {uploading ? (
+          <>
+            <Loader2
+              size={24}
+              className="animate-spin"
+              style={{ color: "var(--accent)" }}
+            />
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              Uploading...
+            </span>
+          </>
+        ) : preview ? (
+          <img
+            src={preview}
+            alt="preview"
+            style={{
+              maxHeight: 200,
+              maxWidth: "100%",
+              borderRadius: 8,
+              objectFit: "contain",
+            }}
+          />
+        ) : (
+          <>
+            <ImageIcon size={28} style={{ opacity: 0.3 }} />
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              {isEditMode
+                ? "Click or drag to upload image"
+                : "No image uploaded"}
+            </span>
+          </>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+        }}
+      />
+      {error && (
+        <div style={{ color: "#f87171", fontSize: 12, marginTop: 4 }}>
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
 
-    const handleChange = (key: string, value: string) => {
-      setRow(prev => prev ? { ...prev, [key]: value } : prev);
-      setSaved(false);
-      setIsDirty(true);
-    };
+// ─── View/Edit Modal ──────────────────────────────────────────────────────────
+function ViewEditModal({
+  externalId,
+  onClose,
+  onSaved,
+}: {
+  externalId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [row, setRow] = useState<ExcelRow | null>(null);
+  const [originalRow, setOriginalRow] = useState<ExcelRow | null>(null);
+  const [typeSlug, setTypeSlug] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
 
-    const handleSave = async () => {
-      if (!row) return;
-      setSaving(true); setError('');
-      try {
-        await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, { row });
-        setOriginalRow(row);
-        setSaved(true);
-        setIsDirty(false);
-        setIsEditMode(false);
-        onSaved();
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        setError(err.response?.data?.detail || 'Save failed');
-      } finally { setSaving(false); }
-    };
+  // TODO: Get from user auth context - for now simulate different teacher roles
+  // This would come from your auth system: const { userRole, userLanguage } = useAuth();
+  const [testRole, setTestRole] = useState<"admin" | "teacher">("admin");
+  const [testLang, setTestLang] = useState<LangSuffix | null>(null);
 
-    const handleCloseRequest = () => {
-      if (isEditMode && isDirty) {
-        setShowUnsavedWarning(true);
-      } else {
-        onClose();
-      }
-    };
+  const userRole = testRole;
+  const userLanguage = testLang;
 
-    const handleDiscardAndClose = () => {
-      setRow(originalRow);
+  // Filter languages based on user role
+  const visibleLanguages =
+    userRole === "admin"
+      ? LANG_SUFFIXES
+      : userLanguage
+        ? (["_EN", userLanguage] as LangSuffix[])
+        : (["_EN"] as LangSuffix[]);
+
+  const imageKey = row
+    ? Object.keys(row).find((k) =>
+        [
+          "image link from cloudinary",
+          "imageurl",
+          "image_url",
+          "image link",
+        ].includes(k.toLowerCase()),
+      )
+    : null;
+
+  const handleImageUploaded = (url: string) => {
+    if (imageKey) {
+      handleChange(imageKey, url);
+    } else {
+      handleChange("Image link from Cloudinary", url);
+    }
+  };
+
+  const load = useCallback(async () => {
+    if (!externalId.trim()) return;
+    setLoading(true);
+    setError("");
+    setRow(null);
+    setSaved(false);
+    setIsDirty(false);
+    try {
+      const r = await api.get(
+        `/admin/exercises/${externalId.trim()}/excel-row`,
+      );
+      setRow(r.data.row);
+      setOriginalRow(r.data.row);
+      setTypeSlug(r.data.type_slug || "");
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err.response?.data?.detail || "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, [externalId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleChange = (key: string, value: string) => {
+    setRow((prev) => (prev ? { ...prev, [key]: value } : prev));
+    setSaved(false);
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    if (!row) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, { row });
+      setOriginalRow(row);
+      setSaved(true);
       setIsDirty(false);
       setIsEditMode(false);
+      onSaved();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err.response?.data?.detail || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCloseRequest = () => {
+    if (isEditMode && isDirty) {
+      setShowUnsavedWarning(true);
+    } else {
       onClose();
-    };
+    }
+  };
 
-    // ── Render helpers ──────────────────────────────────────────────────────────
+  const handleDiscardAndClose = () => {
+    setRow(originalRow);
+    setIsDirty(false);
+    setIsEditMode(false);
+    onClose();
+  };
 
-    const renderCell = (key: string, editable: boolean) => {
-      const val = String(row![key] ?? '');
-      const isLong = val.length > 60 || key.toLowerCase().includes('paragraph') || key.toLowerCase().includes('passage') || key.toLowerCase().includes('scenario') || key.toLowerCase().includes('sample');
-      if (editable) {
-        return isLong
-          ? <textarea value={val} onChange={e => handleChange(key, e.target.value)} rows={3}
-              style={{ width: '100%', resize: 'vertical', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '6px 8px', color: 'var(--text)', fontFamily: 'inherit' }} />
-          : <input type="text" value={val} onChange={e => handleChange(key, e.target.value)}
-              style={{ width: '100%', fontSize: 13, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '5px 8px', color: 'var(--text)' }} />;
-      }
-      return <span style={{ fontSize: 13, color: 'var(--text)', display: 'block', padding: '4px 0', wordBreak: 'break-word', lineHeight: 1.5 }}>{val || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}</span>;
-    };
+  // ── Render helpers ──────────────────────────────────────────────────────────
 
-    const formatKey = (key: string) => {
-      const labels: Record<string, string> = {
-        'Exercise Tag': 'Exercise Tag (Topic)',
-        'ExerciseID': 'Exercise ID',
-        'TimeLimitSeconds': 'Time Limit (Sec)',
-        'Difficulty': 'Difficulty Level'
-      };
-      return labels[key] || key;
-    };
-
-    /** Single key row (Data Master / unpaired) */
-    const renderSingleRow = (key: string) => (
-      <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
-        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 200 }}>{formatKey(key)}</td>
-        <td style={{ padding: '6px 8px' }}>{renderCell(key, isEditMode)}</td>
-      </tr>
+  const renderCell = (key: string, editable: boolean) => {
+    const val = String(row![key] ?? "");
+    const isLong =
+      val.length > 60 ||
+      key.toLowerCase().includes("paragraph") ||
+      key.toLowerCase().includes("passage") ||
+      key.toLowerCase().includes("scenario") ||
+      key.toLowerCase().includes("sample");
+    if (editable) {
+      return isLong ? (
+        <textarea
+          value={val}
+          onChange={(e) => handleChange(key, e.target.value)}
+          rows={3}
+          style={{
+            width: "100%",
+            resize: "vertical",
+            fontSize: 13,
+            background: "var(--card-bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            padding: "6px 8px",
+            color: "var(--text)",
+            fontFamily: "inherit",
+          }}
+        />
+      ) : (
+        <input
+          type="text"
+          value={val}
+          onChange={(e) => handleChange(key, e.target.value)}
+          style={{
+            width: "100%",
+            fontSize: 13,
+            background: "var(--card-bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            padding: "5px 8px",
+            color: "var(--text)",
+          }}
+        />
+      );
+    }
+    return (
+      <span
+        style={{
+          fontSize: 13,
+          color: "var(--text)",
+          display: "block",
+          padding: "4px 0",
+          wordBreak: "break-word",
+          lineHeight: 1.5,
+        }}
+      >
+        {val || (
+          <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+            —
+          </span>
+        )}
+      </span>
     );
+  };
 
-    /** Paired language row — base label on left, then one column per visible language */
-    const renderPairedRow = (base: string, langs: LangSuffix[]) => (
-      <tr key={base} style={{ borderBottom: '1px solid var(--border)' }}>
-        {/* Base field name */}
-        <td style={{ padding: '8px 12px', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', verticalAlign: 'top', width: 160 }}>{base}</td>
-        {/* One cell per visible language */}
-        {langs.map(lang => {
-          const key = `${base}${lang}`;
-          const canEdit = isEditMode && (userRole === 'admin' || lang !== '_EN'); // Teachers can't edit EN
-          return (
-            <td key={lang} style={{ padding: '6px 8px', verticalAlign: 'top', borderLeft: '1px solid var(--border)' }}>
-              {/* Language badge */}
-              <span style={{
-                display: 'inline-block', fontSize: 10, fontWeight: 700, padding: '1px 7px',
-                borderRadius: 10, marginBottom: 4,
+  const formatKey = (key: string) => {
+    const labels: Record<string, string> = {
+      "Exercise Tag": "Exercise Tag (Topic)",
+      ExerciseID: "Exercise ID",
+      TimeLimitSeconds: "Time Limit (Sec)",
+      Difficulty: "Difficulty Level",
+    };
+    return labels[key] || key;
+  };
+
+  /** Single key row (Data Master / unpaired) */
+  const renderSingleRow = (key: string) => (
+    <tr key={key} style={{ borderBottom: "1px solid var(--border)" }}>
+      <td
+        style={{
+          padding: "8px 12px",
+          fontWeight: 500,
+          fontSize: 12,
+          color: "var(--text-muted)",
+          whiteSpace: "nowrap",
+          verticalAlign: "top",
+          width: 200,
+        }}
+      >
+        {formatKey(key)}
+      </td>
+      <td style={{ padding: "6px 8px" }}>{renderCell(key, isEditMode)}</td>
+    </tr>
+  );
+
+  /** Paired language row — base label on left, then one column per visible language */
+  const renderPairedRow = (base: string, langs: LangSuffix[]) => (
+    <tr key={base} style={{ borderBottom: "1px solid var(--border)" }}>
+      {/* Base field name */}
+      <td
+        style={{
+          padding: "8px 12px",
+          fontWeight: 500,
+          fontSize: 12,
+          color: "var(--text-muted)",
+          whiteSpace: "nowrap",
+          verticalAlign: "top",
+          width: 160,
+        }}
+      >
+        {base}
+      </td>
+      {/* One cell per visible language */}
+      {langs.map((lang) => {
+        const key = `${base}${lang}`;
+        const canEdit = isEditMode && (userRole === "admin" || lang !== "_EN"); // Teachers can't edit EN
+        return (
+          <td
+            key={lang}
+            style={{
+              padding: "6px 8px",
+              verticalAlign: "top",
+              borderLeft: "1px solid var(--border)",
+            }}
+          >
+            {/* Language badge */}
+            <span
+              style={{
+                display: "inline-block",
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "1px 7px",
+                borderRadius: 10,
+                marginBottom: 4,
                 background: `${LANG_COLORS[lang]}20`,
                 color: LANG_COLORS[lang],
                 border: `1px solid ${LANG_COLORS[lang]}40`,
-                letterSpacing: '0.05em',
-              }}>{LANG_LABELS[lang]}</span>
-              {renderCell(key, canEdit)}
-            </td>
-          );
-        })}
-        {/* Fill empty columns if fewer than maxLangs visible languages */}
-        {Array.from({ length: maxLangs - langs.length }).map((_, i) => (
-          <td key={`empty-${i}`} style={{ padding: '6px 8px', borderLeft: '1px solid var(--border)' }} />
-        ))}
-      </tr>
-    );
+                letterSpacing: "0.05em",
+              }}
+            >
+              {LANG_LABELS[lang]}
+            </span>
+            {renderCell(key, canEdit)}
+          </td>
+        );
+      })}
+      {/* Fill empty columns if fewer than maxLangs visible languages */}
+      {Array.from({ length: maxLangs - langs.length }).map((_, i) => (
+        <td
+          key={`empty-${i}`}
+          style={{ padding: "6px 8px", borderLeft: "1px solid var(--border)" }}
+        />
+      ))}
+    </tr>
+  );
 
-    const SectionHeader = ({ label, colSpan = 2 }: { label: string; colSpan?: number }) => (
-      <tr>
-        <td colSpan={colSpan} style={{
-          padding: '10px 12px 4px', fontSize: 11, fontWeight: 700,
-          textTransform: 'uppercase', color: 'var(--text-muted)',
-          letterSpacing: '0.06em', background: 'rgba(255,255,255,0.02)',
-        }}>{label}</td>
-      </tr>
-    );
+  const SectionHeader = ({
+    label,
+    colSpan = 2,
+  }: {
+    label: string;
+    colSpan?: number;
+  }) => (
+    <tr>
+      <td
+        colSpan={colSpan}
+        style={{
+          padding: "10px 12px 4px",
+          fontSize: 11,
+          fontWeight: 700,
+          textTransform: "uppercase",
+          color: "var(--text-muted)",
+          letterSpacing: "0.06em",
+          background: "rgba(255,255,255,0.02)",
+        }}
+      >
+        {label}
+      </td>
+    </tr>
+  );
 
-    const { masterKeys, pairedGroups, unpaired } = row ? groupRowKeys(row, visibleLanguages) : { masterKeys: [], pairedGroups: [], unpaired: [] };
-    // How many lang columns to span (based on visible languages, min 2)
-    const maxLangs = Math.max(visibleLanguages.length, 2);
-    const totalCols = 1 + maxLangs; // base label + lang columns
+  const { masterKeys, pairedGroups, unpaired } = row
+    ? groupRowKeys(row, visibleLanguages)
+    : { masterKeys: [], pairedGroups: [], unpaired: [] };
+  // How many lang columns to span (based on visible languages, min 2)
+  const maxLangs = Math.max(visibleLanguages.length, 2);
+  const totalCols = 1 + maxLangs; // base label + lang columns
 
-    return (
-      <>
-        {/* Backdrop */}
-        <div onClick={handleCloseRequest}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={handleCloseRequest}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.65)",
+          zIndex: 1000,
+          backdropFilter: "blur(2px)",
+        }}
+      />
 
-        {/* Modal — wider to accommodate side-by-side language columns */}
-        <div style={{
-          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          zIndex: 1001, width: 'min(960px, 97vw)', maxHeight: '90vh',
-          background: 'var(--card-bg)', borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
-          display: 'flex', flexDirection: 'column', overflow: 'hidden',
-          border: '1px solid var(--border)',
-        }}>
-          {/* Header */}
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }}>{externalId}</span>
-              {typeSlug && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{typeSlug}</span>}
-              {/* VIEW / EDIT MODE badge */}
-              <span style={{
-                fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
-                background: isEditMode ? 'rgba(245,158,11,0.15)' : 'rgba(96,165,250,0.12)',
-                color: isEditMode ? '#f59e0b' : '#60a5fa',
-                border: `1px solid ${isEditMode ? 'rgba(245,158,11,0.35)' : 'rgba(96,165,250,0.3)'}`,
-                letterSpacing: '0.05em',
-              }}>
-                {isEditMode ? '✏️ EDIT MODE' : '👁 VIEW MODE'}
+      {/* Modal — wider to accommodate side-by-side language columns */}
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 1001,
+          width: "min(960px, 97vw)",
+          maxHeight: "90vh",
+          background: "var(--card-bg)",
+          borderRadius: 12,
+          boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          border: "1px solid var(--border)",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "14px 20px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span
+              style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 15 }}
+            >
+              {externalId}
+            </span>
+            {typeSlug && (
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                {typeSlug}
               </span>
-              {/* TEST: Role switcher */}
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 11 }}>
-                <select value={testRole} onChange={e => setTestRole(e.target.value as 'admin' | 'teacher')}
-                  style={{ fontSize: 11, padding: '2px 6px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)' }}>
-                  <option value="admin">Admin</option>
-                  <option value="teacher">Teacher</option>
+            )}
+            {/* VIEW / EDIT MODE badge */}
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "3px 10px",
+                borderRadius: 20,
+                background: isEditMode
+                  ? "rgba(245,158,11,0.15)"
+                  : "rgba(96,165,250,0.12)",
+                color: isEditMode ? "#f59e0b" : "#60a5fa",
+                border: `1px solid ${isEditMode ? "rgba(245,158,11,0.35)" : "rgba(96,165,250,0.3)"}`,
+                letterSpacing: "0.05em",
+              }}
+            >
+              {isEditMode ? "✏️ EDIT MODE" : "👁 VIEW MODE"}
+            </span>
+            {/* TEST: Role switcher */}
+            <div
+              style={{
+                display: "flex",
+                gap: 4,
+                alignItems: "center",
+                fontSize: 11,
+              }}
+            >
+              <select
+                value={testRole}
+                onChange={(e) =>
+                  setTestRole(e.target.value as "admin" | "teacher")
+                }
+                style={{
+                  fontSize: 11,
+                  padding: "2px 6px",
+                  background: "var(--card-bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  color: "var(--text)",
+                }}
+              >
+                <option value="admin">Admin</option>
+                <option value="teacher">Teacher</option>
+              </select>
+              {testRole === "teacher" && (
+                <select
+                  value={testLang || ""}
+                  onChange={(e) =>
+                    setTestLang((e.target.value as LangSuffix) || null)
+                  }
+                  style={{
+                    fontSize: 11,
+                    padding: "2px 6px",
+                    background: "var(--card-bg)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    color: "var(--text)",
+                  }}
+                >
+                  <option value="">Select Language</option>
+                  <option value="_FR">French Teacher</option>
+                  <option value="_DE">German Teacher</option>
+                  <option value="_ES">Spanish Teacher</option>
                 </select>
-                {testRole === 'teacher' && (
-                  <select value={testLang || ''} onChange={e => setTestLang(e.target.value as LangSuffix || null)}
-                    style={{ fontSize: 11, padding: '2px 6px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)' }}>
-                    <option value="">Select Language</option>
-                    <option value="_FR">French Teacher</option>
-                    <option value="_DE">German Teacher</option>
-                    <option value="_ES">Spanish Teacher</option>
-                  </select>
-                )}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {saved && !isEditMode && (
-                <span style={{ fontSize: 12, color: '#4ade80', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <CheckCircle2 size={14} />Saved
-                </span>
               )}
-              {!isEditMode && (
-                <button onClick={load} title="Reload"
-                  style={{ padding: '5px 12px', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', cursor: 'pointer' }}>
-                  Reload
-                </button>
-              )}
-              {isEditMode ? (
-                <button className="btn btn-primary" style={{ padding: '5px 14px', fontSize: 13 }} onClick={handleSave} disabled={saving}>
-                  <Save size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} />
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </button>
-              ) : (
-                <button onClick={() => setIsEditMode(true)}
-                  style={{ padding: '5px 14px', fontSize: 13, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, color: '#f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-                  <Pencil size={13} /> Edit
-                </button>
-              )}
-              <button onClick={handleCloseRequest}
-                style={{ width: 30, height: 30, borderRadius: 6, border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <X size={15} />
-              </button>
             </div>
           </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {saved && !isEditMode && (
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "#4ade80",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <CheckCircle2 size={14} />
+                Saved
+              </span>
+            )}
+            {!isEditMode && (
+              <button
+                onClick={load}
+                title="Reload"
+                style={{
+                  padding: "5px 12px",
+                  fontSize: 13,
+                  background: "rgba(255,255,255,0.07)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  color: "var(--text)",
+                  cursor: "pointer",
+                }}
+              >
+                Reload
+              </button>
+            )}
+            {isEditMode ? (
+              <button
+                className="btn btn-primary"
+                style={{ padding: "5px 14px", fontSize: 13 }}
+                onClick={handleSave}
+                disabled={saving}
+              >
+                <Save
+                  size={14}
+                  style={{
+                    display: "inline",
+                    marginRight: 5,
+                    verticalAlign: "middle",
+                  }}
+                />
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsEditMode(true)}
+                style={{
+                  padding: "5px 14px",
+                  fontSize: 13,
+                  background: "rgba(245,158,11,0.15)",
+                  border: "1px solid rgba(245,158,11,0.4)",
+                  borderRadius: 6,
+                  color: "#f59e0b",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontWeight: 600,
+                }}
+              >
+                <Pencil size={13} /> Edit
+              </button>
+            )}
+            <button
+              onClick={handleCloseRequest}
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 6,
+                border: "none",
+                background: "#ef4444",
+                color: "#fff",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
 
-          {/* Body — scrollable */}
-          <div style={{ overflowY: 'auto', flex: 1, padding: '0 0 16px' }}>
-            {loading && <p style={{ color: 'var(--text-muted)', padding: '2rem', textAlign: 'center' }}>Loading...</p>}
-            {error && <div style={{ margin: '1rem', padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#f87171', fontSize: 13 }}><AlertCircle size={14} style={{ display: 'inline', marginRight: 6 }} />{error}</div>}
-            {row && (
-              <>
-                {IMAGE_EXERCISE_TYPES.includes(typeSlug) && (
-                  <ImageUploader 
-                    isEditMode={isEditMode}
-                    existingUrl={imageKey ? String(row[imageKey] || '') : ''}
-                    onUploaded={handleImageUploaded}
-                  />
-                )}
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <tbody>
+        {/* Body — scrollable */}
+        <div style={{ overflowY: "auto", flex: 1, padding: "0 0 16px" }}>
+          {loading && (
+            <p
+              style={{
+                color: "var(--text-muted)",
+                padding: "2rem",
+                textAlign: "center",
+              }}
+            >
+              Loading...
+            </p>
+          )}
+          {error && (
+            <div
+              style={{
+                margin: "1rem",
+                padding: "10px 14px",
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.3)",
+                borderRadius: 6,
+                color: "#f87171",
+                fontSize: 13,
+              }}
+            >
+              <AlertCircle
+                size={14}
+                style={{ display: "inline", marginRight: 6 }}
+              />
+              {error}
+            </div>
+          )}
+          {row && (
+            <>
+              {IMAGE_EXERCISE_TYPES.includes(typeSlug) && (
+                <ImageUploader
+                  isEditMode={isEditMode}
+                  existingUrl={imageKey ? String(row[imageKey] || "") : ""}
+                  onUploaded={handleImageUploaded}
+                />
+              )}
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                }}
+              >
+                <tbody>
                   {/* ── Part 1: Data Master ── */}
                   {masterKeys.length > 0 && (
                     <>
-                      <SectionHeader label="Part 1 · Data Master" colSpan={totalCols} />
-                      <tr style={{ background: 'rgba(255,255,255,0.01)' }}>
-                        <td colSpan={totalCols} style={{ padding: '4px 12px 8px', fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      <SectionHeader
+                        label="Part 1 · Data Master"
+                        colSpan={totalCols}
+                      />
+                      <tr style={{ background: "rgba(255,255,255,0.01)" }}>
+                        <td
+                          colSpan={totalCols}
+                          style={{
+                            padding: "4px 12px 8px",
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            fontStyle: "italic",
+                          }}
+                        >
                           Language-agnostic settings — same for all languages
                         </td>
                       </tr>
@@ -1939,21 +3963,35 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                   {/* ── Part 2: Teacher Check (paired language columns) ── */}
                   {pairedGroups.length > 0 && (
                     <>
-                      <SectionHeader label="Part 2 · Teacher Check — Translations" colSpan={totalCols} />
-                      <tr style={{ background: 'rgba(255,255,255,0.01)' }}>
-                        <td colSpan={totalCols} style={{ padding: '4px 12px 8px', fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                          {userRole === 'admin' 
-                            ? 'Each row shows all language versions side by side for easy comparison'
-                            : `Showing ${userLanguage ? `English and ${LANG_LABELS[userLanguage]}` : 'English only'} for comparison`}
+                      <SectionHeader
+                        label="Part 2 · Teacher Check — Translations"
+                        colSpan={totalCols}
+                      />
+                      <tr style={{ background: "rgba(255,255,255,0.01)" }}>
+                        <td
+                          colSpan={totalCols}
+                          style={{
+                            padding: "4px 12px 8px",
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            fontStyle: "italic",
+                          }}
+                        >
+                          {userRole === "admin"
+                            ? "Each row shows all language versions side by side for easy comparison"
+                            : `Showing ${userLanguage ? `English and ${LANG_LABELS[userLanguage]}` : "English only"} for comparison`}
                           {isEditMode && (
-                            <span style={{ color: '#f59e0b', marginLeft: 8 }}>
+                            <span style={{ color: "#f59e0b", marginLeft: 8 }}>
                               · EN is read-only (source of truth)
-                              {userRole === 'teacher' && ' · Teachers edit target language only'}
+                              {userRole === "teacher" &&
+                                " · Teachers edit target language only"}
                             </span>
                           )}
                         </td>
                       </tr>
-                      {pairedGroups.map(({ base, langs }) => renderPairedRow(base, langs))}
+                      {pairedGroups.map(({ base, langs }) =>
+                        renderPairedRow(base, langs),
+                      )}
                     </>
                   )}
 
@@ -1966,125 +4004,231 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
                   )}
                 </tbody>
               </table>
-              </>
-            )}
-          </div>
-
-          {/* Edit mode bottom bar */}
-          {isEditMode && (
-            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', background: 'rgba(245,158,11,0.05)', display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
-              <button onClick={() => { setRow(originalRow); setIsDirty(false); setIsEditMode(false); }}
-                style={{ padding: '6px 14px', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', cursor: 'pointer' }}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 13 }} onClick={handleSave} disabled={saving}>
-                <Save size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} />
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
+            </>
           )}
         </div>
 
-        {/* Unsaved changes warning */}
-        {showUnsavedWarning && (
-          <>
-            <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.4)' }} />
-            <div style={{
-              position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-              zIndex: 1101, background: 'var(--card-bg)', borderRadius: 10, padding: '24px 28px',
-              boxShadow: '0 16px 48px rgba(0,0,0,0.5)', border: '1px solid var(--border)',
-              width: 'min(400px, 90vw)', textAlign: 'center',
-            }}>
-              <p style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Unsaved Changes</p>
-              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>You have unsaved edits. Save before closing?</p>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                <button onClick={handleDiscardAndClose}
-                  style={{ padding: '7px 16px', fontSize: 13, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#f87171', cursor: 'pointer' }}>
-                  Discard & Close
-                </button>
-                <button onClick={() => setShowUnsavedWarning(false)}
-                  style={{ padding: '7px 16px', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', cursor: 'pointer' }}>
-                  Keep Editing
-                </button>
-                <button className="btn btn-primary" style={{ padding: '7px 16px', fontSize: 13 }} onClick={async () => { setShowUnsavedWarning(false); await handleSave(); }}>
-                  Save & Close
-                </button>
-              </div>
-            </div>
-          </>
+        {/* Edit mode bottom bar */}
+        {isEditMode && (
+          <div
+            style={{
+              padding: "12px 20px",
+              borderTop: "1px solid var(--border)",
+              background: "rgba(245,158,11,0.05)",
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 8,
+              flexShrink: 0,
+            }}
+          >
+            <button
+              onClick={() => {
+                setRow(originalRow);
+                setIsDirty(false);
+                setIsEditMode(false);
+              }}
+              style={{
+                padding: "6px 14px",
+                fontSize: 13,
+                background: "rgba(255,255,255,0.07)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                color: "var(--text)",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{ padding: "6px 16px", fontSize: 13 }}
+              onClick={handleSave}
+              disabled={saving}
+            >
+              <Save
+                size={14}
+                style={{
+                  display: "inline",
+                  marginRight: 5,
+                  verticalAlign: "middle",
+                }}
+              />
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
         )}
-      </>
-    );
-  }
+      </div>
 
-  function Slide3Exercises({
-    level, category, exerciseType, subtype,
-    onBack, onAiGenerate, showToast,
-  }: {
-    level: CefrLevel; category: Category; exerciseType: QuestionType; subtype: ExerciseSubtype;
-    onBack: () => void;
-    onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
-    showToast: (ok: boolean, msg: string) => void;
-  }) {
-    type ExTab = 'list' | 'detail';
-    const [tab, setTab] = useState<ExTab>('list');
-    const [exercises, setExercises] = useState<ExerciseRow[]>([]);
-    const [total, setTotal] = useState(0);
-    const [page, setPage] = useState(1);
-    const pageSize = 50;
-    const [loading, setLoading] = useState(true);
-    const [showDeactivatedOnly, setShowDeactivatedOnly] = useState(false);
-    // viewingId: which row's modal is open (null = none)
-    const [viewingId, setViewingId] = useState<string | null>(null);
-    const [confirmDelete, setConfirmDelete] = useState<ExerciseRow | null>(null);
-    const [deleteLoading, setDeleteLoading] = useState(false);
-    const [searchId, setSearchId] = useState('');
-    const [detailId, setDetailId] = useState('');
+      {/* Unsaved changes warning */}
+      {showUnsavedWarning && (
+        <>
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 1100,
+              background: "rgba(0,0,0,0.4)",
+            }}
+          />
+          <div
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 1101,
+              background: "var(--card-bg)",
+              borderRadius: 10,
+              padding: "24px 28px",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+              border: "1px solid var(--border)",
+              width: "min(400px, 90vw)",
+              textAlign: "center",
+            }}
+          >
+            <p style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
+              Unsaved Changes
+            </p>
+            <p
+              style={{
+                color: "var(--text-muted)",
+                fontSize: 13,
+                marginBottom: 20,
+              }}
+            >
+              You have unsaved edits. Save before closing?
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <button
+                onClick={handleDiscardAndClose}
+                style={{
+                  padding: "7px 16px",
+                  fontSize: 13,
+                  background: "rgba(239,68,68,0.12)",
+                  border: "1px solid rgba(239,68,68,0.3)",
+                  borderRadius: 6,
+                  color: "#f87171",
+                  cursor: "pointer",
+                }}
+              >
+                Discard & Close
+              </button>
+              <button
+                onClick={() => setShowUnsavedWarning(false)}
+                style={{
+                  padding: "7px 16px",
+                  fontSize: 13,
+                  background: "rgba(255,255,255,0.07)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  color: "var(--text)",
+                  cursor: "pointer",
+                }}
+              >
+                Keep Editing
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ padding: "7px 16px", fontSize: 13 }}
+                onClick={async () => {
+                  setShowUnsavedWarning(false);
+                  await handleSave();
+                }}
+              >
+                Save & Close
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
 
-    // ── Image upload state (for image-based exercise types) ──────────────────
-    const imageFileInputRef = useRef<HTMLInputElement>(null);
-    const pendingImageExId = useRef<string | null>(null);
-    const [uploadingImageId, setUploadingImageId] = useState<string | null>(null);
+function Slide3Exercises({
+  level,
+  category,
+  exerciseType,
+  subtype,
+  onBack,
+  onAiGenerate,
+  showToast,
+}: {
+  level: CefrLevel;
+  category: Category;
+  exerciseType: QuestionType;
+  subtype: ExerciseSubtype;
+  onBack: () => void;
+  onAiGenerate: (qt: QuestionType, subtype?: ExerciseSubtype) => void;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  type ExTab = "list" | "detail";
+  const [tab, setTab] = useState<ExTab>("list");
+  const [exercises, setExercises] = useState<ExerciseRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  const [loading, setLoading] = useState(true);
+  const [showDeactivatedOnly, setShowDeactivatedOnly] = useState(false);
+  // viewingId: which row's modal is open (null = none)
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ExerciseRow | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [searchId, setSearchId] = useState("");
+  const [detailId, setDetailId] = useState("");
 
-    const handleImageUploadClick = (exId: string) => {
-      pendingImageExId.current = exId;
-      imageFileInputRef.current?.click();
-    };
+  // ── Image upload state (for image-based exercise types) ──────────────────
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
+  const pendingImageExId = useRef<string | null>(null);
+  const [uploadingImageId, setUploadingImageId] = useState<string | null>(null);
 
-    const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      const exId = pendingImageExId.current;
-      if (!file || !exId) return;
-      e.target.value = '';
-      setUploadingImageId(exId);
-      try {
-        const fd = new FormData();
-        fd.append('file', file);
-        const uploadRes = await api.post('/admin/upload-image', fd);
-        const imageUrl = uploadRes.data.url;
-        await api.patch(`/admin/exercises/${exId}/image-url`, { image_url: imageUrl });
-        setExercises(prev => prev.map(ex =>
-          ex.external_id === exId ? { ...ex, image_url: imageUrl } : ex
-        ));
-        showToast(true, `Image uploaded for ${exId}`);
-      } catch (err: unknown) {
-        const e2 = err as { response?: { data?: { detail?: string } } };
-        showToast(false, e2.response?.data?.detail || 'Image upload failed');
-      } finally {
-        setUploadingImageId(null);
-        pendingImageExId.current = null;
-      }
-    };
+  const handleImageUploadClick = (exId: string) => {
+    pendingImageExId.current = exId;
+    imageFileInputRef.current?.click();
+  };
 
-    const load = useCallback(async (p = 1) => {
+  const handleImageFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    const exId = pendingImageExId.current;
+    if (!file || !exId) return;
+    e.target.value = "";
+    setUploadingImageId(exId);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const uploadRes = await api.post("/admin/upload-image", fd);
+      const imageUrl = uploadRes.data.url;
+      await api.patch(`/admin/exercises/${exId}/image-url`, {
+        image_url: imageUrl,
+      });
+      setExercises((prev) =>
+        prev.map((ex) =>
+          ex.external_id === exId ? { ...ex, image_url: imageUrl } : ex,
+        ),
+      );
+      showToast(true, `Image uploaded for ${exId}`);
+    } catch (err: unknown) {
+      const e2 = err as { response?: { data?: { detail?: string } } };
+      showToast(false, e2.response?.data?.detail || "Image upload failed");
+    } finally {
+      setUploadingImageId(null);
+      pendingImageExId.current = null;
+    }
+  };
+
+  const load = useCallback(
+    async (p = 1) => {
       setLoading(true);
       try {
         const params: Record<string, string | number> = {
-          page: p, page_size: pageSize,
+          page: p,
+          page_size: pageSize,
           type_slug: exerciseType.slug,
           subtype_slug: subtype.subtype_slug,
         };
-        const r = await api.get('/admin/exercises', { params });
+        const r = await api.get("/admin/exercises", { params });
         const allItems: ExerciseRow[] = r.data.items || [];
         const items = showDeactivatedOnly
           ? allItems.filter((e: ExerciseRow) => e.is_active === false)
@@ -2097,918 +4241,1707 @@ function PromptsModal({ qt, onClose, showToast }: { qt: QuestionType; onClose: (
       } finally {
         setLoading(false);
       }
-    }, [exerciseType.slug, subtype.subtype_slug, showDeactivatedOnly]);
+    },
+    [exerciseType.slug, subtype.subtype_slug, showDeactivatedOnly],
+  );
 
-    useEffect(() => { load(1); }, [load]);
+  useEffect(() => {
+    load(1);
+  }, [load]);
 
-    const handleDelete = async () => {
-      if (!confirmDelete) return;
-      setDeleteLoading(true);
-      try {
-        await api.delete(`/admin/exercises/${confirmDelete.external_id}`);
-        showToast(true, `Deleted ${confirmDelete.external_id}`);
-        setExercises(prev => prev.filter(e => e.id !== confirmDelete.id));
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Delete failed');
-      } finally {
-        setDeleteLoading(false);
-        setConfirmDelete(null);
-      }
-    };
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    setDeleteLoading(true);
+    try {
+      await api.delete(`/admin/exercises/${confirmDelete.external_id}`);
+      showToast(true, `Deleted ${confirmDelete.external_id}`);
+      setExercises((prev) => prev.filter((e) => e.id !== confirmDelete.id));
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || "Delete failed");
+    } finally {
+      setDeleteLoading(false);
+      setConfirmDelete(null);
+    }
+  };
 
-    const handleToggleActive = async (ex: ExerciseRow) => {
-      try {
-        const r = await api.patch(`/admin/exercises/${ex.external_id}/toggle-active`);
-        setExercises(prev => prev.map(e => e.id === ex.id ? { ...e, is_active: r.data.is_active } : e));
-        showToast(true, `${ex.is_active ? 'Deactivated' : 'Activated'} ${ex.external_id}`);
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        showToast(false, err.response?.data?.detail || 'Update failed');
-      }
-    };
+  const handleToggleActive = async (ex: ExerciseRow) => {
+    try {
+      const r = await api.patch(
+        `/admin/exercises/${ex.external_id}/toggle-active`,
+      );
+      setExercises((prev) =>
+        prev.map((e) =>
+          e.id === ex.id ? { ...e, is_active: r.data.is_active } : e,
+        ),
+      );
+      showToast(
+        true,
+        `${ex.is_active ? "Deactivated" : "Activated"} ${ex.external_id}`,
+      );
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      showToast(false, err.response?.data?.detail || "Update failed");
+    }
+  };
 
-    const handleDownloadCSV = async () => {
-      try {
-        const r = await api.get('/admin/exercises/export', {
-          params: { type_slug: exerciseType.slug, level },
-          responseType: 'blob',
-        });
-        const url = URL.createObjectURL(r.data);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${exerciseType.slug}_${level}_${subtype.subtype_slug}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch {
-        showToast(false, 'Export not available yet');
-      }
-    };
+  const handleDownloadCSV = async () => {
+    try {
+      const r = await api.get("/admin/exercises/export", {
+        params: { type_slug: exerciseType.slug, level },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${exerciseType.slug}_${level}_${subtype.subtype_slug}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      showToast(false, "Export not available yet");
+    }
+  };
 
-    const totalPages = Math.ceil(total / pageSize);
-    const subtypeIndex = 1; // placeholder — would come from the subtype list position
+  const totalPages = Math.ceil(total / pageSize);
+  const subtypeIndex = 1; // placeholder — would come from the subtype list position
 
-    return (
-      <div>
-        {/* Hidden file input for image uploads */}
-        <input
-          ref={imageFileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={handleImageFileChange}
-        />
-        {/* Breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.25rem' }}>
-          <button onClick={onBack}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14 }}>
-            <ChevronLeft size={16} /> Back
-          </button>
-          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            CEFR Level: <strong style={{ color: 'var(--white)' }}>{level}</strong>
-            &nbsp;&nbsp;Category: <strong style={{ color: 'var(--white)' }}>{category}</strong>
-          </span>
-        </div>
+  return (
+    <div>
+      {/* Hidden file input for image uploads */}
+      <input
+        ref={imageFileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handleImageFileChange}
+      />
+      {/* Breadcrumb */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: "0.25rem",
+        }}
+      >
+        <button
+          onClick={onBack}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text-muted)",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            fontSize: 14,
+          }}
+        >
+          <ChevronLeft size={16} /> Back
+        </button>
+        <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          CEFR Level: <strong style={{ color: "var(--white)" }}>{level}</strong>
+          &nbsp;&nbsp;Category:{" "}
+          <strong style={{ color: "var(--white)" }}>{category}</strong>
+        </span>
+      </div>
 
-        {/* Title row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
-          <h2 style={{ margin: 0 }}>
-            {getExerciseName(exerciseType)} &gt;&gt; {subtypeIndex}. {subtype.name_en}
-          </h2>
-          {/* Upload / Download CSV — top right */}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {/* 2-CSV upload for types that need a passages CSV (e.g. passage_mcq) */}
-            {TWO_CSV_SLUGS.has(exerciseType.slug) && (
-              <TwoCsvUpload
-                exerciseType={exerciseType}
-                category={category}
-                subtypeSlug={subtype.subtype_slug}
-                showToast={showToast}
-              />
-            )}
-            <DirectCsvUpload
+      {/* Title row */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: "1.25rem",
+        }}
+      >
+        <h2 style={{ margin: 0 }}>
+          {getExerciseName(exerciseType)} &gt;&gt; {subtypeIndex}.{" "}
+          {subtype.name_en}
+        </h2>
+        {/* Upload / Download CSV — top right */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* 2-CSV upload for types that need a passages CSV (e.g. passage_mcq) */}
+          {TWO_CSV_SLUGS.has(exerciseType.slug) && (
+            <TwoCsvUpload
               exerciseType={exerciseType}
               category={category}
               subtypeSlug={subtype.subtype_slug}
               showToast={showToast}
             />
-            <button onClick={() => onAiGenerate(exerciseType, subtype)} title="AI Generate more"
-              style={{
-                width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer',
-                background: 'var(--accent)', color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-              <Sparkles size={18} />
-            </button>
-            <button onClick={handleDownloadCSV} title="Download CSV"
-              style={{
-                width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer',
-                background: '#2ea043', color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-              <Download size={18} />
-            </button>
-          </div>
-        </div>
-
-        {/* Tabs + deactivated toggle on same row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--border)', marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', gap: 0 }}>
-            {(['list', 'detail'] as ExTab[]).map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                style={{
-                  padding: '8px 24px', background: 'none', border: 'none', cursor: 'pointer',
-                  color: tab === t ? 'var(--white)' : 'var(--text-muted)',
-                  borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent',
-                  fontWeight: tab === t ? 600 : 500, fontSize: 14, transition: 'all 0.15s',
-                }}>
-                {t === 'list' ? 'Exercise List' : 'Detail / Search'}
-              </button>
-            ))}
-          </div>
-          {/* Show deactivated toggle — top right of tabs */}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', paddingBottom: 8 }}>
-            <input type="checkbox" checked={showDeactivatedOnly} onChange={e => setShowDeactivatedOnly(e.target.checked)} />
-            Show deactivated only
-          </label>
-        </div>
-
-        {/* ── EXERCISE LIST TAB ── */}
-        {tab === 'list' && (
-          <>
-            {loading ? (
-              <p style={{ color: 'var(--text-muted)' }}>Loading...</p>
-            ) : exercises.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                <p>No exercises found{showDeactivatedOnly ? ' (deactivated)' : ''}.</p>
-              </div>
-            ) : (
-              <>
-                {/* Outer wrapper with horizontal scroll on the right */}
-                <div style={{ display: 'flex', gap: 0 }}>
-                  <div style={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
-                    <div className="card" style={{ padding: 0, overflow: 'hidden', minWidth: 600 }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                        <thead>
-                          <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '2px solid var(--border)' }}>
-                            {/* Actions col on LEFT per design */}
-                            <th style={{ padding: '10px 14px', width: 130 }}></th>
-                            <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', textDecoration: 'underline' }}>ExID</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)' }}>Question Type</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', width: 80 }}>Level</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {exercises.map(ex => (
-                            <>
-                              <tr key={ex.id}
-                                style={{ borderBottom: '1px solid var(--border)', opacity: ex.is_active === false ? 0.45 : 1 }}
-                                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                                {/* Actions — LEFT side, matching design */}
-                                <td style={{ padding: '9px 14px' }}>
-                                  <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                                    {/* View button */}
-                                    <button
-                                      title="View"
-                                      onClick={() => setViewingId(ex.external_id)}
-                                      style={iconBtnStyle('#60a5fa')}>
-                                      <Eye size={13} />
-                                    </button>
-                                    {/* Delete */}
-                                    <button title="Delete" onClick={() => setConfirmDelete(ex)} style={iconBtnStyle('#ef4444')}>
-                                      <Trash2 size={13} />
-                                    </button>
-                                    {/* Deactivate */}
-                                    <button
-                                      title={ex.is_active === false ? 'Activate' : 'Deactivate'}
-                                      onClick={() => handleToggleActive(ex)}
-                                      style={iconBtnStyle(ex.is_active === false ? '#2ea043' : '#ef4444')}>
-                                      <Power size={13} />
-                                    </button>
-                                    {/* Image upload — only shown for image-based exercise types */}
-                                    {['image_mcq', 'image_labelling', 'diagram_mapping', 'match_desc_to_image', 'write_image', 'speak_image'].includes(exerciseType.slug) && (
-                                      <button
-                                        title="Upload image to Cloudinary"
-                                        onClick={() => handleImageUploadClick(ex.external_id)}
-                                        disabled={uploadingImageId === ex.external_id}
-                                        style={iconBtnStyle(ex.image_url || ex.content?.image_url ? '#22c55e' : '#f87171')}
-                                      >
-                                        {uploadingImageId === ex.external_id
-                                          ? <span style={{ fontSize: 10 }}>…</span>
-                                          : <Upload size={13} />}
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                                <td style={{ padding: '9px 14px', fontFamily: 'monospace', fontWeight: 600 }}>{ex.external_id}</td>
-                                <td style={{ padding: '9px 14px', color: 'var(--text-muted)' }}>{ex.type_slug ?? '—'}</td>
-                                <td style={{ padding: '9px 14px' }}>{ex.level ?? '—'}</td>
-                              </tr>
-                              {/* View/Edit Modal — rendered outside table via portal-like pattern */}
-                            </>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-
-                {/* View/Edit Modals — outside table to avoid invalid HTML */}
-                {exercises.map(ex => viewingId === ex.external_id && (
-                  <ViewEditModal
-                    key={ex.external_id}
-                    externalId={ex.external_id}
-                    onClose={() => setViewingId(null)}
-                    onSaved={() => {
-                      showToast(true, `Saved ${ex.external_id}`);
-                      load(page);
-                    }}
-                  />
-                ))}
-
-                {totalPages > 1 && (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 16, alignItems: 'center' }}>
-                    <button className="btn btn-secondary" disabled={page <= 1} onClick={() => load(page - 1)} style={{ padding: '6px 12px' }}>Prev</button>
-                    <span style={{ fontSize: 13 }}>Page {page} / {totalPages}</span>
-                    <button className="btn btn-secondary" disabled={page >= totalPages} onClick={() => load(page + 1)} style={{ padding: '6px 12px' }}>Next</button>
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
-
-        {/* ── DETAIL / SEARCH TAB ── */}
-        {tab === 'detail' && (
-          <div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: '1.5rem' }}>
-              <input className="form-control" placeholder="Enter Exercise ID (e.g. HTS001)..."
-                value={searchId}
-                onChange={e => setSearchId(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && setDetailId(searchId)}
-                style={{ flex: 1 }} />
-              <button className="btn btn-primary" onClick={() => setDetailId(searchId)} disabled={!searchId.trim()}>
-                Load
-              </button>
-            </div>
-            {detailId && (
-              <ViewEditModal
-                key={detailId}
-                externalId={detailId}
-                onClose={() => setDetailId('')}
-                onSaved={() => showToast(true, `Saved ${detailId}`)}
-              />
-            )}
-          </div>
-        )}
-
-        {/* Delete confirm modal */}
-        {confirmDelete && (
-          <ConfirmModal
-            title="Delete Exercise"
-            body={`Delete exercise "${confirmDelete.external_id}"? This cannot be undone.`}
-            onConfirm={handleDelete}
-            onCancel={() => setConfirmDelete(null)}
-            loading={deleteLoading}
-          />
-        )}
-
-        {/* Image upload panel — only for image-based exercise types, shown at subtype level */}
-        {exerciseType.slug === 'write_image' && (
-          <div style={{ marginTop: '2rem' }}>
-            <h3 style={{ marginBottom: '0.75rem', fontSize: 16 }}>Image Management</h3>
-            <WriteImageUploadPanel
-              exerciseType={exerciseType}
-              level={level}
-              subtypeSlug={subtype.subtype_slug}
-              showToast={showToast}
-            />
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ─── Slide 4: Create Subtype ──────────────────────────────────────────────────
-  function Slide4Create({
-    level, category, exerciseType,
-    onBack, onCreated, showToast,
-  }: {
-    level: CefrLevel; category: Category; exerciseType: QuestionType;
-    onBack: () => void; onCreated: (file?: File, subtypeSlug?: string) => void;
-    showToast: (ok: boolean, msg: string) => void;
-  }) {
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const fileInputRef2 = useRef<HTMLInputElement>(null);
-    const [form, setForm] = useState({
-      name_en: '', name_fr: '', name_de: '', name_es: '',
-      identifier_name: '', subtype_slug: '',
-    });
-    const [file, setFile] = useState<File | null>(null);
-    const [file2, setFile2] = useState<File | null>(null);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const [uploadProgress, setUploadProgress] = useState<{ current: number, total: number } | null>(null);
-
-    // Auto-generate subtype slug from exercise code + English name
-    useEffect(() => {
-      if (form.name_en && form.identifier_name) {
-        const slug = `${form.identifier_name}_${form.name_en}`.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-        setForm(f => ({ ...f, subtype_slug: slug }));
-      }
-    }, [form.name_en, form.identifier_name]);
-
-    const set = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }));
-
-    const handleSave = async () => {
-      if (!form.name_en.trim()) { setError('English name is required'); return; }
-      if (!form.identifier_name.trim()) { setError('Identifier name is required'); return; }
-      setSaving(true); setError('');
-      try {
-        const payload = {
-          ...form,
-          type_slug: exerciseType.slug,
-          level,
-          skill: category,
-        };
-        await api.post('/admin/exercise-subtypes', payload);
-
-        // --- Upload file directly (no line-splitting to avoid breaking quoted multi-line cells) ---
-        if (file) {
-          setUploadProgress({ current: 0, total: 1 });
-          const fd = new FormData();
-          fd.append('file', file, file.name);
-          if (file2) {
-            fd.append('file2', file2, file2.name);
-          }
-          fd.append('skill', category);
-          fd.append('type_slug', exerciseType.slug);
-          fd.append('category', 'main');
-          fd.append('subtype_slug', form.subtype_slug);
-          await api.post('/admin/sync/exercises', fd);
-          setUploadProgress({ current: 1, total: 1 });
-        }
-
-        showToast(true, 'Subtype created successfully');
-        onCreated(file || undefined, form.subtype_slug);
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        setError(err.response?.data?.detail || 'Save failed');
-      } finally {
-        setSaving(false);
-        setUploadProgress(null);
-      }
-    };
-
-    return (
-      <div style={{ position: 'relative' }}>
-        {uploadProgress && (
-          <div style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            backdropFilter: 'blur(10px)', zIndex: 99999
-          }}>
-            <div style={{
-              background: 'linear-gradient(135deg, #1a1b23 0%, #111218 100%)',
-              padding: '3rem', borderRadius: 24, width: 440,
-              border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center'
-            }}>
-              <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: '0.5rem', color: '#fff' }}>Syncing Exercises</h2>
-              <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
-                Processing {uploadProgress.current} of {uploadProgress.total} rows
-              </p>
-              <div style={{ height: 12, width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: 10, overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%', width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
-                  background: 'linear-gradient(90deg, #6366f1 0%, #a855f7 100%)', transition: 'width 0.5s ease'
-                }} />
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div>
-          {/* Breadcrumb */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.5rem' }}>
-            <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14 }}>
-              <ChevronLeft size={16} /> Back
-            </button>
-            <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-              CEFR Level: <strong style={{ color: 'var(--white)' }}>{level}</strong>
-              &nbsp;&nbsp;Category: <strong style={{ color: 'var(--white)' }}>{category}</strong>
-            </span>
-          </div>
-
-          <h2 style={{ marginBottom: '1.5rem' }}>{getExerciseName(exerciseType)}</h2>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2rem', alignItems: 'start' }}>
-            <div>
-              {/* Exercise Name section */}
-              <div className="card" style={{ marginBottom: '1.5rem' }}>
-                <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Subtype Name</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.75rem', alignItems: 'center' }}>
-                  {(['English', 'French', 'German', 'Spanish'] as const).map((lang, i) => {
-                    const key = ['name_en', 'name_fr', 'name_de', 'name_es'][i] as keyof typeof form;
-                    return (
-                      <>
-                        <label key={`lbl-${lang}`} style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>{lang === 'English' ? 'English Name' : lang}</label>
-                        <input key={`inp-${lang}`} className="form-control" value={form[key]} onChange={e => set(key, e.target.value)}
-                          placeholder={`Name in ${lang}`} style={{ marginBottom: 0 }} />
-                      </>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Identifier & Slug */}
-              <div className="card">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Identifier Name</label>
-                    <input className="form-control" value={form.identifier_name} onChange={e => set('identifier_name', e.target.value)}
-                      placeholder="e.g. HTS001" />
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Exercise code used as identifier prefix</p>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ textDecoration: 'underline', textDecorationStyle: 'dotted' }}>SubType Slug</label>
-                    <input className="form-control" value={form.subtype_slug} onChange={e => set('subtype_slug', e.target.value)}
-                      placeholder="Auto-generated from code + name" />
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Default: ExerciseCode_EnglishName</p>
-                  </div>
-                </div>
-              </div>
-
-              {error && <div className="alert alert-error" style={{ marginTop: '1rem' }}><AlertCircle size={16} className="inline mr-2" />{error}</div>}
-
-              <div style={{ display: 'flex', gap: 8, marginTop: '1.5rem' }}>
-                <button className="btn btn-secondary" onClick={onBack}>Cancel</button>
-                <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                  {saving ? 'Saving...' : 'Create Subtype'}
-                </button>
-              </div>
-            </div>
-
-            {/* CSV Upload panel */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: 200 }}>
-              <div>
-                <div
-                  onClick={() => fileInputRef2.current?.click()}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile2(f); }}
-                  style={{
-                    width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
-                    background: 'var(--card-bg)', cursor: 'pointer',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-                    transition: 'border-color 0.2s',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
-                  <Upload size={40} style={{ color: file2 ? 'var(--accent)' : 'var(--text-muted)', opacity: file2 ? 1 : 0.5 }} />
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
-                    {file2 ? file2.name : (TWO_CSV_SLUGS.has(exerciseType.slug) ? 'Part 1 — Passages CSV (optional)' : 'Upload Items/Sub-CSV (optional)')}
-                  </span>
-                  {file2 && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
-                </div>
-                <input ref={fileInputRef2} type="file" accept=".csv" style={{ display: 'none' }}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) setFile2(f); }} />
-                {file2 && (
-                  <button onClick={() => setFile2(null)}
-                    style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <X size={12} /> Remove file
-                  </button>
-                )}
-              </div>
-
-              <div>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
-                  style={{
-                    width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
-                    background: 'var(--card-bg)', cursor: 'pointer',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-                    transition: 'border-color 0.2s',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-muted)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
-                  <Upload size={40} style={{ color: file ? 'var(--accent)' : 'var(--text-muted)', opacity: file ? 1 : 0.5 }} />
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '0 12px' }}>
-                    {file ? file.name : (TWO_CSV_SLUGS.has(exerciseType.slug) ? 'Part 2 — Questions CSV' : 'Upload Master CSV')}
-                  </span>
-                  {file && <FileSpreadsheet size={14} style={{ color: 'var(--accent)' }} />}
-                </div>
-                <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
-                {file && (
-                  <button onClick={() => setFile(null)}
-                    style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <X size={12} /> Remove file
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Image Bulk Upload Helpers ───────────────────────────────────────────────
-
-  function splitCsvLine(line: string): string[] {
-    const result: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-        else inQuotes = !inQuotes;
-      } else if (ch === ',' && !inQuotes) {
-        result.push(current);
-        current = '';
-      } else {
-        current += ch;
-      }
-    }
-    result.push(current);
-    return result;
-  }
-
-  function parseCsv(text: string): ExcelRow[] {
-    const lines = text.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) return [];
-
-    let headerIdx = 0;
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      const cells = splitCsvLine(lines[i]);
-      const lower = cells.map(c => c.toLowerCase().trim());
-      if (lower.some(c => ['exerciseid', 'exercise id', 'heading_en', 'heading_fr', 'image link from cloudinary', 'level'].includes(c))) {
-        headerIdx = i;
-        break;
-      }
-    }
-
-    const headers = splitCsvLine(lines[headerIdx]).map(h => h.trim());
-    const rows: ExcelRow[] = [];
-    for (let i = headerIdx + 1; i < lines.length; i++) {
-      const cells = splitCsvLine(lines[i]);
-      if (cells.every(c => !c.trim())) continue;
-      const row: ExcelRow = {};
-      headers.forEach((h, idx) => { row[h] = (cells[idx] || '').trim(); });
-      rows.push(row);
-    }
-    return rows;
-  }
-
-  function detectTypeSlugInRow(row: ExcelRow): string {
-    const qt = (String(row['Question Type'] || row['QuestionType'] || row['questiontype'] || '')).toLowerCase().trim();
-    if (qt === 'diagram labelling') return 'diagram_mapping';
-    if (qt === 'match image to description') return 'match_image_description';
-    if (qt === 'image labelling') return 'image_labelling';
-    if (qt === 'image mcq') return 'image_mcq';
-    if (qt) return qt.replace(/\s+/g, '_');
-    if ('Correct Answer 1_FR' in row || 'Correct Answer 1_EN' in row) return 'image_labelling';
-    if ('Correct answer_FR' in row || 'options_fr' in row) return 'image_mcq';
-    if ('Answer 1_FR' in row || 'answers_fr' in row) return 'diagram_mapping';
-    return 'image_labelling';
-  }
-
-  function RowImageUploader({ existingUrl, onUploaded }: { existingUrl: string; onUploaded: (url: string) => void }) {
-    const inputRef = useRef<HTMLInputElement>(null);
-    const [preview, setPreview] = useState<string>(existingUrl);
-    const [uploading, setUploading] = useState(false);
-    const [error, setError] = useState('');
-
-    const handleFile = async (file: File) => {
-      setError('');
-      const localUrl = URL.createObjectURL(file);
-      setPreview(localUrl);
-      setUploading(true);
-      try {
-        const form = new FormData();
-        form.append('file', file);
-        const res = await api.post('/admin/upload-image', form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        setPreview(res.data.url);
-        onUploaded(res.data.url);
-      } catch (e: any) {
-        setError(e.response?.data?.detail || 'Upload failed');
-        setPreview(existingUrl);
-      } finally {
-        setUploading(false);
-      }
-    };
-
-    return (
-      <div>
-        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-          {preview ? 'Image (click to replace)' : 'Upload Image'}
-        </p>
-        <div
-          onClick={() => inputRef.current?.click()}
-          onDragOver={e => e.preventDefault()}
-          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-          style={{
-            border: `2px dashed ${preview ? '#4ade8066' : 'var(--border)'}`,
-            borderRadius: 12, cursor: 'pointer',
-            background: 'var(--card-bg)',
-            minHeight: 180, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
-            overflow: 'hidden', position: 'relative',
-          }}>
-          {uploading ? (
-            <><Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} /><span style={{ fontSize: 13, opacity: 0.6 }}>Uploading...</span></>
-          ) : preview ? (
-            <img src={preview} alt="preview" style={{ maxHeight: 200, maxWidth: '100%', objectFit: 'contain', padding: 8 }} />
-          ) : (
-            <><ImageIcon size={32} style={{ opacity: 0.3 }} /><span style={{ fontSize: 13, opacity: 0.5 }}>Click or drag & drop</span></>
           )}
+          <DirectCsvUpload
+            exerciseType={exerciseType}
+            category={category}
+            subtypeSlug={subtype.subtype_slug}
+            showToast={showToast}
+          />
+          <button
+            onClick={() => onAiGenerate(exerciseType, subtype)}
+            title="AI Generate more"
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 8,
+              border: "none",
+              cursor: "pointer",
+              background: "var(--accent)",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Sparkles size={18} />
+          </button>
+          <button
+            onClick={handleDownloadCSV}
+            title="Download CSV"
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 8,
+              border: "none",
+              cursor: "pointer",
+              background: "#2ea043",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Download size={18} />
+          </button>
         </div>
-        <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
-          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-        {error && <div style={{ fontSize: 12, color: '#f87171', marginTop: 4 }}>{error}</div>}
       </div>
-    );
-  }
 
-  function ImageBulkUploadModal({ exerciseType, category, onClose, showToast, initialFile, subtypeSlug }: { 
-    exerciseType: QuestionType; 
-    category: Category; 
-    onClose: () => void; 
-    showToast: (ok: boolean, msg: string) => void;
-    initialFile?: File | null;
-    subtypeSlug?: string;
-  }) {
-    const [rows, setRows] = useState<any[]>([]);
-    const [currentIdx, setCurrentIdx] = useState(0);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
+      {/* Tabs + deactivated toggle on same row */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          borderBottom: "1px solid var(--border)",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <div style={{ display: "flex", gap: 0 }}>
+          {(["list", "detail"] as ExTab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              style={{
+                padding: "8px 24px",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: tab === t ? "var(--white)" : "var(--text-muted)",
+                borderBottom:
+                  tab === t
+                    ? "2px solid var(--accent)"
+                    : "2px solid transparent",
+                fontWeight: tab === t ? 600 : 500,
+                fontSize: 14,
+                transition: "all 0.15s",
+              }}
+            >
+              {t === "list" ? "Exercise List" : "Detail / Search"}
+            </button>
+          ))}
+        </div>
+        {/* Show deactivated toggle — top right of tabs */}
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 13,
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            paddingBottom: 8,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={showDeactivatedOnly}
+            onChange={(e) => setShowDeactivatedOnly(e.target.checked)}
+          />
+          Show deactivated only
+        </label>
+      </div>
 
-    useEffect(() => {
-      if (initialFile) {
-        handleCsvFile(initialFile);
-      }
-    }, [initialFile]);
-
-    const handleCsvFile = (file: File) => {
-      setError('');
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target?.result as string;
-        const parsed = parseCsv(text);
-        if (parsed.length === 0) { setError('No data rows found in CSV'); return; }
-        const working = parsed.map((row, i) => ({
-          index: i,
-          exerciseId: row['ExerciseID'] || row['exerciseid'] || row['Exercise ID'] || '',
-          imageUrl: String(row['Image link from Cloudinary'] || row['imageUrl'] || row['image_url'] || ''),
-          data: row,
-          typeSlug: detectTypeSlugInRow(row),
-          level: String(row['Level'] || row['level'] || 'A1'),
-        }));
-        setRows(working);
-        setCurrentIdx(0);
-      };
-      reader.readAsText(file);
-    };
-
-    const handleImageUploaded = (url: string) => {
-      setRows(prev => prev.map((r, i) => i === currentIdx ? { ...r, imageUrl: url } : r));
-    };
-
-    const handleBulkSave = async () => {
-      const toSave = rows.filter(r => r.imageUrl);
-      if (toSave.length === 0) { setError('No rows have images uploaded yet'); return; }
-      setSaving(true); setError('');
-      try {
-        const payload = {
-          rows: toSave.map(r => ({
-            exercise_id: r.exerciseId,
-            image_url: r.imageUrl,
-            type_slug: r.typeSlug || exerciseType.slug,
-            level: r.level,
-            skill: category,
-            category: 'main',
-            row_data: r.data,
-            subtype_slug: subtypeSlug,
-          })),
-        };
-        await api.post('/admin/image-exercises/bulk-save', payload);
-        showToast(true, `Saved ${toSave.length} exercises with images`);
-        onClose();
-      } catch (e: any) {
-        setError(e.response?.data?.detail || 'Save failed');
-      } finally {
-        setSaving(false);
-      }
-    };
-
-    const current = rows[currentIdx];
-
-    return (
-      <>
-        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
-        <div style={{
-          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          zIndex: 1001, width: 'min(900px, 95vw)', maxHeight: '90vh',
-          background: 'var(--card-bg)', borderRadius: 16, boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
-          display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border)',
-        }}>
-          {/* Header */}
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h3 style={{ margin: 0 }}>Bulk Image Upload</h3>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>{getExerciseName(exerciseType)} · {category}</p>
+      {/* ── EXERCISE LIST TAB ── */}
+      {tab === "list" && (
+        <>
+          {loading ? (
+            <p style={{ color: "var(--text-muted)" }}>Loading...</p>
+          ) : exercises.length === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "3rem",
+                color: "var(--text-muted)",
+              }}
+            >
+              <p>
+                No exercises found{showDeactivatedOnly ? " (deactivated)" : ""}.
+              </p>
             </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-            {rows.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                {error || 'Processing CSV...'}
-              </div>
-            ) : (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', alignItems: 'center' }}>
-                  <div style={{ fontSize: 14 }}>
-                    <strong>{rows.length}</strong> rows loaded · <strong>{rows.filter(r => r.imageUrl).length}</strong> with images
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-primary" onClick={handleBulkSave} disabled={saving || !rows.some(r => r.imageUrl)}>
-                      {saving ? 'Saving...' : 'Save All Progress'}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '1.5rem' }}>
-                  {/* Left side: Row List */}
-                  <div className="card" style={{ padding: 0, maxHeight: 400, overflowY: 'auto' }}>
-                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                      <thead style={{ position: 'sticky', top: 0, background: 'var(--card-bg)', boxShadow: '0 1px 0 var(--border)' }}>
-                        <tr>
-                          <th style={{ padding: '10px 12px', textAlign: 'left' }}>ID</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'left' }}>Status</th>
+          ) : (
+            <>
+              {/* Outer wrapper with horizontal scroll on the right */}
+              <div style={{ display: "flex", gap: 0 }}>
+                <div style={{ flex: 1, minWidth: 0, overflowX: "auto" }}>
+                  <div
+                    className="card"
+                    style={{ padding: 0, overflow: "hidden", minWidth: 600 }}
+                  >
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontSize: 13,
+                      }}
+                    >
+                      <thead>
+                        <tr
+                          style={{
+                            background: "rgba(255,255,255,0.03)",
+                            borderBottom: "2px solid var(--border)",
+                          }}
+                        >
+                          {/* Actions col on LEFT per design */}
+                          <th style={{ padding: "10px 14px", width: 130 }}></th>
+                          <th
+                            style={{
+                              padding: "10px 14px",
+                              textAlign: "left",
+                              fontWeight: 700,
+                              color: "var(--text-muted)",
+                              textDecoration: "underline",
+                            }}
+                          >
+                            ExID
+                          </th>
+                          <th
+                            style={{
+                              padding: "10px 14px",
+                              textAlign: "left",
+                              fontWeight: 700,
+                              color: "var(--text-muted)",
+                            }}
+                          >
+                            Question Type
+                          </th>
+                          <th
+                            style={{
+                              padding: "10px 14px",
+                              textAlign: "left",
+                              fontWeight: 700,
+                              color: "var(--text-muted)",
+                              width: 80,
+                            }}
+                          >
+                            Level
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {rows.map((r, i) => (
-                          <tr key={i} onClick={() => setCurrentIdx(i)}
-                            style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', background: i === currentIdx ? 'rgba(31,111,235,0.1)' : 'transparent' }}>
-                            <td style={{ padding: '8px 12px' }}>{r.exerciseId || `Row ${i+1}`}</td>
-                            <td style={{ padding: '8px 12px' }}>
-                              {r.imageUrl ? <span style={{ color: '#4ade80' }}>✓ Image</span> : <span style={{ opacity: 0.4 }}>No image</span>}
-                            </td>
-                          </tr>
+                        {exercises.map((ex) => (
+                          <>
+                            <tr
+                              key={ex.id}
+                              style={{
+                                borderBottom: "1px solid var(--border)",
+                                opacity: ex.is_active === false ? 0.45 : 1,
+                              }}
+                              onMouseEnter={(e) =>
+                                (e.currentTarget.style.background =
+                                  "rgba(255,255,255,0.02)")
+                              }
+                              onMouseLeave={(e) =>
+                                (e.currentTarget.style.background =
+                                  "transparent")
+                              }
+                            >
+                              {/* Actions — LEFT side, matching design */}
+                              <td style={{ padding: "9px 14px" }}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: 5,
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  {/* View button */}
+                                  <button
+                                    title="View"
+                                    onClick={() => setViewingId(ex.external_id)}
+                                    style={iconBtnStyle("#60a5fa")}
+                                  >
+                                    <Eye size={13} />
+                                  </button>
+                                  {/* Delete */}
+                                  <button
+                                    title="Delete"
+                                    onClick={() => setConfirmDelete(ex)}
+                                    style={iconBtnStyle("#ef4444")}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                  {/* Deactivate */}
+                                  <button
+                                    title={
+                                      ex.is_active === false
+                                        ? "Activate"
+                                        : "Deactivate"
+                                    }
+                                    onClick={() => handleToggleActive(ex)}
+                                    style={iconBtnStyle(
+                                      ex.is_active === false
+                                        ? "#2ea043"
+                                        : "#ef4444",
+                                    )}
+                                  >
+                                    <Power size={13} />
+                                  </button>
+                                  {/* Image upload — only shown for image-based exercise types */}
+                                  {[
+                                    "image_mcq",
+                                    "image_labelling",
+                                    "diagram_mapping",
+                                    "match_desc_to_image",
+                                    "write_image",
+                                    "speak_image",
+                                  ].includes(exerciseType.slug) && (
+                                    <button
+                                      title="Upload image to Cloudinary"
+                                      onClick={() =>
+                                        handleImageUploadClick(ex.external_id)
+                                      }
+                                      disabled={
+                                        uploadingImageId === ex.external_id
+                                      }
+                                      style={iconBtnStyle(
+                                        ex.image_url || ex.content?.image_url
+                                          ? "#22c55e"
+                                          : "#f87171",
+                                      )}
+                                    >
+                                      {uploadingImageId === ex.external_id ? (
+                                        <span style={{ fontSize: 10 }}>…</span>
+                                      ) : (
+                                        <Upload size={13} />
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                              <td
+                                style={{
+                                  padding: "9px 14px",
+                                  fontFamily: "monospace",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {ex.external_id}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "9px 14px",
+                                  color: "var(--text-muted)",
+                                }}
+                              >
+                                {ex.type_slug ?? "—"}
+                              </td>
+                              <td style={{ padding: "9px 14px" }}>
+                                {ex.level ?? "—"}
+                              </td>
+                            </tr>
+                            {/* View/Edit Modal — rendered outside table via portal-like pattern */}
+                          </>
                         ))}
                       </tbody>
                     </table>
                   </div>
-
-                  {/* Right side: Current Row Editor */}
-                  <div>
-                    {current && (
-                      <div className="card">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                          <span style={{ fontWeight: 600 }}>Row {currentIdx + 1}</span>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <button className="btn btn-secondary" style={{ padding: '2px 8px' }} disabled={currentIdx === 0} onClick={() => setCurrentIdx(i => i - 1)}><ChevronLeft size={14} /></button>
-                            <button className="btn btn-secondary" style={{ padding: '2px 8px' }} disabled={currentIdx === rows.length - 1} onClick={() => setCurrentIdx(i => i + 1)}><ChevronRight size={14} /></button>
-                          </div>
-                        </div>
-                        <RowImageUploader key={currentIdx} existingUrl={current.imageUrl} onUploaded={handleImageUploaded} />
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
-            )}
-            {error && rows.length > 0 && <div className="alert alert-error" style={{ marginTop: '1rem' }}>{error}</div>}
+
+              {/* View/Edit Modals — outside table to avoid invalid HTML */}
+              {exercises.map(
+                (ex) =>
+                  viewingId === ex.external_id && (
+                    <ViewEditModal
+                      key={ex.external_id}
+                      externalId={ex.external_id}
+                      onClose={() => setViewingId(null)}
+                      onSaved={() => {
+                        showToast(true, `Saved ${ex.external_id}`);
+                        load(page);
+                      }}
+                    />
+                  ),
+              )}
+
+              {totalPages > 1 && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginTop: 16,
+                    alignItems: "center",
+                  }}
+                >
+                  <button
+                    className="btn btn-secondary"
+                    disabled={page <= 1}
+                    onClick={() => load(page - 1)}
+                    style={{ padding: "6px 12px" }}
+                  >
+                    Prev
+                  </button>
+                  <span style={{ fontSize: 13 }}>
+                    Page {page} / {totalPages}
+                  </span>
+                  <button
+                    className="btn btn-secondary"
+                    disabled={page >= totalPages}
+                    onClick={() => load(page + 1)}
+                    style={{ padding: "6px 12px" }}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* ── DETAIL / SEARCH TAB ── */}
+      {tab === "detail" && (
+        <div>
+          <div style={{ display: "flex", gap: 8, marginBottom: "1.5rem" }}>
+            <input
+              className="form-control"
+              placeholder="Enter Exercise ID (e.g. HTS001)..."
+              value={searchId}
+              onChange={(e) => setSearchId(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && setDetailId(searchId)}
+              style={{ flex: 1 }}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={() => setDetailId(searchId)}
+              disabled={!searchId.trim()}
+            >
+              Load
+            </button>
+          </div>
+          {detailId && (
+            <ViewEditModal
+              key={detailId}
+              externalId={detailId}
+              onClose={() => setDetailId("")}
+              onSaved={() => showToast(true, `Saved ${detailId}`)}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Delete confirm modal */}
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete Exercise"
+          body={`Delete exercise "${confirmDelete.external_id}"? This cannot be undone.`}
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(null)}
+          loading={deleteLoading}
+        />
+      )}
+
+      {/* Image upload panel — only for image-based exercise types, shown at subtype level */}
+      {exerciseType.slug === "write_image" && (
+        <div style={{ marginTop: "2rem" }}>
+          <h3 style={{ marginBottom: "0.75rem", fontSize: 16 }}>
+            Image Management
+          </h3>
+          <WriteImageUploadPanel
+            exerciseType={exerciseType}
+            level={level}
+            subtypeSlug={subtype.subtype_slug}
+            showToast={showToast}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Slide 4: Create Subtype ──────────────────────────────────────────────────
+function Slide4Create({
+  level,
+  category,
+  exerciseType,
+  onBack,
+  onCreated,
+  showToast,
+}: {
+  level: CefrLevel;
+  category: Category;
+  exerciseType: QuestionType;
+  onBack: () => void;
+  onCreated: (file?: File, subtypeSlug?: string) => void;
+  showToast: (ok: boolean, msg: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef2 = useRef<HTMLInputElement>(null);
+  const [form, setForm] = useState({
+    name_en: "",
+    name_fr: "",
+    name_de: "",
+    name_es: "",
+    identifier_name: "",
+    subtype_slug: "",
+  });
+  const [file, setFile] = useState<File | null>(null);
+  const [file2, setFile2] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+
+  // Auto-generate subtype slug from exercise code + English name
+  useEffect(() => {
+    if (form.name_en && form.identifier_name) {
+      const slug = `${form.identifier_name}_${form.name_en}`
+        .replace(/\s+/g, "_")
+        .replace(/[^a-zA-Z0-9_]/g, "");
+      setForm((f) => ({ ...f, subtype_slug: slug }));
+    }
+  }, [form.name_en, form.identifier_name]);
+
+  const set = (k: keyof typeof form, v: string) =>
+    setForm((f) => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.name_en.trim()) {
+      setError("English name is required");
+      return;
+    }
+    if (!form.identifier_name.trim()) {
+      setError("Identifier name is required");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const payload = {
+        ...form,
+        type_slug: exerciseType.slug,
+        level,
+        skill: category,
+      };
+      await api.post("/admin/exercise-subtypes", payload);
+
+      // --- Upload file directly (no line-splitting to avoid breaking quoted multi-line cells) ---
+      if (file) {
+        setUploadProgress({ current: 0, total: 1 });
+        const fd = new FormData();
+        fd.append("file", file, file.name);
+        if (file2) {
+          fd.append("file2", file2, file2.name);
+        }
+        fd.append("skill", category);
+        fd.append("type_slug", exerciseType.slug);
+        fd.append("category", "main");
+        fd.append("subtype_slug", form.subtype_slug);
+        await api.post("/admin/sync/exercises", fd);
+        setUploadProgress({ current: 1, total: 1 });
+      }
+
+      showToast(true, "Subtype created successfully");
+      onCreated(file || undefined, form.subtype_slug);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err.response?.data?.detail || "Save failed");
+    } finally {
+      setSaving(false);
+      setUploadProgress(null);
+    }
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      {uploadProgress && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.85)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "blur(10px)",
+            zIndex: 99999,
+          }}
+        >
+          <div
+            style={{
+              background: "linear-gradient(135deg, #1a1b23 0%, #111218 100%)",
+              padding: "3rem",
+              borderRadius: 24,
+              width: 440,
+              border: "1px solid rgba(255,255,255,0.1)",
+              textAlign: "center",
+            }}
+          >
+            <h2
+              style={{
+                fontSize: 24,
+                fontWeight: 700,
+                marginBottom: "0.5rem",
+                color: "#fff",
+              }}
+            >
+              Syncing Exercises
+            </h2>
+            <p style={{ color: "var(--text-muted)", marginBottom: "2rem" }}>
+              Processing {uploadProgress.current} of {uploadProgress.total} rows
+            </p>
+            <div
+              style={{
+                height: 12,
+                width: "100%",
+                background: "rgba(255,255,255,0.05)",
+                borderRadius: 10,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
+                  background:
+                    "linear-gradient(90deg, #6366f1 0%, #a855f7 100%)",
+                  transition: "width 0.5s ease",
+                }}
+              />
+            </div>
           </div>
         </div>
-      </>
-    );
-  }
+      )}
 
-  // ─── Root Component ───────────────────────────────────────────────────────────
-  export default function MainPractice() {
-    const [slide, setSlide] = useState<Slide>('main');
-    const [level, setLevel] = useState<CefrLevel>('A1');
-    const [category, setCategory] = useState<Category>('Reading');
-    const [questionTypes, setQuestionTypes] = useState<QuestionType[]>([]);
-    const [selectedSubtype, setSelectedSubtype] = useState<ExerciseSubtype | null>(null);
-    const [selectedType, setSelectedType] = useState<QuestionType | null>(null);
-    const [aiGenQt, setAiGenQt] = useState<{ qt: QuestionType; subtype?: ExerciseSubtype } | null>(null);
-    const [showBulkUpload, setShowBulkUpload] = useState(false);
-    const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
-    const [bulkUploadSubtype, setBulkUploadSubtype] = useState<string | undefined>(undefined);
-    const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
-
-    useEffect(() => {
-      api.get('/admin/question-types')
-
-        .then(r => setQuestionTypes(r.data.items || []))
-        .catch(() => setQuestionTypes([]));
-    }, []);
-
-    const showToast = useCallback((ok: boolean, msg: string) => {
-      setToast({ ok, msg });
-    }, []);
-
-    const handleEdit = (qt: QuestionType) => {
-      setSelectedType(qt);
-      setSlide('subtypes');
-    };
-
-    const handleView = (sub: ExerciseSubtype) => {
-      setSelectedSubtype(sub);
-      setSlide('exercises');
-    };
-
-    const handleCreate = () => {
-      setSlide('create');
-    };
-
-    return (
       <div>
-        <h1>Main Practice</h1>
-
-        {slide === 'main' && (
-          <Slide1Main
-            level={level} setLevel={setLevel}
-            category={category} setCategory={setCategory}
-            questionTypes={questionTypes}
-            setQuestionTypes={setQuestionTypes}
-            onEdit={handleEdit}
-            onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
-            showToast={showToast}
-          />
-        )}
-
-        {slide === 'subtypes' && selectedType && (
-          <Slide2Subtypes
-            level={level} category={category} exerciseType={selectedType}
-            onBack={() => setSlide('main')}
-            onView={handleView}
-            onCreate={handleCreate}
-            onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
-            showToast={showToast}
-          />
-        )}
-
-        {slide === 'exercises' && selectedType && selectedSubtype && (
-          <Slide3Exercises
-            level={level} category={category}
-            exerciseType={selectedType} subtype={selectedSubtype}
-            onBack={() => setSlide('subtypes')}
-            onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
-            showToast={showToast}
-          />
-        )}
-
-        {slide === 'create' && selectedType && (
-          <Slide4Create
-            level={level} category={category} exerciseType={selectedType}
-            onBack={() => setSlide('subtypes')}
-            onCreated={(file, createdSubtypeSlug) => {
-              setSlide('subtypes');
-              if (file && IMAGE_EXERCISE_TYPES.includes(selectedType.slug)) {
-                setBulkUploadFile(file);
-                setBulkUploadSubtype(createdSubtypeSlug);
-                setShowBulkUpload(true);
-              }
+        {/* Breadcrumb */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: "0.5rem",
+          }}
+        >
+          <button
+            onClick={onBack}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 14,
             }}
-            showToast={showToast}
-          />
-        )}
+          >
+            <ChevronLeft size={16} /> Back
+          </button>
+          <span style={{ color: "var(--text-muted)", fontSize: 14 }}>
+            CEFR Level:{" "}
+            <strong style={{ color: "var(--white)" }}>{level}</strong>
+            &nbsp;&nbsp;Category:{" "}
+            <strong style={{ color: "var(--white)" }}>{category}</strong>
+          </span>
+        </div>
 
-        {aiGenQt && (
-          <AIGeneratorModal
-            qt={aiGenQt.qt}
-            subtype={aiGenQt.subtype}
-            level={level}
-            category={category}
-            onClose={() => setAiGenQt(null)}
-            showToast={showToast}
-          />
-        )}
+        <h2 style={{ marginBottom: "1.5rem" }}>
+          {getExerciseName(exerciseType)}
+        </h2>
 
-        {showBulkUpload && selectedType && (
-          <ImageBulkUploadModal
-            exerciseType={selectedType}
-            category={category}
-            onClose={() => { setShowBulkUpload(false); setBulkUploadSubtype(undefined); setBulkUploadFile(null); }}
-            showToast={showToast}
-            initialFile={bulkUploadFile}
-            subtypeSlug={bulkUploadSubtype}
-          />
-        )}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: "2rem",
+            alignItems: "start",
+          }}
+        >
+          <div>
+            {/* Exercise Name section */}
+            <div className="card" style={{ marginBottom: "1.5rem" }}>
+              <h3 style={{ marginBottom: "1.25rem", fontSize: 16 }}>
+                Subtype Name
+              </h3>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "100px 1fr",
+                  gap: "0.75rem",
+                  alignItems: "center",
+                }}
+              >
+                {(["English", "French", "German", "Spanish"] as const).map(
+                  (lang, i) => {
+                    const key = ["name_en", "name_fr", "name_de", "name_es"][
+                      i
+                    ] as keyof typeof form;
+                    return (
+                      <>
+                        <label
+                          key={`lbl-${lang}`}
+                          style={{
+                            fontWeight: 500,
+                            fontSize: 14,
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          {lang === "English" ? "English Name" : lang}
+                        </label>
+                        <input
+                          key={`inp-${lang}`}
+                          className="form-control"
+                          value={form[key]}
+                          onChange={(e) => set(key, e.target.value)}
+                          placeholder={`Name in ${lang}`}
+                          style={{ marginBottom: 0 }}
+                        />
+                      </>
+                    );
+                  },
+                )}
+              </div>
+            </div>
 
-        {toast && <Toast ok={toast.ok} msg={toast.msg} onDone={() => setToast(null)} />}
+            {/* Identifier & Slug */}
+            <div className="card">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "1rem",
+                }}
+              >
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Identifier Name</label>
+                  <input
+                    className="form-control"
+                    value={form.identifier_name}
+                    onChange={(e) => set("identifier_name", e.target.value)}
+                    placeholder="e.g. HTS001"
+                  />
+                  <p
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginTop: 4,
+                    }}
+                  >
+                    Exercise code used as identifier prefix
+                  </p>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label
+                    className="form-label"
+                    style={{
+                      textDecoration: "underline",
+                      textDecorationStyle: "dotted",
+                    }}
+                  >
+                    SubType Slug
+                  </label>
+                  <input
+                    className="form-control"
+                    value={form.subtype_slug}
+                    onChange={(e) => set("subtype_slug", e.target.value)}
+                    placeholder="Auto-generated from code + name"
+                  />
+                  <p
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginTop: 4,
+                    }}
+                  >
+                    Default: ExerciseCode_EnglishName
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div className="alert alert-error" style={{ marginTop: "1rem" }}>
+                <AlertCircle size={16} className="inline mr-2" />
+                {error}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: "1.5rem" }}>
+              <button className="btn btn-secondary" onClick={onBack}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Create Subtype"}
+              </button>
+            </div>
+          </div>
+
+          {/* CSV Upload panel */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
+              width: 200,
+            }}
+          >
+            <div>
+              <div
+                onClick={() => fileInputRef2.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const f = e.dataTransfer.files[0];
+                  if (f) setFile2(f);
+                }}
+                style={{
+                  width: 180,
+                  height: 180,
+                  borderRadius: 16,
+                  border: "2px dashed var(--border)",
+                  background: "var(--card-bg)",
+                  cursor: "pointer",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 12,
+                  transition: "border-color 0.2s",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.borderColor = "var(--text-muted)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.borderColor = "var(--border)")
+                }
+              >
+                <Upload
+                  size={40}
+                  style={{
+                    color: file2 ? "var(--accent)" : "var(--text-muted)",
+                    opacity: file2 ? 1 : 0.5,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    textAlign: "center",
+                    padding: "0 12px",
+                  }}
+                >
+                  {file2
+                    ? file2.name
+                    : TWO_CSV_SLUGS.has(exerciseType.slug)
+                      ? "Part 1 — Passages CSV (optional)"
+                      : "Upload Items/Sub-CSV (optional)"}
+                </span>
+                {file2 && (
+                  <FileSpreadsheet
+                    size={14}
+                    style={{ color: "var(--accent)" }}
+                  />
+                )}
+              </div>
+              <input
+                ref={fileInputRef2}
+                type="file"
+                accept=".csv"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) setFile2(f);
+                }}
+              />
+              {file2 && (
+                <button
+                  onClick={() => setFile2(null)}
+                  style={{
+                    marginTop: 8,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text-muted)",
+                    fontSize: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <X size={12} /> Remove file
+                </button>
+              )}
+            </div>
+
+            <div>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const f = e.dataTransfer.files[0];
+                  if (f) setFile(f);
+                }}
+                style={{
+                  width: 180,
+                  height: 180,
+                  borderRadius: 16,
+                  border: "2px dashed var(--border)",
+                  background: "var(--card-bg)",
+                  cursor: "pointer",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 12,
+                  transition: "border-color 0.2s",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.borderColor = "var(--text-muted)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.borderColor = "var(--border)")
+                }
+              >
+                <Upload
+                  size={40}
+                  style={{
+                    color: file ? "var(--accent)" : "var(--text-muted)",
+                    opacity: file ? 1 : 0.5,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    textAlign: "center",
+                    padding: "0 12px",
+                  }}
+                >
+                  {file
+                    ? file.name
+                    : TWO_CSV_SLUGS.has(exerciseType.slug)
+                      ? "Part 2 — Questions CSV"
+                      : "Upload Master CSV"}
+                </span>
+                {file && (
+                  <FileSpreadsheet
+                    size={14}
+                    style={{ color: "var(--accent)" }}
+                  />
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) setFile(f);
+                }}
+              />
+              {file && (
+                <button
+                  onClick={() => setFile(null)}
+                  style={{
+                    marginTop: 8,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text-muted)",
+                    fontSize: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <X size={12} /> Remove file
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-    );
+    </div>
+  );
+}
+
+// ─── Image Bulk Upload Helpers ───────────────────────────────────────────────
+
+function splitCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
   }
+  result.push(current);
+  return result;
+}
+
+function parseCsv(text: string): ExcelRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    const cells = splitCsvLine(lines[i]);
+    const lower = cells.map((c) => c.toLowerCase().trim());
+    if (
+      lower.some((c) =>
+        [
+          "exerciseid",
+          "exercise id",
+          "heading_en",
+          "heading_fr",
+          "image link from cloudinary",
+          "level",
+        ].includes(c),
+      )
+    ) {
+      headerIdx = i;
+      break;
+    }
+  }
+
+  const headers = splitCsvLine(lines[headerIdx]).map((h) => h.trim());
+  const rows: ExcelRow[] = [];
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const cells = splitCsvLine(lines[i]);
+    if (cells.every((c) => !c.trim())) continue;
+    const row: ExcelRow = {};
+    headers.forEach((h, idx) => {
+      row[h] = (cells[idx] || "").trim();
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function detectTypeSlugInRow(row: ExcelRow): string {
+  const qt = String(
+    row["Question Type"] || row["QuestionType"] || row["questiontype"] || "",
+  )
+    .toLowerCase()
+    .trim();
+  if (qt === "diagram labelling") return "diagram_mapping";
+  if (qt === "match image to description") return "match_image_description";
+  if (qt === "image labelling") return "image_labelling";
+  if (qt === "image mcq") return "image_mcq";
+  if (qt) return qt.replace(/\s+/g, "_");
+  if ("Correct Answer 1_FR" in row || "Correct Answer 1_EN" in row)
+    return "image_labelling";
+  if ("Correct answer_FR" in row || "options_fr" in row) return "image_mcq";
+  if ("Answer 1_FR" in row || "answers_fr" in row) return "diagram_mapping";
+  return "image_labelling";
+}
+
+function RowImageUploader({
+  existingUrl,
+  onUploaded,
+}: {
+  existingUrl: string;
+  onUploaded: (url: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<string>(existingUrl);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleFile = async (file: File) => {
+    setError("");
+    const localUrl = URL.createObjectURL(file);
+    setPreview(localUrl);
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await api.post("/admin/upload-image", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setPreview(res.data.url);
+      onUploaded(res.data.url);
+    } catch (e: any) {
+      setError(e.response?.data?.detail || "Upload failed");
+      setPreview(existingUrl);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div>
+      <p
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: "var(--text-muted)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          marginBottom: 8,
+        }}
+      >
+        {preview ? "Image (click to replace)" : "Upload Image"}
+      </p>
+      <div
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          const f = e.dataTransfer.files[0];
+          if (f) handleFile(f);
+        }}
+        style={{
+          border: `2px dashed ${preview ? "#4ade8066" : "var(--border)"}`,
+          borderRadius: 12,
+          cursor: "pointer",
+          background: "var(--card-bg)",
+          minHeight: 180,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          overflow: "hidden",
+          position: "relative",
+        }}
+      >
+        {uploading ? (
+          <>
+            <Loader2
+              size={28}
+              className="animate-spin"
+              style={{ color: "var(--accent)" }}
+            />
+            <span style={{ fontSize: 13, opacity: 0.6 }}>Uploading...</span>
+          </>
+        ) : preview ? (
+          <img
+            src={preview}
+            alt="preview"
+            style={{
+              maxHeight: 200,
+              maxWidth: "100%",
+              objectFit: "contain",
+              padding: 8,
+            }}
+          />
+        ) : (
+          <>
+            <ImageIcon size={32} style={{ opacity: 0.3 }} />
+            <span style={{ fontSize: 13, opacity: 0.5 }}>
+              Click or drag & drop
+            </span>
+          </>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+        }}
+      />
+      {error && (
+        <div style={{ fontSize: 12, color: "#f87171", marginTop: 4 }}>
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImageBulkUploadModal({
+  exerciseType,
+  category,
+  onClose,
+  showToast,
+  initialFile,
+  subtypeSlug,
+}: {
+  exerciseType: QuestionType;
+  category: Category;
+  onClose: () => void;
+  showToast: (ok: boolean, msg: string) => void;
+  initialFile?: File | null;
+  subtypeSlug?: string;
+}) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (initialFile) {
+      handleCsvFile(initialFile);
+    }
+  }, [initialFile]);
+
+  const handleCsvFile = (file: File) => {
+    setError("");
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const parsed = parseCsv(text);
+      if (parsed.length === 0) {
+        setError("No data rows found in CSV");
+        return;
+      }
+      const working = parsed.map((row, i) => ({
+        index: i,
+        exerciseId:
+          row["ExerciseID"] || row["exerciseid"] || row["Exercise ID"] || "",
+        imageUrl: String(
+          row["Image link from Cloudinary"] ||
+            row["imageUrl"] ||
+            row["image_url"] ||
+            "",
+        ),
+        data: row,
+        typeSlug: detectTypeSlugInRow(row),
+        level: String(row["Level"] || row["level"] || "A1"),
+      }));
+      setRows(working);
+      setCurrentIdx(0);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImageUploaded = (url: string) => {
+    setRows((prev) =>
+      prev.map((r, i) => (i === currentIdx ? { ...r, imageUrl: url } : r)),
+    );
+  };
+
+  const handleBulkSave = async () => {
+    const toSave = rows.filter((r) => r.imageUrl);
+    if (toSave.length === 0) {
+      setError("No rows have images uploaded yet");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const payload = {
+        rows: toSave.map((r) => ({
+          exercise_id: r.exerciseId,
+          image_url: r.imageUrl,
+          type_slug: r.typeSlug || exerciseType.slug,
+          level: r.level,
+          skill: category,
+          category: "main",
+          row_data: r.data,
+          subtype_slug: subtypeSlug,
+        })),
+      };
+      await api.post("/admin/image-exercises/bulk-save", payload);
+      showToast(true, `Saved ${toSave.length} exercises with images`);
+      onClose();
+    } catch (e: any) {
+      setError(e.response?.data?.detail || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const current = rows[currentIdx];
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.65)",
+          zIndex: 1000,
+          backdropFilter: "blur(2px)",
+        }}
+      />
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 1001,
+          width: "min(900px, 95vw)",
+          maxHeight: "90vh",
+          background: "var(--card-bg)",
+          borderRadius: 16,
+          boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          border: "1px solid var(--border)",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0 }}>Bulk Image Upload</h3>
+            <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>
+              {getExerciseName(exerciseType)} · {category}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+          {rows.length === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "3rem",
+                color: "var(--text-muted)",
+              }}
+            >
+              {error || "Processing CSV..."}
+            </div>
+          ) : (
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "1.5rem",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ fontSize: 14 }}>
+                  <strong>{rows.length}</strong> rows loaded ·{" "}
+                  <strong>{rows.filter((r) => r.imageUrl).length}</strong> with
+                  images
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleBulkSave}
+                    disabled={saving || !rows.some((r) => r.imageUrl)}
+                  >
+                    {saving ? "Saving..." : "Save All Progress"}
+                  </button>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 320px",
+                  gap: "1.5rem",
+                }}
+              >
+                {/* Left side: Row List */}
+                <div
+                  className="card"
+                  style={{ padding: 0, maxHeight: 400, overflowY: "auto" }}
+                >
+                  <table
+                    style={{
+                      width: "100%",
+                      fontSize: 12,
+                      borderCollapse: "collapse",
+                    }}
+                  >
+                    <thead
+                      style={{
+                        position: "sticky",
+                        top: 0,
+                        background: "var(--card-bg)",
+                        boxShadow: "0 1px 0 var(--border)",
+                      }}
+                    >
+                      <tr>
+                        <th style={{ padding: "10px 12px", textAlign: "left" }}>
+                          ID
+                        </th>
+                        <th style={{ padding: "10px 12px", textAlign: "left" }}>
+                          Status
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r, i) => (
+                        <tr
+                          key={i}
+                          onClick={() => setCurrentIdx(i)}
+                          style={{
+                            borderBottom: "1px solid var(--border)",
+                            cursor: "pointer",
+                            background:
+                              i === currentIdx
+                                ? "rgba(31,111,235,0.1)"
+                                : "transparent",
+                          }}
+                        >
+                          <td style={{ padding: "8px 12px" }}>
+                            {r.exerciseId || `Row ${i + 1}`}
+                          </td>
+                          <td style={{ padding: "8px 12px" }}>
+                            {r.imageUrl ? (
+                              <span style={{ color: "#4ade80" }}>✓ Image</span>
+                            ) : (
+                              <span style={{ opacity: 0.4 }}>No image</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Right side: Current Row Editor */}
+                <div>
+                  {current && (
+                    <div className="card">
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginBottom: 12,
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>
+                          Row {currentIdx + 1}
+                        </span>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: "2px 8px" }}
+                            disabled={currentIdx === 0}
+                            onClick={() => setCurrentIdx((i) => i - 1)}
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: "2px 8px" }}
+                            disabled={currentIdx === rows.length - 1}
+                            onClick={() => setCurrentIdx((i) => i + 1)}
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <RowImageUploader
+                        key={currentIdx}
+                        existingUrl={current.imageUrl}
+                        onUploaded={handleImageUploaded}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {error && rows.length > 0 && (
+            <div className="alert alert-error" style={{ marginTop: "1rem" }}>
+              {error}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Root Component ───────────────────────────────────────────────────────────
+export default function MainPractice() {
+  const [slide, setSlide] = useState<Slide>("main");
+  const [level, setLevel] = useState<CefrLevel>("A1");
+  const [category, setCategory] = useState<Category>("Reading");
+  const [questionTypes, setQuestionTypes] = useState<QuestionType[]>([]);
+  const [selectedSubtype, setSelectedSubtype] =
+    useState<ExerciseSubtype | null>(null);
+  const [selectedType, setSelectedType] = useState<QuestionType | null>(null);
+  const [aiGenQt, setAiGenQt] = useState<{
+    qt: QuestionType;
+    subtype?: ExerciseSubtype;
+  } | null>(null);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
+  const [bulkUploadSubtype, setBulkUploadSubtype] = useState<
+    string | undefined
+  >(undefined);
+  const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  useEffect(() => {
+    api
+      .get("/admin/question-types")
+
+      .then((r) => setQuestionTypes(r.data.items || []))
+      .catch(() => setQuestionTypes([]));
+  }, []);
+
+  const showToast = useCallback((ok: boolean, msg: string) => {
+    setToast({ ok, msg });
+  }, []);
+
+  const handleEdit = (qt: QuestionType) => {
+    setSelectedType(qt);
+    setSlide("subtypes");
+  };
+
+  const handleView = (sub: ExerciseSubtype) => {
+    setSelectedSubtype(sub);
+    setSlide("exercises");
+  };
+
+  const handleCreate = () => {
+    setSlide("create");
+  };
+
+  return (
+    <div>
+      <h1>Main Practice</h1>
+
+      {slide === "main" && (
+        <Slide1Main
+          level={level}
+          setLevel={setLevel}
+          category={category}
+          setCategory={setCategory}
+          questionTypes={questionTypes}
+          setQuestionTypes={setQuestionTypes}
+          onEdit={handleEdit}
+          onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
+          showToast={showToast}
+        />
+      )}
+
+      {slide === "subtypes" && selectedType && (
+        <Slide2Subtypes
+          level={level}
+          category={category}
+          exerciseType={selectedType}
+          onBack={() => setSlide("main")}
+          onView={handleView}
+          onCreate={handleCreate}
+          onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
+          showToast={showToast}
+        />
+      )}
+
+      {slide === "exercises" && selectedType && selectedSubtype && (
+        <Slide3Exercises
+          level={level}
+          category={category}
+          exerciseType={selectedType}
+          subtype={selectedSubtype}
+          onBack={() => setSlide("subtypes")}
+          onAiGenerate={(qt, subtype) => setAiGenQt({ qt, subtype })}
+          showToast={showToast}
+        />
+      )}
+
+      {slide === "create" && selectedType && (
+        <Slide4Create
+          level={level}
+          category={category}
+          exerciseType={selectedType}
+          onBack={() => setSlide("subtypes")}
+          onCreated={(file, createdSubtypeSlug) => {
+            setSlide("subtypes");
+            if (file && IMAGE_EXERCISE_TYPES.includes(selectedType.slug)) {
+              setBulkUploadFile(file);
+              setBulkUploadSubtype(createdSubtypeSlug);
+              setShowBulkUpload(true);
+            }
+          }}
+          showToast={showToast}
+        />
+      )}
+
+      {aiGenQt && (
+        <AIGeneratorModal
+          qt={aiGenQt.qt}
+          subtype={aiGenQt.subtype}
+          level={level}
+          category={category}
+          onClose={() => setAiGenQt(null)}
+          showToast={showToast}
+        />
+      )}
+
+      {showBulkUpload && selectedType && (
+        <ImageBulkUploadModal
+          exerciseType={selectedType}
+          category={category}
+          onClose={() => {
+            setShowBulkUpload(false);
+            setBulkUploadSubtype(undefined);
+            setBulkUploadFile(null);
+          }}
+          showToast={showToast}
+          initialFile={bulkUploadFile}
+          subtypeSlug={bulkUploadSubtype}
+        />
+      )}
+
+      {toast && (
+        <Toast ok={toast.ok} msg={toast.msg} onDone={() => setToast(null)} />
+      )}
+    </div>
+  );
+}

@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { Upload, CheckCircle2, AlertCircle, FileSpreadsheet, Settings } from 'lucide-react';
 import api from '../services/api';
+import { normalizeExerciseUploadFile } from '../utils/exerciseCsvNormalization';
 
 type UploadMode = 'exercises' | 'passages';
 
@@ -35,6 +36,8 @@ export default function UploadExercises() {
                 const res = await api.post('/admin/sync/passages', formData);
                 setResult({ success: true, message: res.data.message });
             } else {
+                const normalizedFile = await normalizeExerciseUploadFile(file, typeSlug);
+                formData.set('file', normalizedFile, normalizedFile.name);
                 formData.append('skill', skill);
                 formData.append('type_slug', typeSlug);
                 formData.append('category', category);
