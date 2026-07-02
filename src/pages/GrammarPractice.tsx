@@ -8,6 +8,13 @@ import api from '../services/api';
 // ─── Types ────────────────────────────────────────────────────────────────────
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'] as const;
 type CefrLevel = typeof CEFR_LEVELS[number];
+const LANGUAGES = [
+  { code: 'fr', label: 'French' },
+  { code: 'de', label: 'German' },
+  { code: 'es', label: 'Spanish' },
+  { code: 'it', label: 'Italian' },
+  { code: 'pt', label: 'Portuguese' },
+] as const;
 
 interface GrammarTopic {
   id: number;
@@ -24,23 +31,26 @@ interface GrammarSubtopic {
   slug: string;
   name_en: string;
   name_fr?: string;
+  name_de?: string;
+  name_es?: string;
   is_active: boolean;
+  exercise_type_slug?: GrammarExerciseTypeSlug;
 }
 
-// The fixed set of grammar exercise types (from the image)
+// The exercise types available for Grammar Practice subtopics.
 const GRAMMAR_EXERCISE_TYPES = [
-  { slug: 'fill_blanks',           name: 'Fill in the Blanks',         desc: 'Choose from options to fill in the blanks' },
-  { slug: 'mcq_4',                 name: 'Choose from 4 Options',      desc: 'Select the correct answer from 4 choices' },
-  { slug: 'mcq_2',                 name: 'Choose from 2 Options',      desc: 'Pick the right answer from 2 possibilities' },
-  { slug: 'mcq_3',                 name: 'Choose from 3 Options',      desc: 'Select the correct option from 3 choices' },
-  { slug: 'fill_blanks_input',     name: 'Fill in Blanks (Input)',     desc: 'Type the missing words with hints' },
-  { slug: 'fill_blanks_question',  name: 'Fill in Blanks (Question)',  desc: 'Answer questions by filling blanks' },
-  { slug: 'reorder_words',         name: 'Reorder Words',              desc: 'Build sentences by reordering words' },
-  { slug: 'sentence_transformation', name: 'Sentence Transformation', desc: 'Rewrite sentences based on instructions' },
-  { slug: 'rewrite_type_in',       name: 'Rewrite – Type In',         desc: 'Rewrite sentences based on instructions' },
-  { slug: 'combine_sentences',     name: 'Combine Sentences',         desc: 'Join sentences using connectors' },
+  { slug: 'four_options',        name: 'Choose from Options',       desc: 'Select the correct answer from the choices' },
+  { slug: 'fill_blanks_options', name: 'Fill in the Blanks',       desc: 'Choose from options to fill in the blanks' },
+  { slug: 'grammar_reorder',     name: 'Reorder the Sentences',    desc: 'Build sentences by reordering words' },
+  { slug: 'grammar_rewrite',     name: 'Rewrite the Sentences',    desc: 'Rewrite sentences based on instructions' },
 ] as const;
 type GrammarExerciseTypeSlug = typeof GRAMMAR_EXERCISE_TYPES[number]['slug'];
+
+interface ExerciseSubtype {
+  id: string;
+  subtype_slug: string;
+  type_slug: string;
+}
 
 interface ExerciseRow {
   id: string;
@@ -97,10 +107,80 @@ function iconBtnStyle(color: string): React.CSSProperties {
   };
 }
 
+function CsvUploadButton({
+  inputRef, onFile, disabled, label = 'Upload CSV', fileName, variant = 'button', onClear,
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onFile: (file: File) => void;
+  disabled?: boolean;
+  label?: string;
+  fileName?: string;
+  variant?: 'button' | 'dropzone';
+  onClear?: () => void;
+}) {
+  const fileInput = (
+    <input ref={inputRef} type="file" accept=".csv" style={{ display: 'none' }}
+      onChange={e => {
+        const file = e.target.files?.[0];
+        if (file) onFile(file);
+      }} />
+  );
+
+  if (variant === 'dropzone') {
+    return (
+      <div>
+        {fileInput}
+        <div
+          onClick={() => { if (!disabled) inputRef.current?.click(); }}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => {
+            e.preventDefault();
+            if (!disabled) {
+              const file = e.dataTransfer.files[0];
+              if (file) onFile(file);
+            }
+          }}
+          style={{
+            width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
+            background: 'var(--card-bg)', cursor: disabled ? 'default' : 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', gap: 12, padding: 12, textAlign: 'center',
+          }}
+        >
+          <CloudUpload size={40} style={{ color: fileName ? 'var(--accent)' : 'var(--text-muted)', opacity: fileName ? 1 : 0.5 }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', overflowWrap: 'anywhere' }}>
+            {fileName || label}
+          </span>
+        </div>
+        {fileName && onClear && (
+          <button type="button" onClick={onClear} disabled={disabled}
+            style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <X size={12} /> Remove file
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {fileInput}
+      <button type="button" onClick={() => inputRef.current?.click()} disabled={disabled}
+        className="btn btn-secondary"
+        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '6px 14px' }}>
+        <CloudUpload size={15} />
+        {label}
+      </button>
+      {fileName && <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{fileName}</span>}
+    </div>
+  );
+}
+
 // ─── Slide 1: Topics (Categories) ────────────────────────────────────────────
 function Slide1Topics({
-  level, onSelect, showToast,
+  learningLang, level, onSelect, showToast,
 }: {
+  learningLang: string;
   level: CefrLevel;
   onSelect: (topic: GrammarTopic) => void;
   showToast: (ok: boolean, msg: string) => void;
@@ -117,11 +197,13 @@ function Slide1Topics({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get('/admin/grammar/topics', { params: { level_code: level } });
+      const r = await api.get('/admin/grammar/topics', {
+        params: { learning_lang: learningLang, level_code: level },
+      });
       setTopics(r.data.topics || []);
     } catch { setTopics([]); }
     finally { setLoading(false); }
-  }, [level]);
+  }, [learningLang, level]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -131,7 +213,7 @@ function Slide1Topics({
     try {
       await api.post('/admin/grammar/topics', {
         name_en: nameEn.trim(), name_fr: nameFr.trim() || undefined,
-        learning_lang: 'fr', level_code: level, order_index: topics.length,
+        learning_lang: learningLang, level_code: level, order_index: topics.length,
       });
       showToast(true, `Created "${nameEn}"`);
       setNameEn(''); setNameFr(''); setShowCreate(false);
@@ -242,7 +324,7 @@ function Slide2Subtopics({
 }: {
   topic: GrammarTopic; level: CefrLevel;
   onBack: () => void;
-  onSelect: (sub: GrammarSubtopic) => void;
+  onSelect: (sub: GrammarSubtopic, typeSlug?: GrammarExerciseTypeSlug) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
   const [subtopics, setSubtopics] = useState<GrammarSubtopic[]>([]);
@@ -250,31 +332,116 @@ function Slide2Subtopics({
   const [showCreate, setShowCreate] = useState(false);
   const [nameEn, setNameEn] = useState('');
   const [nameFr, setNameFr] = useState('');
+  const [nameDe, setNameDe] = useState('');
+  const [nameEs, setNameEs] = useState('');
+  const [exerciseTypeSlug, setExerciseTypeSlug] = useState<GrammarExerciseTypeSlug | ''>('');
+  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<GrammarSubtopic | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const createCsvInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get('/admin/grammar/subtopics', { params: { topic_id: topic.id } });
-      setSubtopics(r.data.subtopics || []);
+      const [subtopicsResponse, subtypeResponse] = await Promise.all([
+        api.get('/admin/grammar/subtopics', { params: { topic_id: topic.id } }),
+        api.get('/admin/exercise-subtypes').catch(() => ({ data: { items: [] } })),
+      ]);
+      const typeBySubtopicId = new Map<number, GrammarExerciseTypeSlug>();
+      (subtypeResponse.data.items || []).forEach((subtype: ExerciseSubtype) => {
+        const match = /^grammar_(\d+)$/.exec(subtype.subtype_slug);
+        if (
+          match
+          && GRAMMAR_EXERCISE_TYPES.some(type => type.slug === subtype.type_slug)
+        ) {
+          typeBySubtopicId.set(Number(match[1]), subtype.type_slug as GrammarExerciseTypeSlug);
+        }
+      });
+      setSubtopics((subtopicsResponse.data.subtopics || []).map((subtopic: GrammarSubtopic) => ({
+        ...subtopic,
+        exercise_type_slug: typeBySubtopicId.get(subtopic.id),
+      })));
     } catch { setSubtopics([]); }
     finally { setLoading(false); }
   }, [topic.id]);
 
   useEffect(() => { load(); }, [load]);
 
+  const closeCreateDialog = () => {
+    setNameEn('');
+    setNameFr('');
+    setNameDe('');
+    setNameEs('');
+    setExerciseTypeSlug('');
+    setCsvFile(null);
+    if (createCsvInputRef.current) createCsvInputRef.current.value = '';
+    setShowCreate(false);
+  };
+
   const handleCreate = async () => {
-    if (!nameEn.trim()) return;
+    if (!nameEn.trim() || !exerciseTypeSlug) return;
     setSaving(true);
     try {
-      await api.post('/admin/grammar/subtopics', {
+      const response = await api.post('/admin/grammar/subtopics', {
         topic_id: topic.id, name_en: nameEn.trim(),
-        name_fr: nameFr.trim() || undefined, order_index: subtopics.length,
+        name_fr: nameFr.trim() || undefined,
+        name_de: nameDe.trim() || undefined,
+        name_es: nameEs.trim() || undefined,
+        order_index: subtopics.length,
       });
-      showToast(true, `Created "${nameEn}"`);
-      setNameEn(''); setNameFr(''); setShowCreate(false);
+      const createdSubtopic: GrammarSubtopic = {
+        id: response.data.id,
+        slug: response.data.slug,
+        name_en: nameEn.trim(),
+        name_fr: nameFr.trim() || undefined,
+        name_de: nameDe.trim() || undefined,
+        name_es: nameEs.trim() || undefined,
+        is_active: true,
+        exercise_type_slug: exerciseTypeSlug,
+      };
+      let subtypeId: string | null = null;
+      try {
+        const subtypeResponse = await api.post('/admin/exercise-subtypes', {
+          name_en: createdSubtopic.name_en,
+          name_fr: createdSubtopic.name_fr,
+          name_de: createdSubtopic.name_de,
+          name_es: createdSubtopic.name_es,
+          subtype_slug: `grammar_${createdSubtopic.id}`,
+          type_slug: exerciseTypeSlug,
+        });
+        subtypeId = subtypeResponse.data.id;
+      } catch (error) {
+        await api.delete(`/admin/grammar/subtopics/${createdSubtopic.id}`).catch(() => {});
+        throw error;
+      }
+
+      let uploadedCount: string | null = null;
+      try {
+        if (csvFile) {
+          const formData = new FormData();
+          formData.append('file', csvFile, csvFile.name);
+          formData.append('skill', 'Grammar');
+          formData.append('type_slug', exerciseTypeSlug);
+          formData.append('category', `grammar_${createdSubtopic.id}`);
+          const uploadResponse = await api.post('/admin/sync/exercises', formData);
+          uploadedCount = uploadResponse.data?.message?.match(/\d+/)?.[0] ?? '?';
+        }
+      } catch (error) {
+        if (subtypeId) {
+          await api.delete(`/admin/exercise-subtypes/${subtypeId}`).catch(() => {});
+        }
+        await api.delete(`/admin/grammar/subtopics/${createdSubtopic.id}`).catch(() => {});
+        throw error;
+      }
+
+      showToast(
+        true,
+        uploadedCount
+          ? `Created "${nameEn}" and uploaded ${uploadedCount} exercises`
+          : `Created "${nameEn}"`,
+      );
+      closeCreateDialog();
       load();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
@@ -295,6 +462,99 @@ function Slide2Subtopics({
     } finally { setDeleteLoading(false); setConfirmDelete(null); }
   };
 
+  if (showCreate) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.5rem' }}>
+          <button onClick={closeCreateDialog} disabled={saving}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14 }}>
+            <ChevronLeft size={16} /> Back
+          </button>
+          <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+            CEFR Level: <strong style={{ color: 'var(--white)' }}>{level}</strong>
+            &nbsp;&nbsp;Category: <strong style={{ color: 'var(--white)' }}>{topic.name_en}</strong>
+          </span>
+        </div>
+
+        <h2 style={{ marginBottom: '1.5rem' }}>Create Grammar Practice Subtopic</h2>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 200px', gap: '2rem', alignItems: 'start' }}>
+          <div>
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ marginBottom: '1.25rem', fontSize: 16 }}>Subtopic Name</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '0.75rem', alignItems: 'center' }}>
+                <label style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>English Name *</label>
+                <input className="form-control" autoFocus value={nameEn} onChange={e => setNameEn(e.target.value)}
+                  placeholder="e.g. Proper Nouns Part 1" style={{ marginBottom: 0 }} />
+                <label style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>French Name</label>
+                <input className="form-control" value={nameFr} onChange={e => setNameFr(e.target.value)}
+                  placeholder="Name in French" style={{ marginBottom: 0 }} />
+                <label style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>German Name</label>
+                <input className="form-control" value={nameDe} onChange={e => setNameDe(e.target.value)}
+                  placeholder="Name in German" style={{ marginBottom: 0 }} />
+                <label style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-muted)' }}>Spanish Name</label>
+                <input className="form-control" value={nameEs} onChange={e => setNameEs(e.target.value)}
+                  placeholder="Name in Spanish" style={{ marginBottom: 0 }} />
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Exercise Type *</label>
+                <select className="form-control" value={exerciseTypeSlug}
+                  onChange={e => {
+                    setExerciseTypeSlug(e.target.value as GrammarExerciseTypeSlug);
+                    setCsvFile(null);
+                    if (createCsvInputRef.current) createCsvInputRef.current.value = '';
+                  }}>
+                  <option value="">Select Exercise Type</option>
+                  {GRAMMAR_EXERCISE_TYPES.map(type => (
+                    <option key={type.slug} value={type.slug}>{type.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: '1.5rem' }}>
+              <button className="btn btn-secondary" onClick={closeCreateDialog} disabled={saving}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleCreate}
+                disabled={saving || !nameEn.trim() || !exerciseTypeSlug}>
+                {saving ? 'Saving…' : 'Create Subtopic'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <p style={{ fontWeight: 600, fontSize: 14, margin: '0 0 10px' }}>CSV Upload</p>
+            {exerciseTypeSlug ? (
+              <CsvUploadButton
+                inputRef={createCsvInputRef}
+                onFile={setCsvFile}
+                disabled={saving}
+                fileName={csvFile?.name}
+                label="Upload Master CSV"
+                variant="dropzone"
+                onClear={() => {
+                  setCsvFile(null);
+                  if (createCsvInputRef.current) createCsvInputRef.current.value = '';
+                }}
+              />
+            ) : (
+              <div style={{
+                width: 180, height: 180, borderRadius: 16, border: '2px dashed var(--border)',
+                background: 'var(--card-bg)', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', padding: 16, textAlign: 'center',
+                color: 'var(--text-muted)', fontSize: 12,
+              }}>
+                Select an exercise type to upload its CSV
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '0.25rem' }}>
@@ -309,34 +569,15 @@ function Slide2Subtopics({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', marginTop: '0.5rem' }}>
         <h2 style={{ margin: 0 }}>{topic.name_en}</h2>
-        <button className="btn btn-primary" onClick={() => setShowCreate(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: 13 }}>
-          <Plus size={15} /> New Subtopic
+        <button onClick={() => setShowCreate(true)} title="Add Subtopic"
+          style={{
+            width: 36, height: 36, borderRadius: '50%', background: 'var(--primary)',
+            border: 'none', cursor: 'pointer', color: '#fff', display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+          <Plus size={18} />
         </button>
       </div>
-
-      {showCreate && (
-        <div className="card" style={{ padding: '16px 20px', marginBottom: '1.5rem', border: '1px solid var(--accent)' }}>
-          <p style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>New Subtopic under <em>{topic.name_en}</em></p>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
-            e.g. "Proper Nouns Part 1" — you'll choose the exercise type in the next step
-          </p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <input className="form-control" placeholder="Name (EN) e.g. Proper Nouns Part 1 *"
-              value={nameEn} onChange={e => setNameEn(e.target.value)}
-              style={{ flex: 1, minWidth: 200 }} />
-            <input className="form-control" placeholder="Name (FR) optional"
-              value={nameFr} onChange={e => setNameFr(e.target.value)}
-              style={{ flex: 1, minWidth: 160 }} />
-            <button className="btn btn-primary" onClick={handleCreate} disabled={saving || !nameEn.trim()}
-              style={{ padding: '7px 16px', fontSize: 13 }}>
-              {saving ? 'Saving…' : 'Create'}
-            </button>
-            <button className="btn btn-secondary" onClick={() => setShowCreate(false)}
-              style={{ padding: '7px 12px', fontSize: 13 }}>Cancel</button>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
@@ -357,7 +598,7 @@ function Slide2Subtopics({
             <tbody>
               {subtopics.map((s, i) => (
                 <tr key={s.id} style={{ borderBottom: '1px solid var(--border)', opacity: s.is_active ? 1 : 0.45, cursor: 'pointer' }}
-                  onClick={() => onSelect(s)}
+                  onClick={() => onSelect(s, s.exercise_type_slug)}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                   <td style={{ padding: '10px 14px', color: 'var(--text-muted)' }}>{i + 1}</td>
@@ -367,7 +608,7 @@ function Slide2Subtopics({
                   </td>
                   <td style={{ padding: '10px 14px' }} onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
-                      <button title="Open" onClick={() => onSelect(s)} style={iconBtnStyle('#60a5fa')}><ChevronRight size={13} /></button>
+                      <button title="Open" onClick={() => onSelect(s, s.exercise_type_slug)} style={iconBtnStyle('#60a5fa')}><ChevronRight size={13} /></button>
                       <button title="Delete" onClick={() => setConfirmDelete(s)} style={iconBtnStyle('#ef4444')}><Trash2 size={13} /></button>
                     </div>
                   </td>
@@ -558,14 +799,12 @@ function Slide4Exercises({
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
-          <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
-            className="btn btn-secondary"
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '6px 14px' }}>
-            <CloudUpload size={15} />
-            {uploading ? 'Uploading…' : 'Upload CSV'}
-          </button>
+          <CsvUploadButton
+            inputRef={fileInputRef}
+            onFile={handleUpload}
+            disabled={uploading}
+            label={uploading ? 'Uploading…' : 'Upload CSV'}
+          />
         </div>
       </div>
 
@@ -761,6 +1000,7 @@ function GrammarViewModal({ externalId, onClose, onSaved }: {
 type Slide = 'topics' | 'subtopics' | 'exercise_types' | 'exercises';
 
 export default function GrammarPractice() {
+  const [learningLang, setLearningLang] = useState('fr');
   const [level, setLevel] = useState<CefrLevel>('A1');
   const [slide, setSlide] = useState<Slide>('topics');
   const [selectedTopic, setSelectedTopic] = useState<GrammarTopic | null>(null);
@@ -775,6 +1015,16 @@ export default function GrammarPractice() {
     setSelectedTopic(null); setSelectedSubtopic(null); setSelectedTypeSlug(null);
   };
 
+  const handleLanguageChange = (language: string) => {
+    setLearningLang(language);
+    goToTopics();
+  };
+
+  const handleLevelChange = (nextLevel: CefrLevel) => {
+    setLevel(nextLevel);
+    goToTopics();
+  };
+
   return (
     <div style={{ padding: '2rem', maxWidth: 1100, margin: '0 auto' }}>
       {/* Page header */}
@@ -787,23 +1037,24 @@ export default function GrammarPractice() {
             </button>
           )}
         </div>
-        {/* Level selector — only shown on topics slide */}
-        {slide === 'topics' && (
-          <div style={{ display: 'flex', gap: 6 }}>
-            {CEFR_LEVELS.map(l => (
-              <button key={l} onClick={() => { setLevel(l); goToTopics(); }}
-                style={{
-                  padding: '5px 14px', borderRadius: 6, border: '1px solid var(--border)',
-                  background: level === l ? 'var(--accent)' : 'transparent',
-                  color: level === l ? '#fff' : 'var(--text-muted)',
-                  cursor: 'pointer', fontWeight: 600, fontSize: 13,
-                }}>
-                {l}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
+
+      {slide === 'topics' && (
+        <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '2rem', padding: '1.25rem 1.5rem', background: 'var(--card-bg)', borderRadius: 12, border: '1px solid var(--border)', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 120 }}>Learning Language</span>
+            <select className="form-control" value={learningLang} onChange={e => handleLanguageChange(e.target.value)} style={{ width: 180, fontSize: 14 }}>
+              {LANGUAGES.map(language => <option key={language.code} value={language.code}>{language.label}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 14, minWidth: 100 }}>CEFR Level</span>
+            <select className="form-control" value={level} onChange={e => handleLevelChange(e.target.value as CefrLevel)} style={{ width: 180, fontSize: 14 }}>
+              {CEFR_LEVELS.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Breadcrumb trail */}
       {slide !== 'topics' && (
@@ -821,8 +1072,16 @@ export default function GrammarPractice() {
           {selectedSubtopic && (
             <>
               <ChevronRight size={12} />
-              <span style={{ cursor: slide !== 'exercise_types' ? 'pointer' : 'default', color: slide !== 'exercise_types' ? 'var(--accent)' : 'var(--text)' }}
-                onClick={() => slide !== 'exercise_types' && setSlide('exercise_types')}>
+              <span
+                style={{
+                  cursor: slide !== 'exercise_types' && !selectedSubtopic.exercise_type_slug ? 'pointer' : 'default',
+                  color: slide !== 'exercise_types' && !selectedSubtopic.exercise_type_slug ? 'var(--accent)' : 'var(--text)',
+                }}
+                onClick={() => {
+                  if (slide !== 'exercise_types' && !selectedSubtopic.exercise_type_slug) {
+                    setSlide('exercise_types');
+                  }
+                }}>
                 {selectedSubtopic.name_en}
               </span>
             </>
@@ -840,7 +1099,7 @@ export default function GrammarPractice() {
 
       {/* Slides */}
       {slide === 'topics' && (
-        <Slide1Topics level={level}
+        <Slide1Topics learningLang={learningLang} level={level}
           onSelect={t => { setSelectedTopic(t); setSlide('subtopics'); }}
           showToast={showToast} />
       )}
@@ -848,7 +1107,16 @@ export default function GrammarPractice() {
       {slide === 'subtopics' && selectedTopic && (
         <Slide2Subtopics topic={selectedTopic} level={level}
           onBack={() => setSlide('topics')}
-          onSelect={s => { setSelectedSubtopic(s); setSlide('exercise_types'); }}
+          onSelect={(subtopic, typeSlug) => {
+            setSelectedSubtopic(subtopic);
+            if (typeSlug) {
+              setSelectedTypeSlug(typeSlug);
+              setSlide('exercises');
+            } else {
+              setSelectedTypeSlug(null);
+              setSlide('exercise_types');
+            }
+          }}
           showToast={showToast} />
       )}
 
@@ -862,7 +1130,7 @@ export default function GrammarPractice() {
       {slide === 'exercises' && selectedTopic && selectedSubtopic && selectedTypeSlug && (
         <Slide4Exercises topic={selectedTopic} subtopic={selectedSubtopic}
           exerciseTypeSlug={selectedTypeSlug} level={level}
-          onBack={() => setSlide('exercise_types')}
+          onBack={() => setSlide(selectedSubtopic.exercise_type_slug ? 'subtopics' : 'exercise_types')}
           showToast={showToast} />
       )}
 
