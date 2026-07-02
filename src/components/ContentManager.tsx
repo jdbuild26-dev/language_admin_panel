@@ -5,6 +5,8 @@ import api from '../services/api';
 import 'react-quill-new/dist/quill.snow.css';
 import 'quill-better-table/dist/quill-better-table.css';
 import StoryEditor from './StoryEditor';
+import TableBlockPreview from './TableBlockPreview';
+import { buildTableBlockHtml, parseTableCsvToBlockData, type TableBlockData, type TableCellData, type TableRowData } from '../utils/tableCsv';
 
 // ─── API Prefix Context ───────────────────────────────────────────────────────
 // Allows sub-views to call the correct endpoint (grammar vs stories) without prop-drilling.
@@ -163,28 +165,17 @@ function BoxModal({ onInsert, onClose, darkMode }: {
 // ─── Vocab Table Modal ────────────────────────────────────────────────────────
 // Customizable columns, hover-translate tooltips, audio per cell, arrow separators
 
-interface VocabCell {
-  text: string;
-  tooltip: string;
-  audioUrl: string;
-  tts: boolean;
-}
-
-interface VocabTableRow {
-  cells: VocabCell[];
-}
-
-
 function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
   onInsert: (html: string, tableData: TableBlockData) => void;
   onClose: () => void;
   darkMode: boolean;
   initialData?: TableBlockData;
 }) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [headers, setHeaders] = useState<string[]>(
     initialData?.headers ?? ['French Singular', 'French Plural']
   );
-  const [rows, setRows] = useState<VocabTableRow[]>(
+  const [rows, setRows] = useState<TableRowData[]>(
     initialData?.rows ?? [
       { cells: [{ text: '', tooltip: '', audioUrl: '', tts: false }, { text: '', tooltip: '', audioUrl: '', tts: false }] },
       { cells: [{ text: '', tooltip: '', audioUrl: '', tts: false }, { text: '', tooltip: '', audioUrl: '', tts: false }] },
@@ -214,48 +205,24 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
   const updateHeader = (ci: number, val: string) => setHeaders(h => h.map((v, i) => i === ci ? val : v));
   const addRow = () => setRows(r => [...r, { cells: Array.from({ length: numCols }, () => ({ text: '', tooltip: '', audioUrl: '', tts: false })) }]);
   const removeRow = (ri: number) => { if (rows.length > 1) setRows(r => r.filter((_, i) => i !== ri)); };
-  const updateCell = (ri: number, ci: number, field: keyof VocabCell, val: string | boolean) =>
+  const updateCell = (ri: number, ci: number, field: keyof TableCellData, val: string | boolean) =>
     setRows(r => r.map((row, i) => i !== ri ? row : { cells: row.cells.map((cell, j) => j !== ci ? cell : { ...cell, [field]: val }) }));
 
   const hasContent = rows.some(row => row.cells.some(c => c.text.trim()));
+
+  const handleCsvImport = async (file: File) => {
+    const tableData = parseTableCsvToBlockData(await file.text());
+    if (!tableData.headers.length || !tableData.rows.length) return;
+    setHeaders(tableData.headers);
+    setRows(tableData.rows);
+  };
 
   const handleInsert = () => {
     const validRows = rows.filter(row => row.cells.some(c => c.text.trim()));
     if (!validRows.length) return;
 
-    // Structured data embedded as a <script> tag — survives DB round-trip with
-    // zero encoding issues. The script tag is invisible in the rendered output.
     const tableData: TableBlockData = { headers, rows: validRows };
-    const metaJson = JSON.stringify({ type: 'table', data: tableData });
-    const metaTag = `<div data-block-meta="1" style="display:none;">${metaJson}</div>`;
-
-    // Header row — columns separated by narrow arrow columns
-    const thCells = headers.map((h, ci) => {
-      const isLast = ci === headers.length - 1;
-      return `<th style="padding:18px 20px;text-align:center;font-weight:700;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:#3d2817;border-right:1px solid rgba(255,255,255,0.3);">${h}</th>`
-        + (isLast ? '' : `<th style="padding:0;width:48px;border-right:1px solid rgba(255,255,255,0.3);"></th>`);
-    }).join('');
-
-    // Data rows
-    const bodyRows = validRows.map((row, ri) => {
-      const tdCells = row.cells.map((cell, ci) => {
-        const isLast = ci === headers.length - 1;
-        const cellBg = ri % 2 === 0 ? '#fffbeb' : '#ffffff';
-        const audioBtn = cell.tts && cell.text.trim()
-          ? `<button onclick="(function(b){var t=b.getAttribute('data-tts-text');if(!t)return;var s=window.speechSynthesis;s.cancel();var u=new SpeechSynthesisUtterance(t);u.lang='fr-FR';var v=s.getVoices();var fv=v.find(function(x){return x.lang==='fr-FR'})||v.find(function(x){return x.lang==='fr-CA'})||v.find(function(x){return x.lang.startsWith('fr')});if(fv)u.voice=fv;s.speak(u);b.style.transform='scale(0.9)';setTimeout(function(){b.style.transform='scale(1)'},200)})(this)" data-tts-text="${cell.text.trim()}" style="background:none;border:none;cursor:pointer;padding:2px 4px;display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;" title="Play TTS">🔊</button>`
-          : cell.audioUrl.trim()
-          ? `<button onclick="(function(b){var a=new Audio('${cell.audioUrl.trim()}');a.currentTime=0;a.play();b.style.transform='scale(0.9)';setTimeout(function(){b.style.transform='scale(1)'},200)})(this)" style="background:none;border:none;cursor:pointer;padding:2px 4px;display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;" title="Play audio">🔊</button>`
-          : '';
-        const inner = cell.tooltip.trim()
-          ? `<span style="position:relative;display:inline-block;cursor:pointer;color:#2563eb;font-weight:600;" onmouseenter="var t=this.querySelector('.vtt');if(t)t.style.opacity='1';" onmouseleave="var t=this.querySelector('.vtt');if(t)t.style.opacity='0';">${cell.text.trim() || '—'}<span class="vtt" style="opacity:0;transition:opacity 0.15s;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;white-space:nowrap;pointer-events:none;font-weight:400;z-index:10;">${cell.tooltip.trim()}</span></span>`
-          : `<span style="font-weight:600;color:#3d2817;">${cell.text.trim() || '—'}</span>`;
-        return `<td style="padding:18px 20px;text-align:center;vertical-align:middle;background:${cellBg};border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb;">${inner}${audioBtn}</td>`
-          + (isLast ? '' : `<td style="padding:0;width:48px;text-align:center;vertical-align:middle;background:${cellBg};border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb;color:#ffa90a;font-size:18px;">→</td>`);
-      }).join('');
-      return `<tr>${tdCells}</tr>`;
-    }).join('\n');
-
-    const html = `<div data-vocab-table="1" style="overflow-x:auto;margin:24px 0;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,0.08);overflow:hidden;">${metaTag}<table style="width:100%;border-collapse:collapse;font-family:'DM Sans',sans-serif;font-size:1rem;background:#ffffff;"><thead style="background:hsl(39,100%,73%);"><tr>${thCells}</tr></thead><tbody>${bodyRows}</tbody></table></div><p><br></p>`;
+    const html = buildTableBlockHtml(tableData);
     onInsert(html, tableData);
     onClose();
   };
@@ -276,7 +243,7 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
         {/* Column header editors */}
         <div style={{ flexShrink: 0, marginBottom: 12, padding: '10px 12px', background: surface, borderRadius: 8, border: `1px solid ${border}` }}>
           <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Column Headers</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
             {headers.map((h, ci) => (
               <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 {ci > 0 && <span style={{ color: '#ffa90a', fontSize: 16, marginRight: 4 }}>→</span>}
@@ -293,6 +260,28 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
               <Plus size={12} /> Add Column
             </button>
           </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              style={{ display: 'none' }}
+              onChange={async e => {
+                const file = e.target.files?.[0];
+                if (file) await handleCsvImport(file);
+                e.currentTarget.value = '';
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{ padding: '5px 10px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', color: textMuted, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <Plus size={12} /> Import CSV
+            </button>
+            <span style={{ fontSize: 11, color: textMuted }}>
+              Dynamic headers are inferred from CSV columns. Use optional `Text`, `Hover`, `Tooltip`, `TTS`, or `Audio` suffixes.
+            </span>
+          </div>
         </div>
 
         {/* Sub-header labels + Rows — labels are rendered inside each cell so they always align */}
@@ -300,7 +289,7 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
           {rows.map((row, ri) => (
             <div key={ri} style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
               {row.cells.map((cell, ci) => (
-                <div key={ci} style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 2fr 90px', gap: 4 }}>
+                <div key={ci} style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 90px', gap: 4 }}>
                   {/* Text field */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {ri === 0 && (
@@ -317,6 +306,15 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
                     )}
                     <input value={cell.tooltip} onChange={e => updateCell(ri, ci, 'tooltip', e.target.value)}
                       placeholder="a cat"
+                      style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary, width: '100%' }} />
+                  </div>
+                  {/* Audio URL field */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {ri === 0 && (
+                      <span style={{ fontSize: 10, color: textMuted, fontWeight: 700, textTransform: 'uppercase', paddingLeft: 2, letterSpacing: '0.05em' }}>Audio (optional)</span>
+                    )}
+                    <input value={cell.audioUrl} onChange={e => updateCell(ri, ci, 'audioUrl', e.target.value)}
+                      placeholder="https://.../audio.mp3"
                       style={{ padding: '6px 8px', border: `1px solid ${inputBorder}`, borderRadius: 5, fontSize: 12, outline: 'none', background: inputBg, color: textPrimary, width: '100%' }} />
                   </div>
                   {/* TTS toggle */}
@@ -366,38 +364,7 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
           {hasContent && (
             <div style={{ marginTop: 10, background: surface, borderRadius: 8, padding: '10px 14px', border: `1px solid ${border}`, overflowX: 'auto' }}>
               <p style={{ fontSize: 11, color: textMuted, margin: '0 0 8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Preview</p>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: 'hsl(39,100%,73%)' }}>
-                    {headers.map((h, ci) => (
-                      <React.Fragment key={ci}>
-                        <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#3d2817' }}>{h}</th>
-                        {ci < headers.length - 1 && <th style={{ width: 32, padding: 0 }} />}
-                      </React.Fragment>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.filter(row => row.cells.some(c => c.text.trim())).map((row, ri) => (
-                    <tr key={ri} style={{ background: ri % 2 === 0 ? '#fffbeb' : '#ffffff' }}>
-                      {row.cells.map((cell, ci) => (
-                        <React.Fragment key={ci}>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', borderBottom: '1px solid #e5e7eb' }}>
-                            <span title={cell.tooltip || undefined}
-                              style={{ fontWeight: 600, color: cell.tooltip ? '#2563eb' : '#3d2817', borderBottom: cell.tooltip ? '1px dashed #ffa90a' : 'none', cursor: cell.tooltip ? 'help' : 'default' }}>
-                              {cell.text || '—'}
-                            </span>
-                            {(cell.tts && cell.text.trim()) || cell.audioUrl ? <span style={{ marginLeft: 6 }}>🔊</span> : null}
-                          </td>
-                          {ci < headers.length - 1 && (
-                            <td style={{ width: 32, textAlign: 'center', color: '#ffa90a', fontSize: 16, borderBottom: '1px solid #e5e7eb' }}>→</td>
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <TableBlockPreview tableData={{ headers, rows }} />
             </div>
           )}
         </div>
@@ -691,11 +658,6 @@ function SectionModal({ onInsert, onClose, darkMode, initialData }: {
 // The data is also embedded in the saved HTML as a hidden <div data-block-meta="1">
 // tag so it survives the DB round-trip without any encoding issues.
 
-interface TableBlockData {
-  headers: string[];
-  rows: VocabTableRow[];
-}
-
 interface ExtractBlockData {
   text: string;
   imageUrl: string;
@@ -953,11 +915,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
               const tag = el.tagName.toLowerCase();
               const isVocabTable = tag === 'div' && el.getAttribute('data-vocab-table') === '1';
               const isExtract = tag === 'div' && el.getAttribute('data-extract') === '1';
-              const isLegacyExtract = tag === 'div' && !isVocabTable && (
-                el.getAttribute('style')?.includes('#f3ede6') ||
-                el.getAttribute('style')?.includes('f3ede6')
-              );
-              if (isVocabTable || isExtract || isLegacyExtract) {
+              if (isVocabTable || isExtract) {
                 const meta = extractBlockMeta(el);
                 const blockId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${blocks.length}`;
                 if (meta?.type === 'table') {
@@ -1352,8 +1310,8 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                       </div>
                     </div>
                     <div
-                      className="note-preview"
-                      style={{ background: dm ? '#1c2128' : '#f9f5f0', padding: '12px 16px', fontSize: 14 }}
+                      className="note-preview note-preview-inline"
+                      style={{ background: dm ? '#1c2128' : '#f9f5f0', fontSize: 14 }}
                       dangerouslySetInnerHTML={{ __html: block.html }}
                     />
                   </div>
@@ -1439,8 +1397,8 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                           </div>
                         </div>
                         <div
-                          className="note-preview"
-                          style={{ background: dm ? '#1c2128' : '#f9f5f0', padding: '12px 16px', fontSize: 14 }}
+                          className="note-preview note-preview-inline"
+                          style={{ background: dm ? '#1c2128' : '#f9f5f0', fontSize: 14 }}
                           dangerouslySetInnerHTML={{ __html: block.html }}
                         />
                       </div>
@@ -1473,14 +1431,37 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
         ) : (
           <div style={{ flex: 1, overflowY: 'auto', background: previewBg }}>
             {(() => {
-              const allSectionsHtml = [...editorSections].sort((a, b) => a.slNo - b.slNo)
-                .map(s => `<h2>${s.slNo}. ${s.heading}</h2><div>${s.quillHtml}${s.blocks.map(b => b.html).join('')}</div>`)
+              const sortedSections = [...editorSections].sort((a, b) => a.slNo - b.slNo);
+              const tocHtml = sortedSections.length > 0
+                ? `<aside class="note-preview-sidebar">
+                    <div class="note-preview-sidebar-title">Table of Contents</div>
+                    <nav class="note-preview-sidebar-nav">
+                      ${sortedSections.map((s, idx) => `
+                        <a href="#preview-section-${s.slNo}" class="note-preview-sidebar-link">
+                          <span class="note-preview-sidebar-icon">${idx === 0 ? '🏠' : '🔖'}</span>
+                          <span>${s.heading}</span>
+                        </a>
+                      `).join('')}
+                    </nav>
+                  </aside>`
+                : '';
+              const allSectionsHtml = sortedSections
+                .map(s => `<section class="note-preview-section"><h2 id="preview-section-${s.slNo}">${s.heading}</h2><div>${s.quillHtml}${s.blocks.map(b => b.html).join('')}</div></section>`)
                 .join('');
-              const fullHtml = htmlContent + preambleBlocksHtml + allSectionsHtml;
+              const fullHtml = `
+                <div class="note-preview-page ${sortedSections.length > 0 ? 'has-sidebar' : ''}">
+                  ${tocHtml}
+                  <article class="article note-preview-article">
+                    ${htmlContent}
+                    ${preambleBlocksHtml}
+                    ${allSectionsHtml}
+                  </article>
+                </div>
+              `;
               return isEmpty(fullHtml) ? (
                 <div style={{ textAlign: 'center', padding: '3rem', color: textMuted }}>Nothing to preview yet — write something first.</div>
               ) : (
-                <div className="note-preview" dangerouslySetInnerHTML={{ __html: fullHtml }} />
+                <div className="note-preview note-preview-document" dangerouslySetInnerHTML={{ __html: fullHtml }} />
               );
             })()}
           </div>
