@@ -743,6 +743,12 @@ function plainTextToHtml(text: string): string {
     .join('');
 }
 
+function mergeAdjacentBlockquotes(html: string): string {
+  // Quill stores each paragraph in a multi-line callout as a sibling blockquote.
+  // Join those lines before preview/save so the template renders one box.
+  return html.replace(/<\/blockquote>\s*<blockquote>/gi, '<br>');
+}
+
 function serializeNoteContent(
   sections: EditorSection[],
   preambleHtml = '',
@@ -758,7 +764,9 @@ function serializeNoteContent(
     })
     .join('');
 
-  return preambleHtml + preambleBlocks.map(block => block.html).join('') + sectionsHtml;
+  return mergeAdjacentBlockquotes(
+    preambleHtml + preambleBlocks.map(block => block.html).join('') + sectionsHtml,
+  );
 }
 
 // ─── extractBlockMeta ─────────────────────────────────────────────────────────
