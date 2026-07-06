@@ -571,6 +571,28 @@ h2 {
   max-width: 100%;
 }
 
+.grammar-section-editor .ql-container {
+  min-height: 140px;
+  border-left: 0;
+  border-right: 0;
+}
+
+.grammar-section-editor .ql-editor {
+  min-height: 140px;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.grammar-block-editor .ql-container {
+  min-height: 120px;
+}
+
+.grammar-block-editor .ql-editor {
+  min-height: 120px;
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
 .note-preview [data-vocab-table="1"] {
   max-width: 100%;
 }
