@@ -44,6 +44,16 @@ interface EditorState {
   translations: Note[];
 }
 
+type RichTextEditorComponent = React.ComponentType<{
+  theme?: string;
+  value: string;
+  onChange: (value: string) => void;
+  modules?: unknown;
+  formats?: string[];
+  placeholder?: string;
+  className?: string;
+}>;
+
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2'];
 const LANGUAGES = [
   { code: 'fr', label: 'French' },
@@ -58,6 +68,12 @@ const KNOWN_LANGS = [
   { code: 'de', label: 'German' },
   { code: 'es', label: 'Spanish' },
 ];
+
+const emptyKnownLangTextMap = () =>
+  KNOWN_LANGS.reduce<Record<string, string>>((acc, lang) => {
+    acc[lang.code] = '';
+    return acc;
+  }, {});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -101,10 +117,11 @@ function iconBtn(color: string): React.CSSProperties {
 // ─── Box Modal ───────────────────────────────────────────────────────────────
 // Inserts a styled callout/highlight box into the editor
 
-function BoxModal({ onInsert, onClose, darkMode }: {
+function BoxModal({ onInsert, onClose, darkMode, RichTextEditor }: {
   onInsert: (html: string) => void;
   onClose: () => void;
   darkMode: boolean;
+  RichTextEditor: RichTextEditorComponent | null;
 }) {
   const [text, setText] = useState('');
   const dm = darkMode;
@@ -112,15 +129,13 @@ function BoxModal({ onInsert, onClose, darkMode }: {
   const border = dm ? '#30363d' : '#dee2e6';
   const textPrimary = dm ? '#c9d1d9' : '#1a1a1a';
   const textMuted = dm ? '#8b949e' : '#666';
-  const inputBg = dm ? '#0e1117' : '#ffffff';
+  const hasContent = hasMeaningfulHtml(text);
 
   const handleInsert = () => {
-    if (!text.trim()) return;
+    if (!hasContent) return;
     // Use <blockquote> — Quill preserves it natively and the grammar CSS template
     // already styles blockquote with the orange left border + cream background.
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const inner = lines.map(l => `<p>${l}</p>`).join('');
-    const html = `<blockquote>${inner}</blockquote><p><br></p>`;
+    const html = `<blockquote>${plainTextToHtml(text)}</blockquote><p><br></p>`;
     onInsert(html);
     onClose();
   };
@@ -135,26 +150,31 @@ function BoxModal({ onInsert, onClose, darkMode }: {
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: textMuted }}><X size={18} /></button>
         </div>
-        <textarea
-          autoFocus
-          value={text}
-          onChange={e => setText(e.target.value)}
-          placeholder="Type the box content here. Each line becomes a paragraph inside the box."
-          rows={5}
-          style={{ width: '100%', padding: '10px 12px', border: `1px solid ${border}`, borderRadius: 8, fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: inputBg, color: textPrimary, boxSizing: 'border-box' }}
-        />
+        {RichTextEditor ? (
+          <RichTextEditor
+            theme="snow"
+            value={text}
+            onChange={setText}
+            modules={RICH_TEXT_MODULES}
+            formats={QUILL_FORMATS}
+            placeholder="Type and format the box content."
+            className="grammar-block-editor"
+          />
+        ) : (
+          <div style={{ padding: '2rem', color: textMuted }}>Loading editor…</div>
+        )}
         {/* Preview */}
-        {text.trim() && (
-          <div style={{ marginTop: 12, background: '#eff6ff', borderLeft: '4px solid #2563eb', borderRadius: 8, padding: '14px 18px' }}>
-            {text.split('\n').filter(Boolean).map((l, i) => (
-              <p key={i} style={{ margin: '0 0 6px 0', fontSize: 13, color: '#363639' }}>{l}</p>
-            ))}
-          </div>
+        {hasContent && (
+          <div
+            className="note-preview"
+            style={{ marginTop: 12, background: '#eff6ff', borderLeft: '4px solid #2563eb', borderRadius: 8, padding: '14px 18px', fontSize: 13 }}
+            dangerouslySetInnerHTML={{ __html: text }}
+          />
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '7px 16px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', fontSize: 13, color: textMuted }}>Cancel</button>
-          <button onClick={handleInsert} disabled={!text.trim()}
-            style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#ffa90a', color: '#fff', cursor: text.trim() ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: text.trim() ? 1 : 0.5 }}>
+          <button onClick={handleInsert} disabled={!hasContent}
+            style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#ffa90a', color: '#fff', cursor: hasContent ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: hasContent ? 1 : 0.5 }}>
             Insert Box
           </button>
         </div>
@@ -385,13 +405,14 @@ function VocabTableModal({ onInsert, onClose, darkMode, initialData }: {
 // ─── Extract Modal ────────────────────────────────────────────────────────────
 // Inserts a styled extract block: text + optional image side-by-side
 
-function ExtractModal({ onInsert, onClose, darkMode, initialData }: {
+function ExtractModal({ onInsert, onClose, darkMode, initialData, RichTextEditor }: {
   onInsert: (html: string, extractData: ExtractBlockData) => void;
   onClose: () => void;
   darkMode: boolean;
   initialData?: ExtractBlockData;
+  RichTextEditor: RichTextEditorComponent | null;
 }) {
-  const [text, setText] = useState(initialData?.text ?? '');
+  const [text, setText] = useState(() => plainTextToHtml(initialData?.text ?? ''));
   const [imageUrl, setImageUrl] = useState(initialData?.imageUrl ?? '');
   const [imageAlt, setImageAlt] = useState(initialData?.imageAlt ?? '');
   const [imagePosition, setImagePosition] = useState<'right' | 'left'>(initialData?.imagePosition ?? 'right');
@@ -402,31 +423,12 @@ function ExtractModal({ onInsert, onClose, darkMode, initialData }: {
   const textMuted = dm ? '#8b949e' : '#666';
   const inputBg = dm ? '#0e1117' : '#ffffff';
   const inputBorder = dm ? '#30363d' : '#dee2e6';
+  const hasContent = hasMeaningfulHtml(text);
 
   const handleInsert = () => {
-    if (!text.trim()) return;
+    if (!hasContent) return;
     const extractData: ExtractBlockData = { text, imageUrl, imageAlt, imagePosition };
-    const metaJson = JSON.stringify({ type: 'extract', data: extractData });
-    const metaTag = `<div data-block-meta="1" style="display:none;">${metaJson}</div>`;
-
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const textHtml = lines.map(l => `<p style="margin:0 0 10px 0;color:#363639;line-height:1.7;">${l}</p>`).join('');
-    const imgHtml = imageUrl.trim()
-      ? `<img src="${imageUrl.trim()}" alt="${imageAlt.trim() || 'Extract image'}" style="width:200px;max-width:200px;border-radius:10px;object-fit:cover;display:block;" />`
-      : '';
-
-    let innerHtml: string;
-    if (imgHtml) {
-      const textCell = `<td style="padding:0 16px 0 0;vertical-align:top;color:#363639;">${textHtml}</td>`;
-      const imgCell = `<td style="padding:0;vertical-align:top;width:210px;">${imgHtml}</td>`;
-      const cells = imagePosition === 'right' ? `${textCell}${imgCell}` : `${imgCell}${textCell}`;
-      innerHtml = `<table style="width:100%;border-collapse:collapse;border:none;background:transparent;box-shadow:none;"><tbody><tr style="background:transparent;">${cells}</tr></tbody></table>`;
-    } else {
-      innerHtml = textHtml;
-    }
-
-    const html = `<div data-extract="1" style="background:#f3ede6;border-radius:12px;padding:20px 24px;margin:16px 0;font-family:'DM Sans',sans-serif;border:1px solid #e5e7eb;">${metaTag}${innerHtml}</div><p><br></p>`;
-    onInsert(html, extractData);
+    onInsert(buildExtractBlockHtml(extractData), extractData);
     onClose();
   };
 
@@ -444,14 +446,19 @@ function ExtractModal({ onInsert, onClose, darkMode, initialData }: {
         {/* Text */}
         <div style={{ marginBottom: 14 }}>
           <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Text *</label>
-          <textarea
-            autoFocus
-            value={text}
-            onChange={e => setText(e.target.value)}
-            placeholder="Type the extract text here. Each line becomes a paragraph."
-            rows={5}
-            style={{ width: '100%', padding: '10px 12px', border: `1px solid ${inputBorder}`, borderRadius: 8, fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: inputBg, color: textPrimary, boxSizing: 'border-box' }}
-          />
+          {RichTextEditor ? (
+            <RichTextEditor
+              theme="snow"
+              value={text}
+              onChange={setText}
+              modules={RICH_TEXT_MODULES}
+              formats={QUILL_FORMATS}
+              placeholder="Type and format the extract content."
+              className="grammar-block-editor"
+            />
+          ) : (
+            <div style={{ padding: '2rem', color: textMuted }}>Loading editor…</div>
+          )}
         </div>
 
         {/* Image URL */}
@@ -493,38 +500,19 @@ function ExtractModal({ onInsert, onClose, darkMode, initialData }: {
         )}
 
         {/* Preview */}
-        {text.trim() && (
+        {hasContent && (
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Preview</label>
-            <div style={{ background: '#f3ede6', borderRadius: 10, padding: '14px 18px', border: '1px solid #e5e7eb' }}>
-              {imageUrl.trim() ? (
-                <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none', background: 'transparent', boxShadow: 'none' }}>
-                  <tbody>
-                    <tr style={{ background: 'transparent' }}>
-                      {imagePosition === 'left' && (
-                        <td style={{ width: 120, verticalAlign: 'top', paddingRight: 12, border: 'none' }}>
-                          <img src={imageUrl} alt={imageAlt || 'preview'} style={{ width: 110, borderRadius: 8, objectFit: 'cover', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        </td>
-                      )}
-                      <td style={{ verticalAlign: 'top', border: 'none', padding: 0 }}>
-                        {text.split('\n').filter(Boolean).map((l, i) => (
-                          <p key={i} style={{ margin: '0 0 6px 0', fontSize: 13, color: '#363639', lineHeight: 1.6 }}>{l}</p>
-                        ))}
-                      </td>
-                      {imagePosition === 'right' && (
-                        <td style={{ width: 120, verticalAlign: 'top', paddingLeft: 12, border: 'none' }}>
-                          <img src={imageUrl} alt={imageAlt || 'preview'} style={{ width: 110, borderRadius: 8, objectFit: 'cover', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        </td>
-                      )}
-                    </tr>
-                  </tbody>
-                </table>
-              ) : (
-                <div>
-                  {text.split('\n').filter(Boolean).map((l, i) => (
-                    <p key={i} style={{ margin: '0 0 6px 0', fontSize: 13, color: '#363639', lineHeight: 1.6 }}>{l}</p>
-                  ))}
-                </div>
+            <div
+              className="note-preview"
+              style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 12, background: '#f3ede6', borderRadius: 10, padding: '14px 18px', border: '1px solid #e5e7eb', overflowWrap: 'anywhere' }}
+            >
+              {imageUrl.trim() && imagePosition === 'left' && (
+                <img src={imageUrl} alt={imageAlt || 'preview'} style={{ width: 110, maxWidth: '100%', borderRadius: 8, objectFit: 'cover', display: 'block', flex: '0 1 110px' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              )}
+              <div style={{ flex: '1 1 220px', minWidth: 0 }} dangerouslySetInnerHTML={{ __html: text }} />
+              {imageUrl.trim() && imagePosition === 'right' && (
+                <img src={imageUrl} alt={imageAlt || 'preview'} style={{ width: 110, maxWidth: '100%', borderRadius: 8, objectFit: 'cover', display: 'block', flex: '0 1 110px' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               )}
             </div>
           </div>
@@ -532,8 +520,8 @@ function ExtractModal({ onInsert, onClose, darkMode, initialData }: {
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '7px 16px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', fontSize: 13, color: textMuted }}>Cancel</button>
-          <button onClick={handleInsert} disabled={!text.trim()}
-            style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#059669', color: '#fff', cursor: text.trim() ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: text.trim() ? 1 : 0.5 }}>
+          <button onClick={handleInsert} disabled={!hasContent}
+            style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#059669', color: '#fff', cursor: hasContent ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: hasContent ? 1 : 0.5 }}>
             Insert Extract
           </button>
         </div>
@@ -563,11 +551,12 @@ interface EditorSection {
 // ─── Section Modal ────────────────────────────────────────────────────────────
 // Asks for Sl No + Heading when adding/editing a section
 
-function SectionModal({ onInsert, onClose, darkMode, initialData }: {
+function SectionModal({ onInsert, onClose, darkMode, initialData, usedSlNos = [] }: {
   onInsert: (section: NoteSection) => void;
   onClose: () => void;
   darkMode: boolean;
   initialData?: NoteSection;
+  usedSlNos?: number[];
 }) {
   const [slNo, setSlNo] = useState(initialData?.slNo?.toString() ?? '');
   const [heading, setHeading] = useState(initialData?.heading ?? '');
@@ -580,7 +569,8 @@ function SectionModal({ onInsert, onClose, darkMode, initialData }: {
   const inputBorder = dm ? '#30363d' : '#dee2e6';
 
   const slNoNum = parseInt(slNo, 10);
-  const valid = heading.trim().length > 0 && !isNaN(slNoNum) && slNoNum > 0;
+  const duplicateSlNo = !isNaN(slNoNum) && usedSlNos.includes(slNoNum);
+  const valid = heading.trim().length > 0 && !isNaN(slNoNum) && slNoNum > 0 && !duplicateSlNo;
 
   const handleSubmit = () => {
     if (!valid) return;
@@ -618,6 +608,9 @@ function SectionModal({ onInsert, onClose, darkMode, initialData }: {
             style={{ width: '100%', padding: '8px 12px', border: `1px solid ${inputBorder}`, borderRadius: 8, fontSize: 14, outline: 'none', background: inputBg, color: textPrimary, boxSizing: 'border-box' }}
           />
           <p style={{ margin: '4px 0 0', fontSize: 11, color: textMuted }}>Numbers only — used to order the Table of Contents</p>
+          {duplicateSlNo && (
+            <p style={{ margin: '4px 0 0', fontSize: 11, color: '#ef4444' }}>Another section already uses this number.</p>
+          )}
         </div>
 
         {/* Heading */}
@@ -666,6 +659,29 @@ interface ExtractBlockData {
   imagePosition: 'right' | 'left';
 }
 
+function buildExtractBlockHtml(extractData: ExtractBlockData): string {
+  const normalizedData: ExtractBlockData = {
+    text: extractData.text || '',
+    imageUrl: extractData.imageUrl || '',
+    imageAlt: extractData.imageAlt || '',
+    imagePosition: extractData.imagePosition === 'left' ? 'left' : 'right',
+  };
+  const { text, imageUrl, imageAlt, imagePosition } = normalizedData;
+  const metaJson = JSON.stringify({ type: 'extract', data: normalizedData });
+  const metaTag = `<div data-block-meta="1" style="display:none;">${escapeHtml(metaJson)}</div>`;
+  const textHtml = plainTextToHtml(text);
+  const imgHtml = imageUrl.trim()
+    ? `<img src="${escapeHtml(imageUrl.trim())}" alt="${escapeHtml(imageAlt.trim() || 'Extract image')}" style="width:200px;max-width:100%;border-radius:10px;object-fit:cover;display:block;flex:0 1 200px;" />`
+    : '';
+  const textBlock = `<div style="flex:1 1 280px;min-width:0;overflow-wrap:anywhere;word-break:break-word;">${textHtml}</div>`;
+  const content = imagePosition === 'right' ? `${textBlock}${imgHtml}` : `${imgHtml}${textBlock}`;
+  const innerHtml = imgHtml
+    ? `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px;max-width:100%;min-width:0;">${content}</div>`
+    : textBlock;
+
+  return `<div data-extract="1" style="background:#f3ede6;border-radius:12px;padding:20px 24px;margin:16px 0;font-family:'DM Sans',sans-serif;border:1px solid #e5e7eb;">${metaTag}${innerHtml}</div><p><br></p>`;
+}
+
 interface AppendedBlock {
   id: string;
   type: 'table' | 'extract';
@@ -684,10 +700,44 @@ function createIntroductionSection(quillHtml = '', blocks: AppendedBlock[] = [])
   };
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function hasMeaningfulHtml(value: string): boolean {
+  if (!value.trim()) return false;
+  const doc = new DOMParser().parseFromString(value, 'text/html');
+  return (doc.body.textContent || '').trim().length > 0 || !!doc.body.querySelector('img');
+}
+
+function normalizeBreakableSpaces(node: Node): void {
+  if (node.nodeType === Node.TEXT_NODE) {
+    node.textContent = (node.textContent || '').replace(/\u00a0/g, ' ');
+    return;
+  }
+  Array.from(node.childNodes).forEach(normalizeBreakableSpaces);
+}
+
 function plainTextToHtml(text: string): string {
   if (!text.trim()) return '';
-  if (/<[a-z][\s\S]*>/i.test(text)) return text;
-  return text
+  if (/<[a-z][\s\S]*>/i.test(text)) {
+    const doc = new DOMParser().parseFromString(`<div id="fragment-root">${text}</div>`, 'text/html');
+    const root = doc.getElementById('fragment-root');
+    if (!root) return text;
+    normalizeBreakableSpaces(root);
+    return Array.from(root.childNodes)
+      .map(node => node.nodeType === Node.TEXT_NODE
+        ? plainTextToHtml(node.textContent || '')
+        : (node as Element).outerHTML)
+      .join('');
+  }
+  const escapedText = escapeHtml(text.replace(/\u00a0/g, ' '));
+  return escapedText
     .split(/\n{2,}/)
     .map(paragraph => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`)
     .join('');
@@ -730,6 +780,19 @@ const QUILL_FORMATS = [
   'blockquote', 'code-block', 'link', 'image', 'align',
 ];
 
+const RICH_TEXT_MODULES = {
+  toolbar: [
+    [{ header: [1, 2, 3, false] }],
+    ['bold', 'italic', 'underline', 'strike'],
+    [{ color: [] }, { background: [] }],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    [{ indent: '-1' }, { indent: '+1' }],
+    ['blockquote', 'link'],
+    [{ align: [] }],
+    ['clean'],
+  ],
+};
+
 function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, translationFor, takenLangs, translations, onSelectTranslation, onAddTranslation, onClose, onSaved, showToast }: {
   subtopicId: number; subtopicName: string; learningLang: string;
   existingNote?: Note | null;
@@ -744,7 +807,18 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
 }) {
   const apiPrefix = useContext(ApiPrefixContext);
   const sectionOnly = apiPrefix === 'grammar';
-  const [title, setTitle] = useState(existingNote?.title || translationFor?.title || '');
+  const [titlesByLang, setTitlesByLang] = useState<Record<string, string>>(() => {
+    const next = emptyKnownLangTextMap();
+    (translations || []).forEach(note => {
+      next[note.known_lang] = note.title || '';
+    });
+    const seedNote = existingNote || translationFor;
+    if (seedNote) next[seedNote.known_lang] = seedNote.title || '';
+    return next;
+  });
+  const [translatedTitle, setTranslatedTitle] = useState(
+    existingNote?.description || translationFor?.description || ''
+  );
   const [knownLang, setKnownLang] = useState(() => {
     if (existingNote) return existingNote.known_lang;
     if (translationFor) {
@@ -762,6 +836,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   );
   const isTranslation = !!translationFor && !existingNote;
   const conceptLocked = !!existingNote || isTranslation;
+  const title = titlesByLang[knownLang] || '';
 
   const [htmlContent, setHtmlContent] = useState('');
   const [rawHtmlInput, setRawHtmlInput] = useState('');
@@ -772,6 +847,18 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const [previewError, setPreviewError] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setTitlesByLang(prev => {
+      const next = { ...emptyKnownLangTextMap(), ...prev };
+      (translations || []).forEach(note => {
+        next[note.known_lang] = note.title || '';
+      });
+      const seedNote = existingNote || translationFor;
+      if (seedNote) next[seedNote.known_lang] = seedNote.title || '';
+      return next;
+    });
+  }, [existingNote, translationFor, translations]);
 
   // Insert-block modals
   const [showBoxModal, setShowBoxModal] = useState(false);
@@ -789,7 +876,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
 
   // Section modal
   const [showSectionModal, setShowSectionModal] = useState(false);
-  const [editingSectionIndex, setEditingSectionIndex] = useState<number | null>(null);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
 
   // Dark mode — persisted per editor session
   const [darkMode, setDarkMode] = useState(() => {
@@ -928,7 +1015,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
             const blocks: AppendedBlock[] = [];
             nodes.forEach(node => {
               if (node.nodeType === Node.TEXT_NODE) {
-                quillHtml += node.textContent;
+                quillHtml += plainTextToHtml(node.textContent || '');
                 return;
               }
               if (node.nodeType !== Node.ELEMENT_NODE) return;
@@ -942,7 +1029,12 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                 if (meta?.type === 'table') {
                   blocks.push({ id: blockId, type: 'table', html: el.outerHTML, tableData: meta.data });
                 } else if (meta?.type === 'extract') {
-                  blocks.push({ id: blockId, type: 'extract', html: el.outerHTML, extractData: meta.data });
+                  blocks.push({
+                    id: blockId,
+                    type: 'extract',
+                    html: buildExtractBlockHtml(meta.data),
+                    extractData: meta.data,
+                  });
                 } else {
                   blocks.push({ id: blockId, type: isVocabTable ? 'table' : 'extract', html: el.outerHTML });
                 }
@@ -974,13 +1066,20 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
             const loadedSections: EditorSection[] = [];
             sectionIndices.forEach((secNodeIdx, i) => {
               const h2El = childNodes[secNodeIdx] as Element;
-              const slNo = parseInt(h2El.getAttribute('data-section-slno') || '0', 10);
+              const parsedSlNo = parseInt(h2El.getAttribute('data-section-slno') || '', 10);
+              const slNo = Number.isFinite(parsedSlNo) && parsedSlNo > 0 ? parsedSlNo : i + 1;
               const secId = h2El.getAttribute('data-section-id') || `sec-${Date.now()}-${i}`;
-              const heading = h2El.textContent?.trim() || '';
-              if (!slNo || !heading) return;
+              const heading = h2El.textContent?.trim() || (i === 0 ? 'Introduction' : `Section ${i + 1}`);
 
               // Content nodes: check for new-style <div data-section-content>
-              const nextIdx = secNodeIdx + 1;
+              let nextIdx = secNodeIdx + 1;
+              while (
+                nextIdx < childNodes.length &&
+                childNodes[nextIdx].nodeType === Node.TEXT_NODE &&
+                !(childNodes[nextIdx].textContent || '').trim()
+              ) {
+                nextIdx += 1;
+              }
               const nextNode = nextIdx < childNodes.length ? childNodes[nextIdx] as Element : null;
               const hasContentDiv = nextNode &&
                 nextNode.nodeType === Node.ELEMENT_NODE &&
@@ -1055,7 +1154,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
     api.post('/admin/grammar/preview-markdown', {
       markdown_text: previewSource,
       title,
-      description: existingNote?.description || translationFor?.description || undefined,
+      description: translatedTitle || undefined,
     })
       .then(response => {
         if (!cancelled) setCompiledPreviewHtml(response.data.html || '');
@@ -1071,7 +1170,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       });
 
     return () => { cancelled = true; };
-  }, [editorSections, existingNote?.description, sectionOnly, tab, title, translationFor?.description]);
+  }, [editorSections, sectionOnly, tab, title, translatedTitle]);
 
   // Inject raw HTML directly into Quill by setting it as the editor value
   const handleInjectRawHtml = () => {
@@ -1113,7 +1212,17 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
         await api.put(`/admin/${apiPrefix}/notes/${existingNote.id}`, {
           markdown_source: combinedContent,
           title,
+          ...(sectionOnly ? { description: translatedTitle } : {}),
         });
+        if (sectionOnly) {
+          const titleUpdates = (translations || [])
+            .filter(note => note.id !== existingNote.id)
+            .filter(note => (titlesByLang[note.known_lang] || '') !== (note.title || ''))
+            .map(note => api.put(`/admin/${apiPrefix}/notes/${note.id}`, {
+              title: titlesByLang[note.known_lang] || '',
+            }));
+          if (titleUpdates.length > 0) await Promise.all(titleUpdates);
+        }
         showToast(true, 'Note updated');
       } else {
         await api.post(`/admin/${apiPrefix}/notes`, {
@@ -1123,7 +1232,16 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
           learning_lang: learningLang,
           markdown_source: combinedContent,
           title,
+          ...(sectionOnly ? { description: translatedTitle } : {}),
         });
+        if (sectionOnly) {
+          const titleUpdates = (translations || [])
+            .filter(note => (titlesByLang[note.known_lang] || '') !== (note.title || ''))
+            .map(note => api.put(`/admin/${apiPrefix}/notes/${note.id}`, {
+              title: titlesByLang[note.known_lang] || '',
+            }));
+          if (titleUpdates.length > 0) await Promise.all(titleUpdates);
+        }
         showToast(true, 'Note created');
       }
       onSaved();
@@ -1146,7 +1264,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   const previewBg = dm ? '#161b22' : '#f9f5f0';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', background: bg, borderRadius: 12, border: `1px solid ${border}` }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 5rem)', background: bg, borderRadius: 12, border: `1px solid ${border}`, overflow: 'hidden' }}>
 
       {/* ── Top bar ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.5rem', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0 }}>
@@ -1210,12 +1328,50 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       </div>
 
       {/* ── Meta fields ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: apiPrefix === 'grammar' ? '1fr 1fr' : '1fr 1fr 1fr', gap: '1rem', padding: '0.875rem 1.5rem', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0 }}>
-        <div>
-          <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Title *</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Perfect Nouns in French"
-            style={{ width: '100%', padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: inputBg, color: textPrimary }} />
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '1rem', padding: '0.875rem 1.5rem', borderBottom: `1px solid ${border}`, background: surface, flexShrink: 0 }}>
+        {apiPrefix === 'grammar' ? (
+          <div style={{ gridColumn: 'span 2' }}>
+            <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Titles by Explanation Language</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+              {KNOWN_LANGS.map(lang => {
+                const isCurrent = lang.code === knownLang;
+                const hasSavedTranslation = !!translations?.some(note => note.known_lang === lang.code);
+                const canEditTitle = isCurrent || hasSavedTranslation;
+                return (
+                  <div key={lang.code}>
+                    <label style={{ display: 'block', fontSize: 10, color: isCurrent ? '#60a5fa' : textMuted, marginBottom: 3, fontWeight: 700 }}>
+                      {lang.label}{isCurrent ? ' *' : ''}
+                    </label>
+                    <input
+                      value={titlesByLang[lang.code] || ''}
+                      disabled={!canEditTitle}
+                      onChange={e => setTitlesByLang(prev => ({ ...prev, [lang.code]: e.target.value }))}
+                      placeholder={canEditTitle ? `${lang.label} title` : 'Create translation first'}
+                      style={{ width: '100%', padding: '7px 10px', border: `1px solid ${isCurrent ? '#60a5fa' : inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: canEditTitle ? inputBg : (dm ? '#1c2128' : '#f8f9fa'), color: textPrimary, opacity: canEditTitle ? 1 : 0.65 }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Title *</label>
+            <input
+              value={title}
+              onChange={e => setTitlesByLang(prev => ({ ...prev, [knownLang]: e.target.value }))}
+              placeholder="e.g. Perfect Nouns in French"
+              style={{ width: '100%', padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: inputBg, color: textPrimary }}
+            />
+          </div>
+        )}
+        {apiPrefix === 'grammar' && (
+          <div>
+            <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subtitle</label>
+            <input value={translatedTitle} onChange={e => setTranslatedTitle(e.target.value)} placeholder="Shown below the title"
+              style={{ width: '100%', padding: '7px 10px', border: `1px solid ${inputBorder}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: inputBg, color: textPrimary }} />
+          </div>
+        )}
         {apiPrefix !== 'grammar' && (
           <div>
             <label style={{ display: 'block', fontSize: 11, color: textMuted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Concept ID *</label>
@@ -1249,7 +1405,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
         {tab === 'write' && (
           <div style={{ display: 'flex', gap: 6, marginLeft: 16, alignItems: 'center' }}>
             <button
-              onClick={() => { setEditingSectionIndex(null); setShowSectionModal(true); }}
+              onClick={() => { setEditingSectionId(null); setShowSectionModal(true); }}
               title="Add a new section with heading and Sl No"
               style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#ffa90a22', color: '#ffa90a', cursor: 'pointer', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
               📑 Add Section
@@ -1312,7 +1468,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       )}
 
       {/* ── Editor / Preview ── */}
-      <div style={{ overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 400, height: 'calc(100vh - 280px)' }}>
+      <div style={{ overflow: tab === 'write' ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 12, color: textMuted }}>
             <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
@@ -1428,7 +1584,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
             )}
 
             {/* ── Section cards ── */}
-            {[...editorSections].sort((a, b) => a.slNo - b.slNo).map((sec, secIdx) => (
+            {[...editorSections].sort((a, b) => a.slNo - b.slNo).map((sec) => (
               <div key={sec.id} style={{ marginTop: 16, border: `1px solid ${dm ? '#30363d' : '#e5e7eb'}`, borderRadius: 10, overflow: 'hidden', marginBottom: 16 }}>
                 {/* Section header bar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', background: dm ? '#1c2128' : '#ffa90a18' }}>
@@ -1438,7 +1594,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                   </span>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
-                      onClick={() => { setEditingSectionIndex(secIdx); setShowSectionModal(true); }}
+                      onClick={() => { setEditingSectionId(sec.id); setShowSectionModal(true); }}
                       title="Edit section heading"
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', fontSize: 14, padding: '2px 4px' }}>✏️</button>
                     <button
@@ -1449,27 +1605,21 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                   </div>
                 </div>
 
-                {/* Section textarea */}
-                <textarea
-                  value={sec.quillHtml}
-                  onChange={e => setEditorSections(prev => prev.map(s => s.id === sec.id ? { ...s, quillHtml: e.target.value } : s))}
-                  placeholder={`Write content for "${sec.heading}"…`}
-                  style={{
-                    width: '100%',
-                    minHeight: 120,
-                    padding: '12px 16px',
-                    border: 'none',
-                    borderTop: `1px solid ${dm ? '#30363d' : '#e5e7eb'}`,
-                    resize: 'vertical',
-                    fontFamily: 'inherit',
-                    fontSize: 14,
-                    background: dm ? '#0e1117' : '#ffffff',
-                    color: textPrimary,
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                    display: 'block',
-                  }}
-                />
+                {ReactQuill ? (
+                  <ReactQuill
+                    theme="snow"
+                    value={sec.quillHtml}
+                    onChange={(value: string) => setEditorSections(prev => prev.map(s =>
+                      s.id === sec.id ? { ...s, quillHtml: value } : s
+                    ))}
+                    modules={RICH_TEXT_MODULES}
+                    formats={QUILL_FORMATS}
+                    placeholder={`Write content for "${sec.heading}"…`}
+                    className="grammar-section-editor"
+                  />
+                ) : (
+                  <div style={{ padding: '2rem', color: textMuted }}>Loading editor…</div>
+                )}
 
                 {/* Section blocks */}
                 {sec.blocks.length > 0 && (
@@ -1538,7 +1688,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
             ))}
           </div>
         ) : (
-          <div style={{ flex: 1, overflowY: 'auto', background: previewBg }}>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: sectionOnly ? 'hidden' : 'auto', background: previewBg }}>
             {sectionOnly ? (
               previewLoading ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300, color: textMuted }}>
@@ -1552,7 +1702,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                   title="Compiled grammar note preview"
                   srcDoc={compiledPreviewHtml}
                   sandbox="allow-scripts allow-same-origin"
-                  style={{ display: 'block', width: '100%', height: '100%', minHeight: 500, border: 0, background: '#f9f5f0' }}
+                  style={{ display: 'block', flex: 1, width: '100%', height: '100%', minHeight: 0, border: 'none', background: '#f9f5f0' }}
                 />
               ) : (
                 <div style={{ textAlign: 'center', padding: '3rem', color: textMuted }}>Nothing to preview yet — write something first.</div>
@@ -1600,21 +1750,26 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       {showSectionModal && (
         <SectionModal
           onInsert={(sec) => {
-            if (editingSectionIndex !== null) {
+            if (editingSectionId !== null) {
               // Update existing section heading/slNo, preserve content
-              setEditorSections(prev => prev.map((s, i) => i === editingSectionIndex ? { ...s, slNo: sec.slNo, heading: sec.heading, id: sec.id } : s));
-              setEditingSectionIndex(null);
+              setEditorSections(prev => prev.map(s =>
+                s.id === editingSectionId ? { ...s, slNo: sec.slNo, heading: sec.heading } : s
+              ));
+              setEditingSectionId(null);
             } else {
               // Add new section with empty content
               setEditorSections(prev => [...prev, { ...sec, quillHtml: '', blocks: [] }]);
             }
           }}
-          onClose={() => { setShowSectionModal(false); setEditingSectionIndex(null); }}
+          onClose={() => { setShowSectionModal(false); setEditingSectionId(null); }}
           darkMode={darkMode}
-          initialData={editingSectionIndex !== null ? (() => {
-            const s = [...editorSections].sort((a, b) => a.slNo - b.slNo)[editingSectionIndex];
+          initialData={editingSectionId !== null ? (() => {
+            const s = editorSections.find(section => section.id === editingSectionId);
             return s ? { id: s.id, slNo: s.slNo, heading: s.heading } : undefined;
           })() : undefined}
+          usedSlNos={editorSections
+            .filter(section => section.id !== editingSectionId)
+            .map(section => section.slNo)}
         />
       )}
       {showBoxModal && (
@@ -1640,6 +1795,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
           }}
           onClose={() => { setShowBoxModal(false); setTargetSectionId(null); }}
           darkMode={darkMode}
+          RichTextEditor={ReactQuill}
         />
       )}
       {showTableModal && (
@@ -1693,6 +1849,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
           }}
           onClose={() => { setShowExtractModal(false); setEditingBlock(null); setTargetSectionId(null); }}
           darkMode={darkMode}
+          RichTextEditor={ReactQuill}
           initialData={editingBlock !== null
             ? editingBlock.sectionId === null
               ? preambleBlocks[editingBlock.index]?.extractData
