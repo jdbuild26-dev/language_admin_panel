@@ -117,13 +117,15 @@ function iconBtn(color: string): React.CSSProperties {
 // ─── Box Modal ───────────────────────────────────────────────────────────────
 // Inserts a styled callout/highlight box into the editor
 
-function BoxModal({ onInsert, onClose, darkMode, RichTextEditor }: {
-  onInsert: (html: string) => void;
+function BoxModal({ onInsert, onClose, darkMode, RichTextEditor, initialData }: {
+  onInsert: (html: string, boxData: BoxBlockData) => void;
   onClose: () => void;
   darkMode: boolean;
   RichTextEditor: RichTextEditorComponent | null;
+  initialData?: BoxBlockData;
 }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialData?.text ?? '');
+  const [variant, setVariant] = useState<BoxBlockData['variant']>(initialData?.variant ?? 'blue');
   const dm = darkMode;
   const bg = dm ? '#161b22' : '#ffffff';
   const border = dm ? '#30363d' : '#dee2e6';
@@ -133,10 +135,8 @@ function BoxModal({ onInsert, onClose, darkMode, RichTextEditor }: {
 
   const handleInsert = () => {
     if (!hasContent) return;
-    // Use <blockquote> — Quill preserves it natively and the grammar CSS template
-    // already styles blockquote with the orange left border + cream background.
-    const html = `<blockquote>${plainTextToHtml(text)}</blockquote><p><br></p>`;
-    onInsert(html);
+    const boxData: BoxBlockData = { text, variant };
+    onInsert(buildBoxBlockHtml(boxData), boxData);
     onClose();
   };
 
@@ -145,12 +145,28 @@ function BoxModal({ onInsert, onClose, darkMode, RichTextEditor }: {
       <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '1.5rem', width: 520, maxWidth: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div>
-            <h3 style={{ margin: 0, color: textPrimary, fontSize: 16 }}>📦 Insert Box</h3>
-            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>Creates a highlighted callout box (orange left border)</p>
+            <h3 style={{ margin: 0, color: textPrimary, fontSize: 16 }}>{initialData ? 'Edit Box' : 'Insert Box'}</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: textMuted }}>Creates a highlighted callout box</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: textMuted }}><X size={18} /></button>
-        </div>
-        {RichTextEditor ? (
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+            {(['blue', 'yellow'] as const).map(option => {
+              const selected = variant === option;
+              const color = option === 'blue' ? '#2563eb' : '#f59e0b';
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setVariant(option)}
+                  style={{ flex: 1, padding: '8px 12px', border: `2px solid ${selected ? color : border}`, borderRadius: 6, background: option === 'blue' ? '#eff6ff' : '#fff7cc', color: '#363639', cursor: 'pointer', fontWeight: selected ? 700 : 500 }}
+                >
+                  {option === 'blue' ? 'Blue Box' : 'Yellow Box'}
+                </button>
+              );
+            })}
+          </div>
+          {RichTextEditor ? (
           <RichTextEditor
             theme="snow"
             value={text}
@@ -167,7 +183,7 @@ function BoxModal({ onInsert, onClose, darkMode, RichTextEditor }: {
         {hasContent && (
           <div
             className="note-preview"
-            style={{ marginTop: 12, background: '#eff6ff', borderLeft: '4px solid #2563eb', borderRadius: 8, padding: '14px 18px', fontSize: 13 }}
+            style={{ marginTop: 12, background: variant === 'blue' ? '#eff6ff' : '#fff7cc', border: `1px solid ${variant === 'blue' ? '#bfdbfe' : '#fbbf24'}`, borderLeft: `4px solid ${variant === 'blue' ? '#2563eb' : '#f59e0b'}`, borderRadius: 8, padding: '14px 18px', fontSize: 13 }}
             dangerouslySetInnerHTML={{ __html: text }}
           />
         )}
@@ -175,7 +191,7 @@ function BoxModal({ onInsert, onClose, darkMode, RichTextEditor }: {
           <button onClick={onClose} style={{ padding: '7px 16px', border: `1px solid ${border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', fontSize: 13, color: textMuted }}>Cancel</button>
           <button onClick={handleInsert} disabled={!hasContent}
             style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#ffa90a', color: '#fff', cursor: hasContent ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, opacity: hasContent ? 1 : 0.5 }}>
-            Insert Box
+            {initialData ? 'Update Box' : 'Insert Box'}
           </button>
         </div>
       </div>
@@ -659,6 +675,26 @@ interface ExtractBlockData {
   imagePosition: 'right' | 'left';
 }
 
+interface BoxBlockData {
+  text: string;
+  variant: 'blue' | 'yellow';
+}
+
+function buildBoxBlockHtml(boxData: BoxBlockData): string {
+  const normalizedData: BoxBlockData = {
+    text: boxData.text || '',
+    variant: boxData.variant === 'yellow' ? 'yellow' : 'blue',
+  };
+  const isYellow = normalizedData.variant === 'yellow';
+  const metaJson = JSON.stringify({ type: 'box', data: normalizedData });
+  const metaTag = `<div data-block-meta="1" style="display:none;">${escapeHtml(metaJson)}</div>`;
+  const background = isYellow ? '#fff7cc' : '#eff6ff';
+  const border = isYellow ? '#fbbf24' : '#bfdbfe';
+  const accent = isYellow ? '#f59e0b' : '#2563eb';
+
+  return `<div data-callout-box="1" data-callout-variant="${normalizedData.variant}" style="background:${background};border:1px solid ${border};border-left:4px solid ${accent};border-radius:0 10px 10px 0;padding:16px 20px;margin:16px 0;color:#363639;overflow-wrap:anywhere;">${metaTag}${plainTextToHtml(normalizedData.text)}</div><p><br></p>`;
+}
+
 function buildExtractBlockHtml(extractData: ExtractBlockData): string {
   const normalizedData: ExtractBlockData = {
     text: extractData.text || '',
@@ -684,8 +720,9 @@ function buildExtractBlockHtml(extractData: ExtractBlockData): string {
 
 interface AppendedBlock {
   id: string;
-  type: 'table' | 'extract';
+  type: 'box' | 'table' | 'extract';
   html: string;             // full rendered HTML saved to DB (includes embedded <script> tag)
+  boxData?: BoxBlockData;
   tableData?: TableBlockData;
   extractData?: ExtractBlockData;
 }
@@ -933,14 +970,16 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
   // metadata survives editing and the existing HTML save format stays intact.
   const appendBlockToTargetSection = useCallback((
     html: string,
-    blockType: 'table' | 'extract',
+    blockType: 'box' | 'table' | 'extract',
     tableData?: TableBlockData,
     extractData?: ExtractBlockData,
+    boxData?: BoxBlockData,
   ) => {
     const newBlock: AppendedBlock = {
       id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type: blockType,
       html,
+      boxData,
       tableData,
       extractData,
     };
@@ -1028,13 +1067,21 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
               }
               if (node.nodeType !== Node.ELEMENT_NODE) return;
               const el = node as Element;
-              const tag = el.tagName.toLowerCase();
-              const isVocabTable = tag === 'div' && el.getAttribute('data-vocab-table') === '1';
-              const isExtract = tag === 'div' && el.getAttribute('data-extract') === '1';
-              if (isVocabTable || isExtract) {
-                const meta = extractBlockMeta(el);
-                const blockId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${blocks.length}`;
-                if (meta?.type === 'table') {
+               const tag = el.tagName.toLowerCase();
+               const isBox = tag === 'div' && el.getAttribute('data-callout-box') === '1';
+               const isVocabTable = tag === 'div' && el.getAttribute('data-vocab-table') === '1';
+               const isExtract = tag === 'div' && el.getAttribute('data-extract') === '1';
+               if (isBox || isVocabTable || isExtract) {
+                 const meta = extractBlockMeta(el);
+                 const blockId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${blocks.length}`;
+                 if (meta?.type === 'box') {
+                   blocks.push({
+                     id: blockId,
+                     type: 'box',
+                     html: buildBoxBlockHtml(meta.data),
+                     boxData: meta.data,
+                   });
+                 } else if (meta?.type === 'table') {
                   blocks.push({ id: blockId, type: 'table', html: el.outerHTML, tableData: meta.data });
                 } else if (meta?.type === 'extract') {
                   blocks.push({
@@ -1043,9 +1090,9 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                     html: buildExtractBlockHtml(meta.data),
                     extractData: meta.data,
                   });
-                } else {
-                  blocks.push({ id: blockId, type: isVocabTable ? 'table' : 'extract', html: el.outerHTML });
-                }
+                 } else {
+                   blocks.push({ id: blockId, type: isBox ? 'box' : isVocabTable ? 'table' : 'extract', html: el.outerHTML });
+                 }
               } else {
                 quillHtml += el.outerHTML;
               }
@@ -1422,7 +1469,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
               <>
                 <span style={{ color: border, fontSize: 14 }}>|</span>
                 <button
-                  onClick={() => { setTargetSectionId(null); setShowBoxModal(true); }}
+                  onClick={() => { setTargetSectionId(null); setEditingBlock(null); setShowBoxModal(true); }}
                   title="Insert a highlighted callout box"
                   style={{ padding: '4px 12px', border: `1px solid ${border}`, borderRadius: 5, background: '#fff8e622', color: '#ffa90a', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
                   📦 Box
@@ -1552,9 +1599,17 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                       <div key={block.id} style={{ marginBottom: 10, borderRadius: 8, border: `1px solid ${border}`, overflow: 'hidden' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: dm ? '#1c2128' : '#f0f0f0', borderBottom: `1px solid ${border}` }}>
                           <span style={{ fontSize: 11, color: textMuted, fontWeight: 600 }}>
-                            {block.type === 'table' ? '📋 Vocabulary Table' : '🖼 Extract'} #{idx + 1}
+                            {block.type === 'box' ? `${block.boxData?.variant === 'yellow' ? 'Yellow' : 'Blue'} Box` : block.type === 'table' ? 'Vocabulary Table' : 'Extract'} #{idx + 1}
                           </span>
                           <div style={{ display: 'flex', gap: 6 }}>
+                            {block.type === 'box' && block.boxData && (
+                              <button
+                                onClick={() => { setEditingBlock({ sectionId: null, index: idx }); setTargetSectionId(null); setShowBoxModal(true); }}
+                                title="Edit this box"
+                                style={{ fontSize: 11, color: '#b45309', background: '#f59e0b18', border: '1px solid #f59e0b44', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
+                                Edit
+                              </button>
+                            )}
                             {block.type === 'table' && block.tableData && (
                               <button
                                 onClick={() => { setEditingBlock({ sectionId: null, index: idx }); setTargetSectionId(null); setShowTableModal(true); }}
@@ -1636,9 +1691,17 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                       <div key={block.id} style={{ marginBottom: 8, borderRadius: 8, border: `1px solid ${border}`, overflow: 'hidden' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: dm ? '#161b22' : '#f0f0f0', borderBottom: `1px solid ${border}` }}>
                           <span style={{ fontSize: 11, color: textMuted, fontWeight: 600 }}>
-                            {block.type === 'table' ? '📋 Vocabulary Table' : '🖼 Extract'} #{bIdx + 1}
+                            {block.type === 'box' ? `${block.boxData?.variant === 'yellow' ? 'Yellow' : 'Blue'} Box` : block.type === 'table' ? 'Vocabulary Table' : 'Extract'} #{bIdx + 1}
                           </span>
                           <div style={{ display: 'flex', gap: 6 }}>
+                            {block.type === 'box' && block.boxData && (
+                              <button
+                                onClick={() => { setEditingBlock({ sectionId: sec.id, index: bIdx }); setTargetSectionId(sec.id); setShowBoxModal(true); }}
+                                title="Edit this box"
+                                style={{ fontSize: 11, color: '#b45309', background: '#f59e0b18', border: '1px solid #f59e0b44', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontWeight: 600 }}>
+                                Edit
+                              </button>
+                            )}
                             {block.type === 'table' && block.tableData && (
                               <button
                                 onClick={() => { setEditingBlock({ sectionId: sec.id, index: bIdx }); setTargetSectionId(sec.id); setShowTableModal(true); }}
@@ -1677,7 +1740,7 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
                 <div style={{ display: 'flex', gap: 6, padding: '8px 14px', borderTop: `1px solid ${dm ? '#30363d' : '#e5e7eb'}`, background: dm ? '#161b22' : '#fafafa' }}>
                   <span style={{ fontSize: 11, color: textMuted, alignSelf: 'center', marginRight: 4 }}>Add to this Section:</span>
                   <button
-                    onClick={() => { setTargetSectionId(sec.id); setShowBoxModal(true); }}
+                    onClick={() => { setTargetSectionId(sec.id); setEditingBlock(null); setShowBoxModal(true); }}
                     style={{ padding: '3px 10px', border: `1px solid ${border}`, borderRadius: 5, background: '#fff8e622', color: '#ffa90a', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
                     📦 Box
                   </button>
@@ -1782,28 +1845,32 @@ function NoteEditorView({ subtopicId, subtopicName, learningLang, existingNote, 
       )}
       {showBoxModal && (
         <BoxModal
-          onInsert={(html) => {
-            if (targetSectionId) {
-              setEditorSections(prev => prev.map(s =>
-                s.id === targetSectionId
-                  ? { ...s, quillHtml: s.quillHtml + html }
-                  : s
-              ));
-            } else if (!sectionOnly) {
-              const quill = quillRef?.getEditor ? quillRef.getEditor() : quillRef;
-              if (quill) {
-                const range = quill.getSelection(true);
-                const index = range ? range.index : quill.getLength();
-                quill.clipboard.dangerouslyPasteHTML(index, html);
-                quill.setSelection(index + 1, 0);
+          onInsert={(html, boxData) => {
+            if (editingBlock !== null) {
+              if (editingBlock.sectionId === null) {
+                setPreambleBlocks(prev => prev.map((block, index) =>
+                  index === editingBlock.index ? { ...block, html, boxData } : block
+                ));
               } else {
-                setHtmlContent(prev => prev + html);
+                setEditorSections(prev => prev.map(s =>
+                  s.id === editingBlock.sectionId
+                    ? { ...s, blocks: s.blocks.map((block, index) => index === editingBlock.index ? { ...block, html, boxData } : block) }
+                    : s
+                ));
               }
+              setEditingBlock(null);
+            } else {
+              appendBlockToTargetSection(html, 'box', undefined, undefined, boxData);
             }
           }}
-          onClose={() => { setShowBoxModal(false); setTargetSectionId(null); }}
+          onClose={() => { setShowBoxModal(false); setEditingBlock(null); setTargetSectionId(null); }}
           darkMode={darkMode}
           RichTextEditor={ReactQuill}
+          initialData={editingBlock !== null
+            ? editingBlock.sectionId === null
+              ? preambleBlocks[editingBlock.index]?.boxData
+              : editorSections.find(section => section.id === editingBlock.sectionId)?.blocks[editingBlock.index]?.boxData
+            : undefined}
         />
       )}
       {showTableModal && (
