@@ -274,6 +274,7 @@ function BoxModal({
   const textPrimary = dm ? "#c9d1d9" : "#1a1a1a";
   const textMuted = dm ? "#8b949e" : "#666";
   const hasContent = hasMeaningfulHtml(text);
+  const previewPalette = getBoxPalette(variant);
 
   const handleInsert = () => {
     if (!hasContent) return;
@@ -336,7 +337,7 @@ function BoxModal({
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           {(["blue", "yellow"] as const).map((option) => {
             const selected = variant === option;
-            const color = option === "blue" ? "#2563eb" : "#f59e0b";
+            const palette = getBoxPalette(option);
             return (
               <button
                 key={option}
@@ -345,9 +346,9 @@ function BoxModal({
                 style={{
                   flex: 1,
                   padding: "8px 12px",
-                  border: `2px solid ${selected ? color : border}`,
-                  borderRadius: 6,
-                  background: option === "blue" ? "#eff6ff" : "#fff7cc",
+                  border: `2px solid ${selected ? palette.accent : border}`,
+                  borderRadius: 8,
+                  background: palette.background,
                   color: "#363639",
                   cursor: "pointer",
                   fontWeight: selected ? 700 : 500,
@@ -379,12 +380,14 @@ function BoxModal({
             className="note-preview"
             style={{
               marginTop: 12,
-              background: variant === "blue" ? "#eff6ff" : "#fff7cc",
-              border: `20px solid ${variant === "blue" ? "#bfdbfe" : "#fbbf24"}`,
-              borderLeft: `4px solid ${variant === "blue" ? "#2563eb" : "#f59e0b"}`,
-              borderRadius: 8,
+              background: previewPalette.background,
+              border: `1px solid ${previewPalette.border}`,
+              borderLeft: `4px solid ${previewPalette.accent}`,
+              borderRadius: 14,
               padding: "14px 18px",
               fontSize: 13,
+              lineHeight: 1.65,
+              boxShadow: "0 2px 8px rgba(15,23,42,0.04)",
             }}
             dangerouslySetInnerHTML={{ __html: text }}
           />
@@ -1730,19 +1733,22 @@ interface BoxBlockData {
   variant: "blue" | "yellow";
 }
 
+function getBoxPalette(variant: BoxBlockData["variant"]) {
+  return variant === "yellow"
+    ? { background: "#fff8d9", border: "#f6c453", accent: "#f59e0b" }
+    : { background: "#eaf4ff", border: "#b8d8ff", accent: "#2563eb" };
+}
+
 function buildBoxBlockHtml(boxData: BoxBlockData): string {
   const normalizedData: BoxBlockData = {
     text: boxData.text || "",
     variant: boxData.variant === "yellow" ? "yellow" : "blue",
   };
-  const isYellow = normalizedData.variant === "yellow";
   const metaJson = JSON.stringify({ type: "box", data: normalizedData });
   const metaTag = `<div data-block-meta="1" style="display:none;">${escapeHtml(metaJson)}</div>`;
-  const background = isYellow ? "#fff7cc" : "#eff6ff";
-  const border = isYellow ? "#fbbf24" : "#bfdbfe";
-  const accent = isYellow ? "#f59e0b" : "#2563eb";
+  const { background, border, accent } = getBoxPalette(normalizedData.variant);
 
-  return `<div data-callout-box="1" data-callout-variant="${normalizedData.variant}" style="background:${background};border:1px solid ${border};border-left:4px solid ${accent};border-radius:0 10px 10px 0;padding:16px 20px;margin:16px 0;color:#363639;overflow-wrap:anywhere;">${metaTag}${plainTextToHtml(normalizedData.text)}</div><p><br></p>`;
+  return `<div data-callout-box="1" data-callout-variant="${normalizedData.variant}" style="background:${background};border:1px solid ${border};border-left:4px solid ${accent};border-radius:14px;padding:16px 20px;margin:16px 0;color:#363639;overflow-wrap:anywhere;line-height:1.65;box-shadow:0 2px 8px rgba(15,23,42,0.04);">${metaTag}${plainTextToHtml(normalizedData.text)}</div><p><br></p>`;
 }
 
 function buildExtractBlockHtml(extractData: ExtractBlockData): string {
