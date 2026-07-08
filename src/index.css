@@ -595,6 +595,15 @@ h2 {
 
 .note-preview [data-vocab-table="1"] {
   max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+.note-preview [data-vocab-table="1"] table {
+  display: table;
+  overflow: visible;
+  max-width: none;
 }
 
 @media (max-width: 960px) {

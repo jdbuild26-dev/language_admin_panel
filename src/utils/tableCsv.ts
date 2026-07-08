@@ -15,7 +15,6 @@ export interface TableBlockData {
 }
 
 export const TABLE_CARD_RADIUS = 18;
-export const TABLE_ARROW_CELL_WIDTH = 56;
 export const TABLE_CELL_MIN_WIDTH = 220;
 export const TABLE_ICON_SIZE = 17;
 export const TABLE_HEADER_CELL_PADDING = '24px 30px';
@@ -33,7 +32,6 @@ export const TABLE_ROW_BG = '#ffffff';
 export const TABLE_CELL_TEXT = '#24324a';
 export const TABLE_TOOLTIP_TEXT = '#1f5fbf';
 export const TABLE_ACCENT = '#f59e0b';
-export const TABLE_ARROW_TEXT = '#d8b06e';
 export const TABLE_AUDIO_COLOR = '#e3abc6';
 export const TABLE_SHADOW = '0 12px 30px rgba(61, 40, 23, 0.07)';
 
@@ -264,6 +262,23 @@ function buildAudioButtonHtml(onClick: string, title: string): string {
   return `<button onclick="${onClick}" style="background:none;border:none;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:${TABLE_AUDIO_GAP}px;color:${TABLE_AUDIO_COLOR};line-height:1;flex-shrink:0;" title="${title}" aria-label="${title}">${buildSpeakerIconHtml()}</button>`;
 }
 
+function detectSpeechLang(header: string): string {
+  const normalized = normalizeToken(header);
+  if (/\benglish\b|\ben\b/.test(normalized)) return 'en-US';
+  if (/\bfrench\b|\bfrancais\b|\bfrançais\b|\bfr\b/.test(normalized)) return 'fr-FR';
+  if (/\bgerman\b|\bdeutsch\b|\bde\b/.test(normalized)) return 'de-DE';
+  if (/\bspanish\b|\bespanol\b|\bespañol\b|\bes\b/.test(normalized)) return 'es-ES';
+  if (/\bitalian\b|\bitaliano\b|\bit\b/.test(normalized)) return 'it-IT';
+  if (/\bportuguese\b|\bportugues\b|\bportuguês\b|\bpt\b/.test(normalized)) return 'pt-PT';
+  return 'fr-FR';
+}
+
+function buildTtsClickHandler(text: string, lang: string): string {
+  const jsSafeText = escapeJsString(text);
+  const jsSafeLang = escapeJsString(lang);
+  return `(function(b){var t='${jsSafeText}';if(!t)return;var lang='${jsSafeLang}';var s=window.speechSynthesis;if(!s)return;s.cancel();var speak=function(){var u=new SpeechSynthesisUtterance(t);u.lang=lang;var voices=s.getVoices?s.getVoices():[];var base=lang.split('-')[0].toLowerCase();var maleNames=['david','george','mark','richard','ryan','guy','henri','claude','paul','thomas','guillaume','stefan','klaus','conrad','pablo','jorge','diego','carlos','raul','luciano','cosimo','giorgio','daniel','duarte'];var femaleNames=['zira','susan','hazel','aria','jenny','hortense','julie','denise','helena','sabina','elvira','elsa','maria','helia','lucia'];var matches=voices.filter(function(v){var vl=(v.lang||'').toLowerCase();return vl===lang.toLowerCase()||vl.indexOf(base)===0;});var byName=function(names){return matches.find(function(v){var n=(v.name||'').toLowerCase();return names.some(function(name){return n.indexOf(name)!==-1;});});};var male=byName(maleNames);var nonFemale=matches.find(function(v){var n=(v.name||'').toLowerCase();return !femaleNames.some(function(name){return n.indexOf(name)!==-1;});});u.voice=male||nonFemale||matches[0]||null;s.speak(u);b.style.transform='scale(0.94)';setTimeout(function(){b.style.transform='scale(1)'},180);};if(s.getVoices&&s.getVoices().length===0){s.onvoiceschanged=function(){s.onvoiceschanged=null;speak();};setTimeout(speak,250);}else{speak();}})(this)`;
+}
+
 export function buildTableBlockHtml(tableData: TableBlockData): string {
   const validRows = tableData.rows.filter(row => row.cells.some(cell => cell.text.trim() || cell.tooltip.trim() || cell.audioUrl.trim() || cell.tts));
   const normalizedTableData: TableBlockData = {
@@ -272,11 +287,14 @@ export function buildTableBlockHtml(tableData: TableBlockData): string {
   };
   const metaJson = JSON.stringify({ type: 'table', data: normalizedTableData });
   const metaTag = `<div data-block-meta="1" style="display:none;">${escapeHtml(metaJson)}</div>`;
+  const tableMinWidth = Math.max(
+    normalizedTableData.headers.length * TABLE_CELL_MIN_WIDTH,
+    TABLE_CELL_MIN_WIDTH
+  );
 
   const thCells = normalizedTableData.headers.map((header, index) => {
     const isLast = index === normalizedTableData.headers.length - 1;
-    return `<th style="padding:${TABLE_HEADER_CELL_PADDING};text-align:center;font-weight:700;font-size:${TABLE_HEADER_FONT_SIZE};text-transform:uppercase;letter-spacing:${TABLE_HEADER_LETTER_SPACING};line-height:1.2;color:${TABLE_HEADER_TEXT};border-right:1px solid rgba(255,255,255,0.35);">${escapeHtml(header)}</th>`
-      + (isLast ? '' : `<th style="padding:0;width:${TABLE_ARROW_CELL_WIDTH}px;border-right:1px solid rgba(255,255,255,0.35);"></th>`);
+    return `<th style="padding:${TABLE_HEADER_CELL_PADDING};text-align:center;font-weight:700;font-size:${TABLE_HEADER_FONT_SIZE};text-transform:uppercase;letter-spacing:${TABLE_HEADER_LETTER_SPACING};line-height:1.2;color:${TABLE_HEADER_TEXT};${isLast ? '' : 'border-right:1px solid rgba(255,255,255,0.35);'}">${escapeHtml(header)}</th>`;
   }).join('');
 
   const bodyRows = validRows.map((row, rowIndex) => {
@@ -285,10 +303,10 @@ export function buildTableBlockHtml(tableData: TableBlockData): string {
       const isLast = colIndex === normalizedTableData.headers.length - 1;
       const safeText = escapeHtml(cell.text.trim());
       const safeTooltip = escapeHtml(cell.tooltip.trim());
-      const jsSafeText = escapeJsString(cell.text.trim());
       const jsSafeAudioUrl = escapeJsString(cell.audioUrl.trim());
+      const speechLang = detectSpeechLang(normalizedTableData.headers[colIndex] || '');
       const audioBtn = cell.tts && cell.text.trim()
-        ? buildAudioButtonHtml(`(function(b){var t='${jsSafeText}';if(!t)return;var s=window.speechSynthesis;s.cancel();var u=new SpeechSynthesisUtterance(t);u.lang='fr-FR';var v=s.getVoices();var fv=v.find(function(x){return x.lang==='fr-FR'})||v.find(function(x){return x.lang==='fr-CA'})||v.find(function(x){return x.lang.startsWith('fr')});if(fv)u.voice=fv;s.speak(u);b.style.transform='scale(0.94)';setTimeout(function(){b.style.transform='scale(1)'},180)})(this)`, 'Play TTS')
+        ? buildAudioButtonHtml(buildTtsClickHandler(cell.text.trim(), speechLang), 'Play TTS')
         : cell.audioUrl.trim()
           ? buildAudioButtonHtml(`(function(b){var a=new Audio('${jsSafeAudioUrl}');a.currentTime=0;a.play();b.style.transform='scale(0.94)';setTimeout(function(){b.style.transform='scale(1)'},180)})(this)`, 'Play audio')
           : '';
@@ -297,12 +315,11 @@ export function buildTableBlockHtml(tableData: TableBlockData): string {
         ? `<span style="position:relative;display:inline-block;cursor:pointer;color:${TABLE_TOOLTIP_TEXT};font-weight:500;line-height:${TABLE_BODY_LINE_HEIGHT};border-bottom:1px dashed ${TABLE_ACCENT};" onmouseenter="var t=this.querySelector('.vtt');if(t)t.style.opacity='1';" onmouseleave="var t=this.querySelector('.vtt');if(t)t.style.opacity='0';">${safeText}<span class="vtt" style="opacity:0;transition:opacity 0.15s;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;white-space:nowrap;pointer-events:none;font-weight:400;z-index:10;box-shadow:0 8px 20px rgba(0,0,0,0.16);">${safeTooltip}</span></span>`
         : `<span style="font-weight:500;color:${TABLE_CELL_TEXT};line-height:${TABLE_BODY_LINE_HEIGHT};">${safeText}</span>`;
 
-      return `<td style="padding:${TABLE_BODY_CELL_PADDING};text-align:center;vertical-align:middle;background:${cellBg};border-bottom:1px solid ${TABLE_SURFACE_BORDER};border-right:1px solid ${TABLE_SURFACE_BORDER};min-width:${TABLE_CELL_MIN_WIDTH}px;font-size:${TABLE_BODY_FONT_SIZE};line-height:${TABLE_BODY_LINE_HEIGHT};"><div style="display:inline-flex;align-items:center;justify-content:center;max-width:100%;white-space:normal;overflow-wrap:anywhere;">${inner}${audioBtn}</div></td>`
-        + (isLast ? '' : `<td style="padding:0;width:${TABLE_ARROW_CELL_WIDTH}px;text-align:center;vertical-align:middle;background:${cellBg};border-bottom:1px solid ${TABLE_SURFACE_BORDER};border-right:1px solid ${TABLE_SURFACE_BORDER};color:${TABLE_ARROW_TEXT};font-size:30px;font-weight:300;line-height:1;">&rarr;</td>`);
+      return `<td style="padding:${TABLE_BODY_CELL_PADDING};text-align:center;vertical-align:middle;background:${cellBg};border-bottom:1px solid ${TABLE_SURFACE_BORDER};${isLast ? '' : `border-right:1px solid ${TABLE_SURFACE_BORDER};`}min-width:${TABLE_CELL_MIN_WIDTH}px;font-size:${TABLE_BODY_FONT_SIZE};line-height:${TABLE_BODY_LINE_HEIGHT};"><div style="display:inline-flex;align-items:center;justify-content:center;max-width:100%;white-space:normal;overflow-wrap:anywhere;">${inner}${audioBtn}</div></td>`;
     }).join('');
 
     return `<tr>${renderedCells}</tr>`;
   }).join('\n');
 
-  return `<div data-vocab-table="1" style="overflow-x:auto;overflow-y:visible;margin:32px 0;-webkit-overflow-scrolling:touch;"><div style="border-radius:${TABLE_CARD_RADIUS}px;box-shadow:${TABLE_SHADOW};border:1px solid ${TABLE_SURFACE_BORDER};background:#ffffff;overflow:hidden;"><table style="width:100%;min-width:100%;border-collapse:collapse;font-family:'DM Sans',sans-serif;font-size:${TABLE_BODY_FONT_SIZE};background:#ffffff;"><thead style="background:${TABLE_HEADER_BG};"><tr>${thCells}</tr></thead><tbody>${bodyRows}</tbody></table>${metaTag}</div></div><p><br></p>`;
+  return `<div data-vocab-table="1" style="overflow-x:auto;overflow-y:visible;margin:32px 0;-webkit-overflow-scrolling:touch;"><div style="min-width:${tableMinWidth}px;border-radius:${TABLE_CARD_RADIUS}px;box-shadow:${TABLE_SHADOW};border:1px solid ${TABLE_SURFACE_BORDER};background:#ffffff;overflow:hidden;"><table style="width:100%;min-width:${tableMinWidth}px;border-collapse:collapse;font-family:'DM Sans',sans-serif;font-size:${TABLE_BODY_FONT_SIZE};background:#ffffff;"><thead style="background:${TABLE_HEADER_BG};"><tr>${thCells}</tr></thead><tbody>${bodyRows}</tbody></table>${metaTag}</div></div><p><br></p>`;
 }

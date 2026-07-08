@@ -1,8 +1,5 @@
-import React from 'react';
 import {
   TABLE_AUDIO_GAP,
-  TABLE_ARROW_CELL_WIDTH,
-  TABLE_ARROW_TEXT,
   TABLE_AUDIO_COLOR,
   TABLE_CARD_RADIUS,
   TABLE_BODY_CELL_PADDING,
@@ -46,6 +43,7 @@ function SpeakerIcon() {
 
 export default function TableBlockPreview({ tableData }: { tableData: TableBlockData }) {
   const visibleRows = tableData.rows.filter(row => row.cells.some(cell => cell.text.trim() || cell.tooltip.trim() || cell.audioUrl.trim() || cell.tts));
+  const tableMinWidth = Math.max(tableData.headers.length * TABLE_CELL_MIN_WIDTH, TABLE_CELL_MIN_WIDTH);
 
   return (
     <div
@@ -62,14 +60,15 @@ export default function TableBlockPreview({ tableData }: { tableData: TableBlock
           boxShadow: TABLE_SHADOW,
           background: '#fff',
           overflow: 'hidden',
+          minWidth: tableMinWidth,
         }}
       >
-      <table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', fontSize: TABLE_BODY_FONT_SIZE }}>
+      <table style={{ width: '100%', minWidth: tableMinWidth, borderCollapse: 'collapse', fontSize: TABLE_BODY_FONT_SIZE }}>
         <thead>
           <tr style={{ background: TABLE_HEADER_BG, position: 'sticky', top: 0 }}>
             {tableData.headers.map((header, index) => (
-              <React.Fragment key={`${header}-${index}`}>
                 <th
+                  key={`${header}-${index}`}
                   style={{
                     padding: TABLE_HEADER_CELL_PADDING,
                     textAlign: 'center',
@@ -80,13 +79,11 @@ export default function TableBlockPreview({ tableData }: { tableData: TableBlock
                     lineHeight: 1.2,
                     color: TABLE_HEADER_TEXT,
                     whiteSpace: 'nowrap',
-                    borderRight: '1px solid rgba(255,255,255,0.35)',
+                    borderRight: index < tableData.headers.length - 1 ? '1px solid rgba(255,255,255,0.35)' : 'none',
                   }}
                 >
                   {header}
                 </th>
-                {index < tableData.headers.length - 1 && <th style={{ width: TABLE_ARROW_CELL_WIDTH, padding: 0, borderRight: '1px solid rgba(255,255,255,0.35)' }} />}
-              </React.Fragment>
             ))}
           </tr>
         </thead>
@@ -94,13 +91,13 @@ export default function TableBlockPreview({ tableData }: { tableData: TableBlock
           {visibleRows.map((row, rowIndex) => (
             <tr key={`row-${rowIndex}`} style={{ background: rowIndex % 2 === 0 ? TABLE_ROW_ALT_BG : TABLE_ROW_BG }}>
               {row.cells.map((cell, cellIndex) => (
-                <React.Fragment key={`cell-${rowIndex}-${cellIndex}`}>
                   <td
+                    key={`cell-${rowIndex}-${cellIndex}`}
                     style={{
                       padding: TABLE_BODY_CELL_PADDING,
                       textAlign: 'center',
                       borderBottom: `1px solid ${TABLE_SURFACE_BORDER}`,
-                      borderRight: `1px solid ${TABLE_SURFACE_BORDER}`,
+                      borderRight: cellIndex < tableData.headers.length - 1 ? `1px solid ${TABLE_SURFACE_BORDER}` : 'none',
                       verticalAlign: 'middle',
                       minWidth: TABLE_CELL_MIN_WIDTH,
                       fontSize: TABLE_BODY_FONT_SIZE,
@@ -127,23 +124,6 @@ export default function TableBlockPreview({ tableData }: { tableData: TableBlock
                       ) : null}
                     </div>
                   </td>
-                  {cellIndex < tableData.headers.length - 1 && (
-                    <td
-                      style={{
-                        width: TABLE_ARROW_CELL_WIDTH,
-                        textAlign: 'center',
-                        color: TABLE_ARROW_TEXT,
-                        fontSize: 30,
-                        fontWeight: 300,
-                        lineHeight: 1,
-                        borderBottom: `1px solid ${TABLE_SURFACE_BORDER}`,
-                        borderRight: `1px solid ${TABLE_SURFACE_BORDER}`,
-                      }}
-                    >
-                      &rarr;
-                    </td>
-                  )}
-                </React.Fragment>
               ))}
             </tr>
           ))}
