@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useContext,
   createContext,
+  useRef,
 } from "react";
 import {
   ChevronLeft,
@@ -26,7 +27,6 @@ import api from "../services/api";
 import "react-quill-new/dist/quill.snow.css";
 import "quill-better-table/dist/quill-better-table.css";
 import StoryEditor from "./StoryEditor";
-import TableBlockPreview from "./TableBlockPreview";
 import {
   buildTableBlockHtml,
   parseTableCsvToBlockData,
@@ -274,7 +274,6 @@ function BoxModal({
   const textPrimary = dm ? "#c9d1d9" : "#1a1a1a";
   const textMuted = dm ? "#8b949e" : "#666";
   const hasContent = hasMeaningfulHtml(text);
-  const previewPalette = getBoxPalette(variant);
 
   const handleInsert = () => {
     if (!hasContent) return;
@@ -374,24 +373,6 @@ function BoxModal({
             Loading editor…
           </div>
         )}
-        {/* Preview */}
-        {hasContent && (
-          <div
-            className="note-preview"
-            style={{
-              marginTop: 12,
-              background: previewPalette.background,
-              border: `1px solid ${previewPalette.border}`,
-              borderLeft: `4px solid ${previewPalette.accent}`,
-              borderRadius: 14,
-              padding: "14px 18px",
-              fontSize: 13,
-              lineHeight: 1.65,
-              boxShadow: "0 2px 8px rgba(15,23,42,0.04)",
-            }}
-            dangerouslySetInnerHTML={{ __html: text }}
-          />
-        )}
         <div
           style={{
             display: "flex",
@@ -438,7 +419,7 @@ function BoxModal({
 }
 
 // ─── Vocab Table Modal ────────────────────────────────────────────────────────
-// Customizable columns, hover-translate tooltips, audio per cell, arrow separators
+// Customizable columns, hover-translate tooltips, and audio per cell.
 
 function VocabTableModal({
   onInsert,
@@ -603,8 +584,7 @@ function VocabTableModal({
               📋 Insert Vocabulary Table
             </h3>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: textMuted }}>
-              Customizable columns · hover tooltip · TTS per cell · arrow
-              separators
+              Customizable columns · hover tooltip · TTS per cell
             </p>
           </div>
           <button
@@ -657,13 +637,6 @@ function VocabTableModal({
                 key={ci}
                 style={{ display: "flex", alignItems: "center", gap: 4 }}
               >
-                {ci > 0 && (
-                  <span
-                    style={{ color: "#ffa90a", fontSize: 16, marginRight: 4 }}
-                  >
-                    →
-                  </span>
-                )}
                 <input
                   value={h}
                   onChange={(e) => updateHeader(ci, e.target.value)}
@@ -766,22 +739,29 @@ function VocabTableModal({
         <div
           style={{
             overflowY: "auto",
+            overflowX: "auto",
             flex: 1,
             display: "flex",
             flexDirection: "column",
             gap: 6,
+            WebkitOverflowScrolling: "touch",
           }}
         >
           {rows.map((row, ri) => (
             <div
               key={ri}
-              style={{ display: "flex", gap: 6, alignItems: "flex-end" }}
+              style={{
+                display: "flex",
+                gap: 6,
+                alignItems: "flex-end",
+                minWidth: Math.max(numCols * 540, 540),
+              }}
             >
               {row.cells.map((cell, ci) => (
                 <div
                   key={ci}
                   style={{
-                    flex: 1,
+                    flex: "0 0 534px",
                     display: "grid",
                     gridTemplateColumns: "2fr 2fr 2fr 90px",
                     gap: 4,
@@ -1006,7 +986,7 @@ function VocabTableModal({
           ))}
         </div>
 
-        {/* Add row + preview */}
+        {/* Add row */}
         <div style={{ flexShrink: 0, marginTop: 10 }}>
           <button
             onClick={addRow}
@@ -1025,33 +1005,6 @@ function VocabTableModal({
           >
             <Plus size={14} /> Add Row
           </button>
-
-          {hasContent && (
-            <div
-              style={{
-                marginTop: 10,
-                background: surface,
-                borderRadius: 8,
-                padding: "10px 14px",
-                border: `1px solid ${border}`,
-                overflowX: "auto",
-              }}
-            >
-              <p
-                style={{
-                  fontSize: 11,
-                  color: textMuted,
-                  margin: "0 0 8px",
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Preview
-              </p>
-              <TableBlockPreview tableData={{ headers, rows }} />
-            </div>
-          )}
         </div>
 
         <div
@@ -1338,78 +1291,6 @@ function ExtractModal({
           </>
         )}
 
-        {/* Preview */}
-        {hasContent && (
-          <div style={{ marginBottom: 14 }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: 11,
-                color: textMuted,
-                marginBottom: 6,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              Preview
-            </label>
-            <div
-              className="note-preview"
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "flex-start",
-                gap: 12,
-                background: "#f3ede6",
-                borderRadius: 10,
-                padding: "14px 18px",
-                border: "1px solid #e5e7eb",
-                overflowWrap: "anywhere",
-              }}
-            >
-              {imageUrl.trim() && imagePosition === "left" && (
-                <img
-                  src={imageUrl}
-                  alt={imageAlt || "preview"}
-                  style={{
-                    width: 110,
-                    maxWidth: "100%",
-                    borderRadius: 8,
-                    objectFit: "cover",
-                    display: "block",
-                    flex: "0 1 110px",
-                  }}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              )}
-              <div
-                style={{ flex: "1 1 220px", minWidth: 0 }}
-                dangerouslySetInnerHTML={{ __html: text }}
-              />
-              {imageUrl.trim() && imagePosition === "right" && (
-                <img
-                  src={imageUrl}
-                  alt={imageAlt || "preview"}
-                  style={{
-                    width: 110,
-                    maxWidth: "100%",
-                    borderRadius: 8,
-                    objectFit: "cover",
-                    display: "block",
-                    flex: "0 1 110px",
-                  }}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        )}
-
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button
             onClick={onClose}
@@ -1644,40 +1525,6 @@ function SectionModal({
           />
         </div>
 
-        {/* Preview */}
-        {valid && (
-          <div
-            style={{
-              marginBottom: 16,
-              padding: "10px 14px",
-              background: dm ? "#1c2128" : "#f9f5f0",
-              borderRadius: 8,
-              border: `1px solid ${border}`,
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: 11,
-                color: textMuted,
-                marginBottom: 4,
-                fontWeight: 600,
-                textTransform: "uppercase",
-              }}
-            >
-              Preview
-            </p>
-            <p style={{ margin: 0, fontSize: 13, color: textMuted }}>
-              <span style={{ fontWeight: 700, color: "#ffa90a" }}>
-                {slNoNum}.
-              </span>{" "}
-              <span style={{ fontWeight: 700, color: textPrimary }}>
-                {heading}
-              </span>
-            </p>
-          </div>
-        )}
-
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button
             onClick={onClose}
@@ -1763,7 +1610,7 @@ function buildExtractBlockHtml(extractData: ExtractBlockData): string {
   const metaTag = `<div data-block-meta="1" style="display:none;">${escapeHtml(metaJson)}</div>`;
   const textHtml = plainTextToHtml(text);
   const imgHtml = imageUrl.trim()
-    ? `<img src="${escapeHtml(imageUrl.trim())}" alt="${escapeHtml(imageAlt.trim() || "Extract image")}" style="width:200px;max-width:100%;border-radius:10px;object-fit:cover;display:block;flex:0 1 200px;" />`
+    ? `<div style="width:200px;max-width:100%;aspect-ratio:2 / 3;border-radius:10px;overflow:hidden;flex:0 1 200px;background:#e5e7eb;"><img src="${escapeHtml(imageUrl.trim())}" alt="${escapeHtml(imageAlt.trim() || "Extract image")}" style="width:100%;height:100%;object-fit:cover;display:block;" /></div>`
     : "";
   const textBlock = `<div style="flex:1 1 280px;min-width:0;overflow-wrap:anywhere;word-break:break-word;">${textHtml}</div>`;
   const content =
@@ -1784,6 +1631,90 @@ interface AppendedBlock {
   boxData?: BoxBlockData;
   tableData?: TableBlockData;
   extractData?: ExtractBlockData;
+}
+
+function getBlockPlaceholderLabel(block: AppendedBlock, ordinal: number): string {
+  if (block.type === "table") return `<<< TABLE #${ordinal} >>>`;
+  if (block.type === "extract") return `<<< EXTRACT #${ordinal} >>>`;
+  if (block.type === "box") {
+    return block.boxData?.variant === "yellow"
+      ? `<<< NOTE #${ordinal} >>>`
+      : `<<< BOX #${ordinal} >>>`;
+  }
+  return `<<< BLOCK #${ordinal} >>>`;
+}
+
+function buildBlockPlaceholderHtml(block: AppendedBlock, ordinal: number): string {
+  const label = getBlockPlaceholderLabel(block, ordinal);
+  return `<div class="grammar-block-embed" data-grammar-block-id="${escapeHtml(block.id)}" data-grammar-block-type="${escapeHtml(block.type)}" data-grammar-block-label="${escapeHtml(label)}" contenteditable="false"><span class="grammar-block-embed-line"></span><span class="grammar-block-embed-label">${escapeHtml(label)}</span><span class="grammar-block-delete" data-grammar-block-delete="1" title="Delete block">Delete</span><span class="grammar-block-embed-line"></span></div>`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getBlockPlaceholderIndexFromText(value: string): number | null {
+  const match = value.match(
+    /<<<\s*(?:TABLE|BOX|NOTE|EXTRACT|BLOCK)\s*#(\d+)\s*>>>/i,
+  );
+  if (!match) return null;
+  const index = Number(match[1]) - 1;
+  return Number.isFinite(index) && index >= 0 ? index : null;
+}
+
+function getEventElement(target: EventTarget | null): HTMLElement | null {
+  if (!(target instanceof Node)) return null;
+  return target.nodeType === Node.ELEMENT_NODE
+    ? (target as HTMLElement)
+    : target.parentElement;
+}
+
+function compilePlaceholdersToBlocks(html: string, blocks: AppendedBlock[]): string {
+  const blockById = new Map(blocks.map((block) => [block.id, block]));
+  const doc = new DOMParser().parseFromString(
+    `<div id="grammar-compile-root">${html}</div>`,
+    "text/html",
+  );
+  const root = doc.getElementById("grammar-compile-root");
+  if (!root) return html;
+
+  root.querySelectorAll("[data-grammar-block-id]").forEach((node) => {
+    const blockId = node.getAttribute("data-grammar-block-id") || "";
+    const block = blockById.get(blockId);
+    if (!block) {
+      node.remove();
+      return;
+    }
+    const template = doc.createElement("template");
+    template.innerHTML = block.html;
+    node.replaceWith(template.content.cloneNode(true));
+  });
+
+  let compiled = root.innerHTML;
+  blocks.forEach((block, index) => {
+    const blockId = escapeRegExp(block.id);
+    const legacyAttributedPattern = new RegExp(
+      `<p>\\s*<(?:button|span)[^>]*data-grammar-block-id=["']${blockId}["'][\\s\\S]*?<\\/(?:button|span)>\\s*<\\/p>`,
+      "g",
+    );
+    compiled = compiled.replace(legacyAttributedPattern, block.html);
+
+    const label = getBlockPlaceholderLabel(block, index + 1);
+    const rawLabel = escapeRegExp(label);
+    const escapedLabel = escapeRegExp(escapeHtml(label));
+    const textPattern = new RegExp(
+      `<p>\\s*(?:${rawLabel}|${escapedLabel})\\s*<\\/p>`,
+      "g",
+    );
+    compiled = compiled.replace(textPattern, block.html);
+
+    const wrappedTextPattern = new RegExp(
+      `<p>\\s*(?:<[^>]+>\\s*)*(?:${rawLabel}|${escapedLabel})(?:\\s*<\\/[^>]+>)*\\s*<\\/p>`,
+      "g",
+    );
+    compiled = compiled.replace(wrappedTextPattern, block.html);
+  });
+  return compiled;
 }
 
 function createIntroductionSection(
@@ -1864,13 +1795,13 @@ function serializeNoteContent(
   const sectionsHtml = [...sections]
     .sort((a, b) => a.slNo - b.slNo)
     .map((section) => {
-      const sectionBlocksHtml = section.blocks
-        .map((block) => block.html)
-        .join("");
-      const sectionContent = plainTextToHtml(section.quillHtml);
+      const sectionContent = compilePlaceholdersToBlocks(
+        plainTextToHtml(section.quillHtml),
+        section.blocks,
+      );
       return (
         `<h2 data-section-slno="${section.slNo}" data-section-id="${section.id}">${section.heading}</h2>` +
-        `<div data-section-content="${section.id}">${sectionContent}${sectionBlocksHtml}</div>`
+        `<div data-section-content="${section.id}">${sectionContent}</div>`
       );
     })
     .join("");
@@ -1910,6 +1841,7 @@ const QUILL_FORMATS = [
   "link",
   "image",
   "align",
+  "grammarBlock",
 ];
 
 const RICH_TEXT_MODULES = {
@@ -2060,6 +1992,65 @@ function NoteEditorView({
   const [ReactQuill, setReactQuill] = useState<any>(null);
   const [quillRef, setQuillRef] = useState<any>(null);
   const [quillModules, setQuillModules] = useState<any>(null);
+  const sectionQuillRefs = useRef<Record<string, any>>({});
+  const sectionSelectionRefs = useRef<Record<string, number>>({});
+
+  const getSectionQuill = useCallback((sectionId: string | null) => {
+    if (!sectionId) return null;
+    const ref = sectionQuillRefs.current[sectionId];
+    return ref?.getEditor ? ref.getEditor() : ref || null;
+  }, []);
+
+  const rememberSectionSelection = useCallback(
+    (sectionId: string, range?: { index: number } | null) => {
+      setTargetSectionId(sectionId);
+      if (range) sectionSelectionRefs.current[sectionId] = range.index;
+    },
+    [],
+  );
+
+  const prepareSectionBlockInsert = useCallback(() => {
+    if (!sectionOnly) {
+      setTargetSectionId(null);
+      setEditingBlock(null);
+      return;
+    }
+    const sortedSections = [...editorSections].sort((a, b) => a.slNo - b.slNo);
+    const sectionId = targetSectionId || sortedSections[0]?.id || null;
+    setTargetSectionId(sectionId);
+    setEditingBlock(null);
+    const quill = getSectionQuill(sectionId);
+    const range = quill?.getSelection?.();
+    if (sectionId && range) sectionSelectionRefs.current[sectionId] = range.index;
+  }, [editorSections, getSectionQuill, sectionOnly, targetSectionId]);
+
+  const insertBlockEmbedIntoSection = useCallback(
+    (sectionId: string, block: AppendedBlock, ordinal: number) => {
+      const quill = getSectionQuill(sectionId);
+      if (!quill) return false;
+      const liveRange = quill.getSelection?.();
+      const rememberedIndex = sectionSelectionRefs.current[sectionId];
+      const fallbackIndex = Math.max(0, (quill.getLength?.() || 1) - 1);
+      const index =
+        liveRange?.index ??
+        (Number.isFinite(rememberedIndex) ? rememberedIndex : fallbackIndex);
+      quill.insertEmbed(
+        index,
+        "grammarBlock",
+        {
+          id: block.id,
+          type: block.type,
+          label: getBlockPlaceholderLabel(block, ordinal),
+        },
+        "user",
+      );
+      quill.insertText(index + 1, "\n", "user");
+      quill.setSelection(index + 2, 0, "silent");
+      sectionSelectionRefs.current[sectionId] = index + 2;
+      return true;
+    },
+    [getSectionQuill],
+  );
 
   const insertTable = useCallback(
     (rows = 3, cols = 3) => {
@@ -2111,19 +2102,82 @@ function NoteEditorView({
         if (!sectionOnly) setPreambleBlocks((prev) => [...prev, newBlock]);
         return;
       }
+      let insertedOrdinal = 1;
       setEditorSections((prev) =>
-        prev.map((section) =>
-          section.id === targetSectionId
-            ? { ...section, blocks: [...section.blocks, newBlock] }
-            : section,
-        ),
+        prev.map((section) => {
+          if (section.id !== targetSectionId) return section;
+          const nextBlocks = [...section.blocks, newBlock];
+          insertedOrdinal = nextBlocks.length;
+          return {
+            ...section,
+            blocks: nextBlocks,
+          };
+        }),
       );
+      window.setTimeout(() => {
+        const insertedIntoEditor = insertBlockEmbedIntoSection(
+          targetSectionId,
+          newBlock,
+          insertedOrdinal,
+        );
+        if (!insertedIntoEditor) {
+          setEditorSections((prev) =>
+            prev.map((section) =>
+              section.id === targetSectionId
+                ? {
+                    ...section,
+                    quillHtml:
+                      section.quillHtml +
+                      buildBlockPlaceholderHtml(newBlock, insertedOrdinal),
+                  }
+                : section,
+            ),
+          );
+        }
+      }, 0);
     },
-    [sectionOnly, targetSectionId],
+    [insertBlockEmbedIntoSection, sectionOnly, targetSectionId],
   );
 
   useEffect(() => {
     import("react-quill-new").then((mod) => {
+      const Quill = mod.Quill || mod.default.Quill;
+      if (Quill && !(window as any).__grammarBlockBlotRegistered) {
+        const BlockEmbed = Quill.import("blots/block/embed") as any;
+        class GrammarBlockBlot extends BlockEmbed {
+          static blotName = "grammarBlock";
+          static tagName = "div";
+          static className = "grammar-block-embed";
+
+          static create(value: {
+            id?: string;
+            type?: string;
+            label?: string;
+          }) {
+            const node = super.create(value) as HTMLElement;
+            const label = value?.label || "<<< BLOCK >>>";
+            node.setAttribute("contenteditable", "false");
+            node.setAttribute("data-grammar-block-id", value?.id || "");
+            node.setAttribute("data-grammar-block-type", value?.type || "");
+            node.setAttribute("data-grammar-block-label", label);
+            node.innerHTML = `<span class="grammar-block-embed-line"></span><span class="grammar-block-embed-label">${escapeHtml(label)}</span><span class="grammar-block-delete" data-grammar-block-delete="1" title="Delete block">Delete</span><span class="grammar-block-embed-line"></span>`;
+            return node;
+          }
+
+          static value(node: HTMLElement) {
+            return {
+              id: node.getAttribute("data-grammar-block-id") || "",
+              type: node.getAttribute("data-grammar-block-type") || "",
+              label:
+                node.getAttribute("data-grammar-block-label") ||
+                node.textContent?.trim() ||
+                "<<< BLOCK >>>",
+            };
+          }
+        }
+        (Quill as any).register(GrammarBlockBlot as any, true);
+        (window as any).__grammarBlockBlotRegistered = true;
+      }
       setQuillModules({
         toolbar: {
           container: [
@@ -2217,34 +2271,40 @@ function NoteEditorView({
               if (isBox || isVocabTable || isExtract) {
                 const meta = extractBlockMeta(el);
                 const blockId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${blocks.length}`;
+                let parsedBlock: AppendedBlock;
                 if (meta?.type === "box") {
-                  blocks.push({
+                  parsedBlock = {
                     id: blockId,
                     type: "box",
                     html: buildBoxBlockHtml(meta.data),
                     boxData: meta.data,
-                  });
+                  };
                 } else if (meta?.type === "table") {
-                  blocks.push({
+                  parsedBlock = {
                     id: blockId,
                     type: "table",
                     html: el.outerHTML,
                     tableData: meta.data,
-                  });
+                  };
                 } else if (meta?.type === "extract") {
-                  blocks.push({
+                  parsedBlock = {
                     id: blockId,
                     type: "extract",
                     html: buildExtractBlockHtml(meta.data),
                     extractData: meta.data,
-                  });
+                  };
                 } else {
-                  blocks.push({
+                  parsedBlock = {
                     id: blockId,
                     type: isBox ? "box" : isVocabTable ? "table" : "extract",
                     html: el.outerHTML,
-                  });
+                  };
                 }
+                blocks.push(parsedBlock);
+                quillHtml += buildBlockPlaceholderHtml(
+                  parsedBlock,
+                  blocks.length,
+                );
               } else {
                 quillHtml += el.outerHTML;
               }
@@ -2971,6 +3031,7 @@ function NoteEditorView({
           alignItems: "center",
         }}
       >
+        {/*
         {(["write", "preview"] as const).map((t) => (
           <button
             key={t}
@@ -2990,14 +3051,19 @@ function NoteEditorView({
             {t === "write" ? "✏️ Write" : "👁 Preview"}
           </button>
         ))}
+        */}
 
         {/* Insert-block buttons — only visible in write mode */}
-        {tab === "write" && (
+        {/*
+        Preview tab is intentionally hidden for now. Keep this condition here
+        if the tab switcher is restored later.
+        */}
+        {(
           <div
             style={{
               display: "flex",
               gap: 6,
-              marginLeft: 16,
+              marginLeft: 12,
               alignItems: "center",
             }}
           >
@@ -3023,13 +3089,12 @@ function NoteEditorView({
             >
               📑 Add Section
             </button>
-            {!sectionOnly && (
+            {
               <>
                 <span style={{ color: border, fontSize: 14 }}>|</span>
                 <button
                   onClick={() => {
-                    setTargetSectionId(null);
-                    setEditingBlock(null);
+                    prepareSectionBlockInsert();
                     setShowBoxModal(true);
                   }}
                   title="Insert a highlighted callout box"
@@ -3051,8 +3116,7 @@ function NoteEditorView({
                 </button>
                 <button
                   onClick={() => {
-                    setTargetSectionId(null);
-                    setEditingBlock(null);
+                    prepareSectionBlockInsert();
                     setShowTableModal(true);
                   }}
                   title="Insert a vocabulary table with audio and hover-translate"
@@ -3074,8 +3138,7 @@ function NoteEditorView({
                 </button>
                 <button
                   onClick={() => {
-                    setTargetSectionId(null);
-                    setEditingBlock(null);
+                    prepareSectionBlockInsert();
                     setShowExtractModal(true);
                   }}
                   title="Insert a styled extract block with optional image"
@@ -3096,7 +3159,7 @@ function NoteEditorView({
                   🖼 Extract
                 </button>
               </>
-            )}
+            }
           </div>
         )}
 
@@ -3258,6 +3321,55 @@ function NoteEditorView({
               .quill-better-table-wrapper {
                 overflow-x: auto;
                 margin: 8px 0;
+              }
+              .grammar-block-embed {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                width: 100%;
+                margin: 10px 0;
+                padding: 4px 2px;
+                color: ${dm ? "#dbeafe" : "#1f2937"};
+                font-size: 13px;
+                font-weight: 700;
+                line-height: 1.4;
+                cursor: pointer;
+                user-select: none;
+              }
+              .grammar-block-embed-line {
+                flex: 1;
+                border-top: 1px solid ${dm ? "#475569" : "#cbd5e1"};
+              }
+              .grammar-block-embed-label {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                max-width: 100%;
+                padding: 3px 8px;
+                border: 1px solid ${dm ? "#475569" : "#cbd5e1"};
+                border-radius: 4px;
+                background: ${dm ? "#111827" : "#f8fafc"};
+                white-space: nowrap;
+              }
+              .grammar-block-delete {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 54px;
+                height: 24px;
+                padding: 0 10px;
+                border: 1px solid ${dm ? "#991b1b" : "#fca5a5"};
+                border-radius: 4px;
+                background: ${dm ? "#2a1111" : "#fef2f2"};
+                color: #ef4444;
+                font-size: 12px;
+                font-weight: 800;
+                line-height: 1;
+                cursor: pointer;
+                white-space: nowrap;
+              }
+              .grammar-block-delete:hover {
+                background: ${dm ? "#3b1414" : "#fee2e2"};
               }
             `}</style>
 
@@ -3471,14 +3583,30 @@ function NoteEditorView({
                             </button>
                           </div>
                         </div>
-                        <div
-                          className="note-preview note-preview-inline"
-                          style={{
-                            background: dm ? "#1c2128" : "#f9f5f0",
-                            fontSize: 14,
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingBlock({ sectionId: null, index: idx });
+                            setTargetSectionId(null);
+                            if (block.type === "box") setShowBoxModal(true);
+                            if (block.type === "table") setShowTableModal(true);
+                            if (block.type === "extract") setShowExtractModal(true);
                           }}
-                          dangerouslySetInnerHTML={{ __html: block.html }}
-                        />
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            padding: "8px 12px",
+                            border: "none",
+                            background: dm ? "#10151d" : "#f8fafc",
+                            color: textPrimary,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            textAlign: "left",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {getBlockPlaceholderLabel(block, idx + 1)}
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -3574,7 +3702,68 @@ function NoteEditorView({
                   </div>
 
                   {ReactQuill ? (
+                    <div
+                      onClickCapture={(event) => {
+                        const target = getEventElement(event.target);
+                        if (!target) return;
+                        const placeholder = target.closest(
+                          "[data-grammar-block-id]",
+                        ) as HTMLElement | null;
+                        if (!placeholder) return;
+                        const blockId = placeholder?.getAttribute(
+                          "data-grammar-block-id",
+                        );
+                        const attributedBlockIndex = blockId
+                          ? sec.blocks.findIndex((block) => block.id === blockId)
+                          : -1;
+                        const textBlockIndex = getBlockPlaceholderIndexFromText(
+                          (placeholder || target.closest("p") || target)
+                            .textContent || "",
+                        );
+                        const blockIndex =
+                          attributedBlockIndex !== -1
+                            ? attributedBlockIndex
+                            : textBlockIndex ?? -1;
+                        if (blockIndex === -1) return;
+                        const block = sec.blocks[blockIndex];
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (target.closest("[data-grammar-block-delete]")) {
+                          const quill = getSectionQuill(sec.id);
+                          const quillConstructor = quill?.constructor as any;
+                          const blot = quillConstructor?.find?.(placeholder);
+                          if (quill && blot) {
+                            const index = quill.getIndex(blot);
+                            quill.deleteText(index, 1, "user");
+                          } else {
+                            placeholder.remove();
+                          }
+                          setEditorSections((prev) =>
+                            prev.map((section) =>
+                              section.id === sec.id
+                                ? {
+                                    ...section,
+                                    blocks: section.blocks.filter(
+                                      (item) => item.id !== block.id,
+                                    ),
+                                  }
+                                : section,
+                            ),
+                          );
+                          return;
+                        }
+                        setEditingBlock({ sectionId: sec.id, index: blockIndex });
+                        setTargetSectionId(sec.id);
+                        if (block.type === "box") setShowBoxModal(true);
+                        if (block.type === "table") setShowTableModal(true);
+                        if (block.type === "extract") setShowExtractModal(true);
+                      }}
+                    >
                     <ReactQuill
+                      ref={(el: any) => {
+                        if (el) sectionQuillRefs.current[sec.id] = el;
+                        else delete sectionQuillRefs.current[sec.id];
+                      }}
                       theme="snow"
                       value={sec.quillHtml}
                       onChange={(value: string) =>
@@ -3584,11 +3773,18 @@ function NoteEditorView({
                           ),
                         )
                       }
+                      onFocus={(range: any) =>
+                        rememberSectionSelection(sec.id, range)
+                      }
+                      onChangeSelection={(range: any) =>
+                        rememberSectionSelection(sec.id, range)
+                      }
                       modules={RICH_TEXT_MODULES}
                       formats={QUILL_FORMATS}
                       placeholder={`Write content for "${sec.heading}"…`}
                       className="grammar-section-editor"
                     />
+                    </div>
                   ) : (
                     <div style={{ padding: "2rem", color: textMuted }}>
                       Loading editor…
@@ -3596,7 +3792,7 @@ function NoteEditorView({
                   )}
 
                   {/* Section blocks */}
-                  {sec.blocks.length > 0 && (
+                  {false && sec.blocks.length > 0 && (
                     <div
                       style={{
                         padding: "8px 12px",
@@ -3745,14 +3941,34 @@ function NoteEditorView({
                               </button>
                             </div>
                           </div>
-                          <div
-                            className="note-preview note-preview-inline"
-                            style={{
-                              background: dm ? "#1c2128" : "#f9f5f0",
-                              fontSize: 14,
-                            }}
-                            dangerouslySetInnerHTML={{ __html: block.html }}
-                          />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingBlock({
+                                  sectionId: sec.id,
+                                  index: bIdx,
+                                });
+                                setTargetSectionId(sec.id);
+                                if (block.type === "box") setShowBoxModal(true);
+                                if (block.type === "table") setShowTableModal(true);
+                                if (block.type === "extract")
+                                  setShowExtractModal(true);
+                              }}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                padding: "8px 12px",
+                                border: "none",
+                                background: dm ? "#10151d" : "#f8fafc",
+                                color: textPrimary,
+                                fontSize: 13,
+                                fontWeight: 700,
+                                textAlign: "left",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {getBlockPlaceholderLabel(block, bIdx + 1)}
+                            </button>
                         </div>
                       ))}
                     </div>
@@ -3761,7 +3977,7 @@ function NoteEditorView({
                   {/* Add content row for this section */}
                   <div
                     style={{
-                      display: "flex",
+                      display: "none",
                       gap: 6,
                       padding: "8px 14px",
                       borderTop: `1px solid ${dm ? "#30363d" : "#e5e7eb"}`,
@@ -3926,7 +4142,7 @@ function NoteEditorView({
                 const allSectionsHtml = sortedSections
                   .map(
                     (s) =>
-                      `<section class="note-preview-section"><h2 id="preview-section-${s.slNo}">${s.heading}</h2><div>${s.quillHtml}${s.blocks.map((b) => b.html).join("")}</div></section>`,
+                      `<section class="note-preview-section"><h2 id="preview-section-${s.slNo}">${s.heading}</h2><div>${compilePlaceholdersToBlocks(s.quillHtml, s.blocks)}</div></section>`,
                   )
                   .join("");
                 const fullHtml = `
