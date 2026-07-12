@@ -83,10 +83,12 @@ interface EditorState {
   subtopicId: number;
   subtopicName: string;
   learningLang: string;
+  levelCode: string;
   existingNote: Note | null;
   translationFor: Note | null;
   takenLangs: string[];
   translations: Note[];
+  initialKnownLang?: string;
 }
 
 type RichTextEditorComponent = React.ComponentType<{
@@ -1633,7 +1635,10 @@ interface AppendedBlock {
   extractData?: ExtractBlockData;
 }
 
-function getBlockPlaceholderLabel(block: AppendedBlock, ordinal: number): string {
+function getBlockPlaceholderLabel(
+  block: AppendedBlock,
+  ordinal: number,
+): string {
   if (block.type === "table") return `<<< TABLE #${ordinal} >>>`;
   if (block.type === "extract") return `<<< EXTRACT #${ordinal} >>>`;
   if (block.type === "box") {
@@ -1644,7 +1649,10 @@ function getBlockPlaceholderLabel(block: AppendedBlock, ordinal: number): string
   return `<<< BLOCK #${ordinal} >>>`;
 }
 
-function buildBlockPlaceholderHtml(block: AppendedBlock, ordinal: number): string {
+function buildBlockPlaceholderHtml(
+  block: AppendedBlock,
+  ordinal: number,
+): string {
   const label = getBlockPlaceholderLabel(block, ordinal);
   return `<div class="grammar-block-embed" data-grammar-block-id="${escapeHtml(block.id)}" data-grammar-block-type="${escapeHtml(block.type)}" data-grammar-block-label="${escapeHtml(label)}" contenteditable="false"><span class="grammar-block-embed-line"></span><span class="grammar-block-embed-label">${escapeHtml(label)}</span><span class="grammar-block-delete" data-grammar-block-delete="1" title="Delete block">Delete</span><span class="grammar-block-embed-line"></span></div>`;
 }
@@ -1669,7 +1677,10 @@ function getEventElement(target: EventTarget | null): HTMLElement | null {
     : target.parentElement;
 }
 
-function compilePlaceholdersToBlocks(html: string, blocks: AppendedBlock[]): string {
+function compilePlaceholdersToBlocks(
+  html: string,
+  blocks: AppendedBlock[],
+): string {
   const blockById = new Map(blocks.map((block) => [block.id, block]));
   const doc = new DOMParser().parseFromString(
     `<div id="grammar-compile-root">${html}</div>`,
@@ -1826,6 +1837,187 @@ function extractBlockMeta(el: Element): { type: string; data: any } | null {
   }
 }
 
+function parseSerializedNoteContent(
+  rawHtml: string,
+  sectionOnly: boolean,
+): {
+  htmlContent: string;
+  preambleBlocks: AppendedBlock[];
+  editorSections: EditorSection[];
+} {
+  let raw = rawHtml;
+  if (/^\s*<!DOCTYPE/i.test(raw) || /^\s*<html/i.test(raw)) {
+    const fullDoc = new DOMParser().parseFromString(raw, "text/html");
+    const noteBody = fullDoc.querySelector(".note-body");
+    raw = noteBody ? noteBody.innerHTML : fullDoc.body.innerHTML;
+  }
+
+  const doc = new DOMParser().parseFromString(
+    `<div id="root">${raw}</div>`,
+    "text/html",
+  );
+  const root = doc.getElementById("root");
+  if (!root) {
+    return {
+      htmlContent: raw,
+      preambleBlocks: [],
+      editorSections: sectionOnly ? [createIntroductionSection(raw)] : [],
+    };
+  }
+
+  const childNodes = Array.from(root.childNodes);
+  const sectionIndices: number[] = [];
+  childNodes.forEach((node, index) => {
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as Element;
+    if (
+      el.tagName.toLowerCase() === "h2" &&
+      el.hasAttribute("data-section-slno")
+    ) {
+      sectionIndices.push(index);
+    }
+  });
+
+  const parseNodes = (
+    nodes: ChildNode[],
+  ): { quillHtml: string; blocks: AppendedBlock[] } => {
+    let quillHtml = "";
+    const blocks: AppendedBlock[] = [];
+    nodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        quillHtml += plainTextToHtml(node.textContent || "");
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const el = node as Element;
+      const tag = el.tagName.toLowerCase();
+      const isBox =
+        tag === "div" && el.getAttribute("data-callout-box") === "1";
+      const isVocabTable =
+        tag === "div" && el.getAttribute("data-vocab-table") === "1";
+      const isExtract =
+        tag === "div" && el.getAttribute("data-extract") === "1";
+      if (isBox || isVocabTable || isExtract) {
+        const meta = extractBlockMeta(el);
+        const blockId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${blocks.length}`;
+        let parsedBlock: AppendedBlock;
+        if (meta?.type === "box") {
+          parsedBlock = {
+            id: blockId,
+            type: "box",
+            html: buildBoxBlockHtml(meta.data),
+            boxData: meta.data,
+          };
+        } else if (meta?.type === "table") {
+          parsedBlock = {
+            id: blockId,
+            type: "table",
+            html: el.outerHTML,
+            tableData: meta.data,
+          };
+        } else if (meta?.type === "extract") {
+          parsedBlock = {
+            id: blockId,
+            type: "extract",
+            html: buildExtractBlockHtml(meta.data),
+            extractData: meta.data,
+          };
+        } else {
+          parsedBlock = {
+            id: blockId,
+            type: isBox ? "box" : isVocabTable ? "table" : "extract",
+            html: el.outerHTML,
+          };
+        }
+        blocks.push(parsedBlock);
+        quillHtml += buildBlockPlaceholderHtml(parsedBlock, blocks.length);
+      } else {
+        quillHtml += el.outerHTML;
+      }
+    });
+    return { quillHtml, blocks };
+  };
+
+  if (sectionIndices.length === 0) {
+    const { quillHtml, blocks } = parseNodes(childNodes);
+    return sectionOnly
+      ? {
+          htmlContent: "",
+          preambleBlocks: [],
+          editorSections: [createIntroductionSection(quillHtml, blocks)],
+        }
+      : { htmlContent: quillHtml, preambleBlocks: blocks, editorSections: [] };
+  }
+
+  const preambleNodes = childNodes.slice(0, sectionIndices[0]);
+  const { quillHtml: pHtml, blocks: pBlocks } = parseNodes(preambleNodes);
+  const loadedSections: EditorSection[] = [];
+  sectionIndices.forEach((secNodeIdx, index) => {
+    const h2El = childNodes[secNodeIdx] as Element;
+    const parsedSlNo = parseInt(
+      h2El.getAttribute("data-section-slno") || "",
+      10,
+    );
+    const slNo =
+      Number.isFinite(parsedSlNo) && parsedSlNo > 0 ? parsedSlNo : index + 1;
+    const secId =
+      h2El.getAttribute("data-section-id") || `sec-${Date.now()}-${index}`;
+    const heading =
+      h2El.textContent?.trim() ||
+      (index === 0 ? "Introduction" : `Section ${index + 1}`);
+
+    let nextIdx = secNodeIdx + 1;
+    while (
+      nextIdx < childNodes.length &&
+      childNodes[nextIdx].nodeType === Node.TEXT_NODE &&
+      !(childNodes[nextIdx].textContent || "").trim()
+    ) {
+      nextIdx += 1;
+    }
+    const nextNode =
+      nextIdx < childNodes.length ? (childNodes[nextIdx] as Element) : null;
+    const hasContentDiv =
+      nextNode &&
+      nextNode.nodeType === Node.ELEMENT_NODE &&
+      nextNode.getAttribute("data-section-content") === secId;
+
+    const endIdx =
+      index + 1 < sectionIndices.length
+        ? sectionIndices[index + 1]
+        : childNodes.length;
+    const contentNodes = hasContentDiv
+      ? Array.from(nextNode.childNodes)
+      : childNodes.slice(secNodeIdx + 1, endIdx);
+    const { quillHtml, blocks } = parseNodes(contentNodes);
+    loadedSections.push({ id: secId, slNo, heading, quillHtml, blocks });
+  });
+
+  const sortedSections = loadedSections.sort((a, b) => a.slNo - b.slNo);
+  const hasLegacyPreamble =
+    pBlocks.length > 0 ||
+    pHtml.replace(/<p>\s*<br\s*\/?>\s*<\/p>/gi, "").trim().length > 0;
+
+  return sectionOnly
+    ? {
+        htmlContent: "",
+        preambleBlocks: [],
+        editorSections: hasLegacyPreamble
+          ? [
+              createIntroductionSection(pHtml, pBlocks),
+              ...sortedSections.map((section) => ({
+                ...section,
+                slNo: section.slNo + 1,
+              })),
+            ]
+          : sortedSections,
+      }
+    : {
+        htmlContent: pHtml,
+        preambleBlocks: pBlocks,
+        editorSections: sortedSections,
+      };
+}
+
 const QUILL_FORMATS = [
   "header",
   "bold",
@@ -1861,10 +2053,12 @@ function NoteEditorView({
   subtopicId,
   subtopicName,
   learningLang,
+  levelCode,
   existingNote,
   translationFor,
   takenLangs,
   translations,
+  initialKnownLang,
   onSelectTranslation,
   onAddTranslation,
   onClose,
@@ -1874,10 +2068,12 @@ function NoteEditorView({
   subtopicId: number;
   subtopicName: string;
   learningLang: string;
+  levelCode: string;
   existingNote?: Note | null;
   translationFor?: Note | null;
   takenLangs?: string[];
   translations?: Note[];
+  initialKnownLang?: string;
   onSelectTranslation?: (note: Note) => void;
   onAddTranslation?: (source: Note, takenLangs: string[]) => void;
   onClose: () => void;
@@ -1886,6 +2082,9 @@ function NoteEditorView({
 }) {
   const apiPrefix = useContext(ApiPrefixContext);
   const sectionOnly = apiPrefix === "grammar";
+  const learningLangLabel =
+    LANGUAGES.find((lang) => lang.code === learningLang)?.label ||
+    learningLang.toUpperCase();
   const [titlesByLang, setTitlesByLang] = useState<Record<string, string>>(
     () => {
       const next = emptyKnownLangTextMap();
@@ -1894,14 +2093,22 @@ function NoteEditorView({
       });
       const seedNote = existingNote || translationFor;
       if (seedNote) next[seedNote.known_lang] = seedNote.title || "";
+      if (sectionOnly) {
+        next.en =
+          seedNote?.title ||
+          translations?.find((note) => note.known_lang === "en")?.title ||
+          translations?.[0]?.title ||
+          "";
+      }
       return next;
     },
   );
-  const [translatedTitle, setTranslatedTitle] = useState(
+  const [translatedTitle] = useState(
     existingNote?.description || translationFor?.description || "",
   );
   const [knownLang, setKnownLang] = useState(() => {
     if (existingNote) return existingNote.known_lang;
+    if (initialKnownLang) return initialKnownLang;
     if (translationFor) {
       // Pick the first language not already taken
       const taken = new Set(takenLangs || [translationFor.known_lang]);
@@ -1918,11 +2125,18 @@ function NoteEditorView({
   );
   const isTranslation = !!translationFor && !existingNote;
   const conceptLocked = !!existingNote || isTranslation;
-  const title = titlesByLang[knownLang] || "";
+  const title = sectionOnly
+    ? titlesByLang.en || ""
+    : titlesByLang[knownLang] || "";
 
   const [htmlContent, setHtmlContent] = useState("");
   const [rawHtmlInput, setRawHtmlInput] = useState("");
   const [showRawHtmlPanel, setShowRawHtmlPanel] = useState(false);
+  const [showExtractHtmlModal, setShowExtractHtmlModal] = useState(false);
+  const [extractedHtml, setExtractedHtml] = useState("");
+  const [pastedHtmlSnapshot, setPastedHtmlSnapshot] = useState<string | null>(
+    null,
+  );
   const [tab, setTab] = useState<"write" | "preview">("write");
   const [compiledPreviewHtml, setCompiledPreviewHtml] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1938,9 +2152,16 @@ function NoteEditorView({
       });
       const seedNote = existingNote || translationFor;
       if (seedNote) next[seedNote.known_lang] = seedNote.title || "";
+      if (sectionOnly) {
+        next.en =
+          seedNote?.title ||
+          translations?.find((note) => note.known_lang === "en")?.title ||
+          translations?.[0]?.title ||
+          "";
+      }
       return next;
     });
-  }, [existingNote, translationFor, translations]);
+  }, [existingNote, sectionOnly, translationFor, translations]);
 
   // Insert-block modals
   const [showBoxModal, setShowBoxModal] = useState(false);
@@ -1951,6 +2172,7 @@ function NoteEditorView({
   const [editorSections, setEditorSections] = useState<EditorSection[]>(() =>
     sectionOnly && !existingNote ? [createIntroductionSection()] : [],
   );
+  const markEditorContentChanged = () => setPastedHtmlSnapshot(null);
   // Which section block is currently being edited.
   const [editingBlock, setEditingBlock] = useState<{
     sectionId: string | null;
@@ -2021,7 +2243,8 @@ function NoteEditorView({
     setEditingBlock(null);
     const quill = getSectionQuill(sectionId);
     const range = quill?.getSelection?.();
-    if (sectionId && range) sectionSelectionRefs.current[sectionId] = range.index;
+    if (sectionId && range)
+      sectionSelectionRefs.current[sectionId] = range.index;
   }, [editorSections, getSectionQuill, sectionOnly, targetSectionId]);
 
   const insertBlockEmbedIntoSection = useCallback(
@@ -2090,6 +2313,7 @@ function NoteEditorView({
       extractData?: ExtractBlockData,
       boxData?: BoxBlockData,
     ) => {
+      markEditorContentChanged();
       const newBlock: AppendedBlock = {
         id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         type: blockType,
@@ -2149,11 +2373,7 @@ function NoteEditorView({
           static tagName = "div";
           static className = "grammar-block-embed";
 
-          static create(value: {
-            id?: string;
-            type?: string;
-            label?: string;
-          }) {
+          static create(value: { id?: string; type?: string; label?: string }) {
             const node = super.create(value) as HTMLElement;
             const label = value?.label || "<<< BLOCK >>>";
             node.setAttribute("contenteditable", "false");
@@ -2430,6 +2650,14 @@ function NoteEditorView({
     return !stripped || stripped === "<br>";
   };
 
+  const buildSerializedContent = () =>
+    pastedHtmlSnapshot ??
+    serializeNoteContent(
+      editorSections,
+      sectionOnly ? "" : htmlContent,
+      sectionOnly ? [] : preambleBlocks,
+    );
+
   const preambleBlocksHtml = preambleBlocks.map((block) => block.html).join("");
 
   useEffect(() => {
@@ -2476,28 +2704,54 @@ function NoteEditorView({
   // Inject raw HTML directly into Quill by setting it as the editor value
   const handleInjectRawHtml = () => {
     if (!rawHtmlInput.trim()) return;
-    // Strip full HTML document wrapper if pasted (keep only body content)
-    let html = rawHtmlInput.trim();
-    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    if (bodyMatch) html = bodyMatch[1].trim();
-    // Set directly — Quill's controlled value prop parses HTML correctly
-    if (sectionOnly) {
-      setEditorSections((prev) => {
-        if (prev.length === 0) return [createIntroductionSection(html)];
-        const firstSection = [...prev].sort((a, b) => a.slNo - b.slNo)[0];
-        return prev.map((section) =>
-          section.id === firstSection.id
-            ? { ...section, quillHtml: html }
-            : section,
-        );
-      });
-    } else {
-      setHtmlContent(html);
-    }
+    const pastedHtml = rawHtmlInput.trim();
+    const parsed = parseSerializedNoteContent(pastedHtml, sectionOnly);
+    setHtmlContent(parsed.htmlContent);
+    setPreambleBlocks(parsed.preambleBlocks);
+    setEditorSections(parsed.editorSections);
+    setPastedHtmlSnapshot(pastedHtml);
     setRawHtmlInput("");
     setShowRawHtmlPanel(false);
     setTab("write");
     showToast(true, "HTML loaded into editor");
+    // Set directly — Quill's controlled value prop parses HTML correctly
+  };
+
+  const handleOpenExtractHtml = () => {
+    const html = buildSerializedContent();
+    if (isEmpty(html)) {
+      showToast(false, "Nothing to extract");
+      return;
+    }
+    setExtractedHtml(html);
+    setShowExtractHtmlModal(true);
+  };
+
+  const handleCopyExtractedHtml = async () => {
+    try {
+      await navigator.clipboard.writeText(extractedHtml);
+      showToast(true, "HTML copied to clipboard");
+    } catch {
+      showToast(false, "Copy failed");
+    }
+  };
+
+  const handleDownloadExtractedHtml = () => {
+    const blob = new Blob([extractedHtml], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${
+      (title || "grammar-language-page")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "grammar-language-page"
+    }.html`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleSave = async () => {
@@ -2514,11 +2768,7 @@ function NoteEditorView({
       return;
     }
 
-    const combinedContent = serializeNoteContent(
-      editorSections,
-      sectionOnly ? "" : htmlContent,
-      sectionOnly ? [] : preambleBlocks,
-    );
+    const combinedContent = buildSerializedContent();
     if (isEmpty(combinedContent)) {
       showToast(false, "Content cannot be empty");
       return;
@@ -2531,20 +2781,6 @@ function NoteEditorView({
           title,
           ...(sectionOnly ? { description: translatedTitle } : {}),
         });
-        if (sectionOnly) {
-          const titleUpdates = (translations || [])
-            .filter((note) => note.id !== existingNote.id)
-            .filter(
-              (note) =>
-                (titlesByLang[note.known_lang] || "") !== (note.title || ""),
-            )
-            .map((note) =>
-              api.put(`/admin/${apiPrefix}/notes/${note.id}`, {
-                title: titlesByLang[note.known_lang] || "",
-              }),
-            );
-          if (titleUpdates.length > 0) await Promise.all(titleUpdates);
-        }
         showToast(true, "Note updated");
       } else {
         await api.post(`/admin/${apiPrefix}/notes`, {
@@ -2556,19 +2792,6 @@ function NoteEditorView({
           title,
           ...(sectionOnly ? { description: translatedTitle } : {}),
         });
-        if (sectionOnly) {
-          const titleUpdates = (translations || [])
-            .filter(
-              (note) =>
-                (titlesByLang[note.known_lang] || "") !== (note.title || ""),
-            )
-            .map((note) =>
-              api.put(`/admin/${apiPrefix}/notes/${note.id}`, {
-                title: titlesByLang[note.known_lang] || "",
-              }),
-            );
-          if (titleUpdates.length > 0) await Promise.all(titleUpdates);
-        }
         showToast(true, "Note created");
       }
       onSaved();
@@ -2639,13 +2862,17 @@ function NoteEditorView({
               {subtopicName} /{" "}
             </span>
             <span style={{ fontSize: 14, fontWeight: 600, color: textPrimary }}>
-              {existingNote
-                ? "Edit Note"
-                : isTranslation
-                  ? "Add Translation"
-                  : "Create Note"}
+              {sectionOnly
+                ? existingNote
+                  ? "Edit Language Page"
+                  : "Create Language Page"
+                : existingNote
+                  ? "Edit Note"
+                  : isTranslation
+                    ? "Add Translation"
+                    : "Create Note"}
             </span>
-            {isTranslation && (
+            {!sectionOnly && isTranslation && (
               <span
                 style={{
                   marginLeft: 8,
@@ -2664,7 +2891,7 @@ function NoteEditorView({
 
         {/* Right: dark mode + save */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {!!translations?.length && (
+          {!sectionOnly && !!translations?.length && (
             <select
               value={existingNote ? String(existingNote.id) : "new"}
               onChange={(e) => {
@@ -2692,7 +2919,8 @@ function NoteEditorView({
               ))}
             </select>
           )}
-          {!!translations?.length &&
+          {!sectionOnly &&
+            !!translations?.length &&
             !isTranslation &&
             translations.length < KNOWN_LANGS.length && (
               <button
@@ -2781,7 +3009,10 @@ function NoteEditorView({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gridTemplateColumns:
+            apiPrefix === "grammar"
+              ? "repeat(4, minmax(0, 1fr))"
+              : "repeat(3, minmax(0, 1fr))",
           gap: "1rem",
           padding: "0.875rem 1.5rem",
           borderBottom: `1px solid ${border}`,
@@ -2790,83 +3021,144 @@ function NoteEditorView({
         }}
       >
         {apiPrefix === "grammar" ? (
-          <div style={{ gridColumn: "span 2" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: 11,
-                color: textMuted,
-                marginBottom: 6,
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              Titles by Explanation Language
-            </label>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                gap: 8,
-              }}
-            >
-              {KNOWN_LANGS.map((lang) => {
-                const isCurrent = lang.code === knownLang;
-                const hasSavedTranslation = !!translations?.some(
-                  (note) => note.known_lang === lang.code,
-                );
-                const canEditTitle = isCurrent || hasSavedTranslation;
-                return (
-                  <div key={lang.code}>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: 10,
-                        color: isCurrent ? "#60a5fa" : textMuted,
-                        marginBottom: 3,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {lang.label}
-                      {isCurrent ? " *" : ""}
-                    </label>
-                    <input
-                      value={titlesByLang[lang.code] || ""}
-                      disabled={!canEditTitle}
-                      onChange={(e) =>
-                        setTitlesByLang((prev) => ({
-                          ...prev,
-                          [lang.code]: e.target.value,
-                        }))
-                      }
-                      placeholder={
-                        canEditTitle
-                          ? `${lang.label} title`
-                          : "Create translation first"
-                      }
-                      style={{
-                        width: "100%",
-                        padding: "7px 10px",
-                        border: `1px solid ${isCurrent ? "#60a5fa" : inputBorder}`,
-                        borderRadius: 6,
-                        fontSize: 13,
-                        outline: "none",
-                        boxSizing: "border-box",
-                        background: canEditTitle
-                          ? inputBg
-                          : dm
-                            ? "#1c2128"
-                            : "#f8f9fa",
-                        color: textPrimary,
-                        opacity: canEditTitle ? 1 : 0.65,
-                      }}
-                    />
-                  </div>
-                );
-              })}
+          <>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 11,
+                  color: textMuted,
+                  marginBottom: 4,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Learning Language
+              </label>
+              <div
+                style={{
+                  padding: "7px 10px",
+                  border: `1px solid ${inputBorder}`,
+                  borderRadius: 6,
+                  fontSize: 13,
+                  background: dm ? "#1c2128" : "#f8f9fa",
+                  color: textPrimary,
+                }}
+              >
+                {learningLangLabel}
+              </div>
             </div>
-          </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 11,
+                  color: textMuted,
+                  marginBottom: 4,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Explanation Language
+              </label>
+              <select
+                value={knownLang}
+                onChange={(e) => setKnownLang(e.target.value)}
+                disabled={!!existingNote}
+                style={{
+                  width: "100%",
+                  padding: "7px 10px",
+                  border: `1px solid ${inputBorder}`,
+                  borderRadius: 6,
+                  fontSize: 13,
+                  outline: "none",
+                  background: existingNote
+                    ? dm
+                      ? "#1c2128"
+                      : "#f8f9fa"
+                    : inputBg,
+                  color: textPrimary,
+                  opacity: existingNote ? 0.7 : 1,
+                }}
+              >
+                {KNOWN_LANGS.map((l) => {
+                  const isTaken =
+                    isTranslation && (takenLangs || []).includes(l.code);
+                  return (
+                    <option key={l.code} value={l.code} disabled={isTaken}>
+                      {l.label}
+                      {isTaken ? " (exists)" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 11,
+                  color: textMuted,
+                  marginBottom: 4,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                CEFR Level
+              </label>
+              <div
+                style={{
+                  padding: "7px 10px",
+                  border: `1px solid ${inputBorder}`,
+                  borderRadius: 6,
+                  fontSize: 13,
+                  background: dm ? "#1c2128" : "#f8f9fa",
+                  color: textPrimary,
+                }}
+              >
+                {levelCode}
+              </div>
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 11,
+                  color: textMuted,
+                  marginBottom: 4,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Title *
+              </label>
+              <input
+                value={title}
+                onChange={(e) =>
+                  setTitlesByLang((prev) => ({
+                    ...prev,
+                    en: e.target.value,
+                  }))
+                }
+                placeholder="e.g. Perfect Nouns in French"
+                style={{
+                  width: "100%",
+                  padding: "7px 10px",
+                  border: `1px solid ${inputBorder}`,
+                  borderRadius: 6,
+                  fontSize: 13,
+                  outline: "none",
+                  boxSizing: "border-box",
+                  background: inputBg,
+                  color: textPrimary,
+                }}
+              />
+            </div>
+          </>
         ) : (
           <div>
             <label
@@ -2891,39 +3183,6 @@ function NoteEditorView({
                 }))
               }
               placeholder="e.g. Perfect Nouns in French"
-              style={{
-                width: "100%",
-                padding: "7px 10px",
-                border: `1px solid ${inputBorder}`,
-                borderRadius: 6,
-                fontSize: 13,
-                outline: "none",
-                boxSizing: "border-box",
-                background: inputBg,
-                color: textPrimary,
-              }}
-            />
-          </div>
-        )}
-        {apiPrefix === "grammar" && (
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: 11,
-                color: textMuted,
-                marginBottom: 4,
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              Subtitle
-            </label>
-            <input
-              value={translatedTitle}
-              onChange={(e) => setTranslatedTitle(e.target.value)}
-              placeholder="Shown below the title"
               style={{
                 width: "100%",
                 padding: "7px 10px",
@@ -2977,48 +3236,54 @@ function NoteEditorView({
             />
           </div>
         )}
-        <div>
-          <label
-            style={{
-              display: "block",
-              fontSize: 11,
-              color: textMuted,
-              marginBottom: 4,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-            }}
-          >
-            Explanation Language
-          </label>
-          <select
-            value={knownLang}
-            onChange={(e) => setKnownLang(e.target.value)}
-            disabled={!!existingNote}
-            style={{
-              width: "100%",
-              padding: "7px 10px",
-              border: `1px solid ${inputBorder}`,
-              borderRadius: 6,
-              fontSize: 13,
-              outline: "none",
-              background: existingNote ? (dm ? "#1c2128" : "#f8f9fa") : inputBg,
-              color: textPrimary,
-              opacity: existingNote ? 0.7 : 1,
-            }}
-          >
-            {KNOWN_LANGS.map((l) => {
-              const isTaken =
-                isTranslation && (takenLangs || []).includes(l.code);
-              return (
-                <option key={l.code} value={l.code} disabled={isTaken}>
-                  {l.label}
-                  {isTaken ? " (exists)" : ""}
-                </option>
-              );
-            })}
-          </select>
-        </div>
+        {apiPrefix !== "grammar" && (
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 11,
+                color: textMuted,
+                marginBottom: 4,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Explanation Language
+            </label>
+            <select
+              value={knownLang}
+              onChange={(e) => setKnownLang(e.target.value)}
+              disabled={!!existingNote}
+              style={{
+                width: "100%",
+                padding: "7px 10px",
+                border: `1px solid ${inputBorder}`,
+                borderRadius: 6,
+                fontSize: 13,
+                outline: "none",
+                background: existingNote
+                  ? dm
+                    ? "#1c2128"
+                    : "#f8f9fa"
+                  : inputBg,
+                color: textPrimary,
+                opacity: existingNote ? 0.7 : 1,
+              }}
+            >
+              {KNOWN_LANGS.map((l) => {
+                const isTaken =
+                  isTranslation && (takenLangs || []).includes(l.code);
+                return (
+                  <option key={l.code} value={l.code} disabled={isTaken}>
+                    {l.label}
+                    {isTaken ? " (exists)" : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* ── Tab bar + action buttons ── */}
@@ -3058,7 +3323,7 @@ function NoteEditorView({
         Preview tab is intentionally hidden for now. Keep this condition here
         if the tab switcher is restored later.
         */}
-        {(
+        {
           <div
             style={{
               display: "flex",
@@ -3161,25 +3426,48 @@ function NoteEditorView({
               </>
             }
           </div>
-        )}
+        }
 
-        <button
-          onClick={() => setShowRawHtmlPanel((p) => !p)}
+        <div
           style={{
             marginLeft: "auto",
             marginRight: 12,
-            padding: "5px 12px",
-            border: `1px solid ${border}`,
-            borderRadius: 6,
-            background: showRawHtmlPanel ? "#0969da" : "transparent",
-            color: showRawHtmlPanel ? "#fff" : textMuted,
-            cursor: "pointer",
-            fontSize: 12,
-            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
           }}
         >
-          {"</>"} Paste HTML
-        </button>
+          <button
+            onClick={handleOpenExtractHtml}
+            style={{
+              padding: "5px 12px",
+              border: `1px solid ${border}`,
+              borderRadius: 6,
+              background: "transparent",
+              color: textMuted,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+          >
+            {"</>"} Extract HTML
+          </button>
+          <button
+            onClick={() => setShowRawHtmlPanel((p) => !p)}
+            style={{
+              padding: "5px 12px",
+              border: `1px solid ${border}`,
+              borderRadius: 6,
+              background: showRawHtmlPanel ? "#0969da" : "transparent",
+              color: showRawHtmlPanel ? "#fff" : textMuted,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+          >
+            {"</>"} Paste HTML
+          </button>
+        </div>
       </div>
 
       {/* ── Paste HTML panel ── */}
@@ -3256,6 +3544,153 @@ function NoteEditorView({
       )}
 
       {/* ── Editor / Preview ── */}
+      {showExtractHtmlModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.55)",
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              width: "min(980px, 92vw)",
+              maxHeight: "86vh",
+              display: "flex",
+              flexDirection: "column",
+              background: surface,
+              color: textPrimary,
+              border: `1px solid ${border}`,
+              borderRadius: 8,
+              boxShadow: "0 20px 60px rgba(0,0,0,.35)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "14px 18px",
+                borderBottom: `1px solid ${border}`,
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
+                Extract HTML
+              </h3>
+              <button
+                onClick={() => setShowExtractHtmlModal(false)}
+                title="Close"
+                style={{
+                  width: 30,
+                  height: 30,
+                  border: "none",
+                  borderRadius: 6,
+                  background: "transparent",
+                  color: textMuted,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div
+              style={{
+                padding: 18,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                minHeight: 0,
+              }}
+            >
+              <textarea
+                value={extractedHtml}
+                readOnly
+                rows={18}
+                style={{
+                  width: "100%",
+                  minHeight: 360,
+                  maxHeight: "56vh",
+                  resize: "vertical",
+                  padding: "12px 14px",
+                  border: `1px solid ${inputBorder}`,
+                  borderRadius: 6,
+                  background: inputBg,
+                  color: textPrimary,
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                }}
+              >
+                <button
+                  onClick={handleCopyExtractedHtml}
+                  style={{
+                    padding: "8px 14px",
+                    border: "none",
+                    borderRadius: 6,
+                    background: "#0969da",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Copy to Clipboard
+                </button>
+                <button
+                  onClick={handleDownloadExtractedHtml}
+                  style={{
+                    padding: "8px 14px",
+                    border: `1px solid ${border}`,
+                    borderRadius: 6,
+                    background: "transparent",
+                    color: textPrimary,
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Download HTML
+                </button>
+                <button
+                  onClick={() => setShowExtractHtmlModal(false)}
+                  style={{
+                    padding: "8px 14px",
+                    border: `1px solid ${border}`,
+                    borderRadius: 6,
+                    background: "transparent",
+                    color: textMuted,
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           overflow: tab === "write" ? "auto" : "hidden",
@@ -3382,7 +3817,10 @@ function NoteEditorView({
                     }}
                     theme="snow"
                     value={htmlContent}
-                    onChange={setHtmlContent}
+                    onChange={(value: string) => {
+                      markEditorContentChanged();
+                      setHtmlContent(value);
+                    }}
                     modules={quillModules}
                     formats={QUILL_FORMATS}
                     placeholder="Start writing your note here… Use the toolbar above for formatting."
@@ -3590,7 +4028,8 @@ function NoteEditorView({
                             setTargetSectionId(null);
                             if (block.type === "box") setShowBoxModal(true);
                             if (block.type === "table") setShowTableModal(true);
-                            if (block.type === "extract") setShowExtractModal(true);
+                            if (block.type === "extract")
+                              setShowExtractModal(true);
                           }}
                           style={{
                             display: "block",
@@ -3669,11 +4108,12 @@ function NoteEditorView({
                         ✏️
                       </button>
                       <button
-                        onClick={() =>
+                        onClick={() => {
+                          markEditorContentChanged();
                           setEditorSections((prev) =>
                             prev.filter((s) => s.id !== sec.id),
-                          )
-                        }
+                          );
+                        }}
                         disabled={sectionOnly && editorSections.length === 1}
                         title={
                           sectionOnly && editorSections.length === 1
@@ -3714,7 +4154,9 @@ function NoteEditorView({
                           "data-grammar-block-id",
                         );
                         const attributedBlockIndex = blockId
-                          ? sec.blocks.findIndex((block) => block.id === blockId)
+                          ? sec.blocks.findIndex(
+                              (block) => block.id === blockId,
+                            )
                           : -1;
                         const textBlockIndex = getBlockPlaceholderIndexFromText(
                           (placeholder || target.closest("p") || target)
@@ -3723,12 +4165,13 @@ function NoteEditorView({
                         const blockIndex =
                           attributedBlockIndex !== -1
                             ? attributedBlockIndex
-                            : textBlockIndex ?? -1;
+                            : (textBlockIndex ?? -1);
                         if (blockIndex === -1) return;
                         const block = sec.blocks[blockIndex];
                         event.preventDefault();
                         event.stopPropagation();
                         if (target.closest("[data-grammar-block-delete]")) {
+                          markEditorContentChanged();
                           const quill = getSectionQuill(sec.id);
                           const quillConstructor = quill?.constructor as any;
                           const blot = quillConstructor?.find?.(placeholder);
@@ -3752,306 +4195,48 @@ function NoteEditorView({
                           );
                           return;
                         }
-                        setEditingBlock({ sectionId: sec.id, index: blockIndex });
+                        setEditingBlock({
+                          sectionId: sec.id,
+                          index: blockIndex,
+                        });
                         setTargetSectionId(sec.id);
                         if (block.type === "box") setShowBoxModal(true);
                         if (block.type === "table") setShowTableModal(true);
                         if (block.type === "extract") setShowExtractModal(true);
                       }}
                     >
-                    <ReactQuill
-                      ref={(el: any) => {
-                        if (el) sectionQuillRefs.current[sec.id] = el;
-                        else delete sectionQuillRefs.current[sec.id];
-                      }}
-                      theme="snow"
-                      value={sec.quillHtml}
-                      onChange={(value: string) =>
-                        setEditorSections((prev) =>
-                          prev.map((s) =>
-                            s.id === sec.id ? { ...s, quillHtml: value } : s,
-                          ),
-                        )
-                      }
-                      onFocus={(range: any) =>
-                        rememberSectionSelection(sec.id, range)
-                      }
-                      onChangeSelection={(range: any) =>
-                        rememberSectionSelection(sec.id, range)
-                      }
-                      modules={RICH_TEXT_MODULES}
-                      formats={QUILL_FORMATS}
-                      placeholder={`Write content for "${sec.heading}"…`}
-                      className="grammar-section-editor"
-                    />
+                      <ReactQuill
+                        ref={(el: any) => {
+                          if (el) sectionQuillRefs.current[sec.id] = el;
+                          else delete sectionQuillRefs.current[sec.id];
+                        }}
+                        theme="snow"
+                        value={sec.quillHtml}
+                        onChange={(value: string) => {
+                          markEditorContentChanged();
+                          setEditorSections((prev) =>
+                            prev.map((s) =>
+                              s.id === sec.id ? { ...s, quillHtml: value } : s,
+                            ),
+                          );
+                        }}
+                        onFocus={(range: any) =>
+                          rememberSectionSelection(sec.id, range)
+                        }
+                        onChangeSelection={(range: any) =>
+                          rememberSectionSelection(sec.id, range)
+                        }
+                        modules={RICH_TEXT_MODULES}
+                        formats={QUILL_FORMATS}
+                        placeholder={`Write content for "${sec.heading}"…`}
+                        className="grammar-section-editor"
+                      />
                     </div>
                   ) : (
                     <div style={{ padding: "2rem", color: textMuted }}>
                       Loading editor…
                     </div>
                   )}
-
-                  {/* Section blocks */}
-                  {false && sec.blocks.length > 0 && (
-                    <div
-                      style={{
-                        padding: "8px 12px",
-                        borderTop: `1px solid ${dm ? "#30363d" : "#e5e7eb"}`,
-                      }}
-                    >
-                      {sec.blocks.map((block, bIdx) => (
-                        <div
-                          key={block.id}
-                          style={{
-                            marginBottom: 8,
-                            borderRadius: 8,
-                            border: `1px solid ${border}`,
-                            overflow: "hidden",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              padding: "4px 10px",
-                              background: dm ? "#161b22" : "#f0f0f0",
-                              borderBottom: `1px solid ${border}`,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: 11,
-                                color: textMuted,
-                                fontWeight: 600,
-                              }}
-                            >
-                              {block.type === "box"
-                                ? `${block.boxData?.variant === "yellow" ? "Yellow" : "Blue"} Box`
-                                : block.type === "table"
-                                  ? "Vocabulary Table"
-                                  : "Extract"}{" "}
-                              #{bIdx + 1}
-                            </span>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              {block.type === "box" && block.boxData && (
-                                <button
-                                  onClick={() => {
-                                    setEditingBlock({
-                                      sectionId: sec.id,
-                                      index: bIdx,
-                                    });
-                                    setTargetSectionId(sec.id);
-                                    setShowBoxModal(true);
-                                  }}
-                                  title="Edit this box"
-                                  style={{
-                                    fontSize: 11,
-                                    color: "#b45309",
-                                    background: "#f59e0b18",
-                                    border: "1px solid #f59e0b44",
-                                    borderRadius: 4,
-                                    cursor: "pointer",
-                                    padding: "2px 8px",
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  Edit
-                                </button>
-                              )}
-                              {block.type === "table" && block.tableData && (
-                                <button
-                                  onClick={() => {
-                                    setEditingBlock({
-                                      sectionId: sec.id,
-                                      index: bIdx,
-                                    });
-                                    setTargetSectionId(sec.id);
-                                    setShowTableModal(true);
-                                  }}
-                                  title="Edit this table"
-                                  style={{
-                                    fontSize: 11,
-                                    color: "#2563eb",
-                                    background: "#2563eb18",
-                                    border: "1px solid #2563eb44",
-                                    borderRadius: 4,
-                                    cursor: "pointer",
-                                    padding: "2px 8px",
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  ✏️ Edit
-                                </button>
-                              )}
-                              {block.type === "extract" &&
-                                block.extractData && (
-                                  <button
-                                    onClick={() => {
-                                      setEditingBlock({
-                                        sectionId: sec.id,
-                                        index: bIdx,
-                                      });
-                                      setTargetSectionId(sec.id);
-                                      setShowExtractModal(true);
-                                    }}
-                                    title="Edit this extract"
-                                    style={{
-                                      fontSize: 11,
-                                      color: "#059669",
-                                      background: "#05966918",
-                                      border: "1px solid #05966944",
-                                      borderRadius: 4,
-                                      cursor: "pointer",
-                                      padding: "2px 8px",
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    ✏️ Edit
-                                  </button>
-                                )}
-                              <button
-                                onClick={() =>
-                                  setEditorSections((prev) =>
-                                    prev.map((s) =>
-                                      s.id === sec.id
-                                        ? {
-                                            ...s,
-                                            blocks: s.blocks.filter(
-                                              (_, i) => i !== bIdx,
-                                            ),
-                                          }
-                                        : s,
-                                    ),
-                                  )
-                                }
-                                title="Remove this block"
-                                style={{
-                                  fontSize: 11,
-                                  color: "#ef4444",
-                                  background: "#ef444418",
-                                  border: "1px solid #ef444444",
-                                  borderRadius: 4,
-                                  cursor: "pointer",
-                                  padding: "2px 8px",
-                                  fontWeight: 600,
-                                }}
-                              >
-                                ✕ Remove
-                              </button>
-                            </div>
-                          </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingBlock({
-                                  sectionId: sec.id,
-                                  index: bIdx,
-                                });
-                                setTargetSectionId(sec.id);
-                                if (block.type === "box") setShowBoxModal(true);
-                                if (block.type === "table") setShowTableModal(true);
-                                if (block.type === "extract")
-                                  setShowExtractModal(true);
-                              }}
-                              style={{
-                                display: "block",
-                                width: "100%",
-                                padding: "8px 12px",
-                                border: "none",
-                                background: dm ? "#10151d" : "#f8fafc",
-                                color: textPrimary,
-                                fontSize: 13,
-                                fontWeight: 700,
-                                textAlign: "left",
-                                cursor: "pointer",
-                              }}
-                            >
-                              {getBlockPlaceholderLabel(block, bIdx + 1)}
-                            </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Add content row for this section */}
-                  <div
-                    style={{
-                      display: "none",
-                      gap: 6,
-                      padding: "8px 14px",
-                      borderTop: `1px solid ${dm ? "#30363d" : "#e5e7eb"}`,
-                      background: dm ? "#161b22" : "#fafafa",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: textMuted,
-                        alignSelf: "center",
-                        marginRight: 4,
-                      }}
-                    >
-                      Add to this Section:
-                    </span>
-                    <button
-                      onClick={() => {
-                        setTargetSectionId(sec.id);
-                        setEditingBlock(null);
-                        setShowBoxModal(true);
-                      }}
-                      style={{
-                        padding: "3px 10px",
-                        border: `1px solid ${border}`,
-                        borderRadius: 5,
-                        background: "#fff8e622",
-                        color: "#ffa90a",
-                        cursor: "pointer",
-                        fontSize: 11,
-                        fontWeight: 600,
-                      }}
-                    >
-                      📦 Box
-                    </button>
-                    <button
-                      onClick={() => {
-                        setTargetSectionId(sec.id);
-                        setEditingBlock(null);
-                        setShowTableModal(true);
-                      }}
-                      style={{
-                        padding: "3px 10px",
-                        border: `1px solid ${border}`,
-                        borderRadius: 5,
-                        background: "#2563eb22",
-                        color: "#60a5fa",
-                        cursor: "pointer",
-                        fontSize: 11,
-                        fontWeight: 600,
-                      }}
-                    >
-                      📋 Table
-                    </button>
-                    <button
-                      onClick={() => {
-                        setTargetSectionId(sec.id);
-                        setEditingBlock(null);
-                        setShowExtractModal(true);
-                      }}
-                      style={{
-                        padding: "3px 10px",
-                        border: `1px solid ${border}`,
-                        borderRadius: 5,
-                        background: "#05966922",
-                        color: "#34d399",
-                        cursor: "pointer",
-                        fontSize: 11,
-                        fontWeight: 600,
-                      }}
-                    >
-                      🖼 Extract
-                    </button>
-                  </div>
                 </div>
               ))}
           </div>
@@ -4181,6 +4366,7 @@ function NoteEditorView({
       {showSectionModal && (
         <SectionModal
           onInsert={(sec) => {
+            markEditorContentChanged();
             if (editingSectionId !== null) {
               // Update existing section heading/slNo, preserve content
               setEditorSections((prev) =>
@@ -4224,6 +4410,7 @@ function NoteEditorView({
       {showBoxModal && (
         <BoxModal
           onInsert={(html, boxData) => {
+            markEditorContentChanged();
             if (editingBlock !== null) {
               if (editingBlock.sectionId === null) {
                 setPreambleBlocks((prev) =>
@@ -4281,6 +4468,7 @@ function NoteEditorView({
       {showTableModal && (
         <VocabTableModal
           onInsert={(html, tableData) => {
+            markEditorContentChanged();
             if (editingBlock !== null) {
               if (editingBlock.sectionId === null) {
                 setPreambleBlocks((prev) =>
@@ -4330,6 +4518,7 @@ function NoteEditorView({
       {showExtractModal && (
         <ExtractModal
           onInsert={(html, extractData) => {
+            markEditorContentChanged();
             if (editingBlock !== null) {
               if (editingBlock.sectionId === null) {
                 setPreambleBlocks((prev) =>
@@ -4400,6 +4589,7 @@ function NotesView({
     translationFor: Note | null;
     takenLangs: string[];
     translations: Note[];
+    initialKnownLang?: string;
   }) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
@@ -4408,7 +4598,6 @@ function NotesView({
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<Note | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const autoOpenedRef = React.useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -4427,43 +4616,18 @@ function NotesView({
   useEffect(() => {
     load();
   }, [load]);
-  useEffect(() => {
-    autoOpenedRef.current = false;
-  }, [subtopic.id]);
-
-  // Grammar subtopics own one logical note. Open its preferred translation
-  // directly instead of rendering the concept list. Existing translations
-  // remain separate rows and are available from the editor language selector.
-  useEffect(() => {
-    if (
-      apiPrefix !== "grammar" ||
-      loading ||
-      notes.length === 0 ||
-      autoOpenedRef.current
-    )
-      return;
-    const canonicalConceptId = notes[0].concept_id;
-    const translations = notes.filter(
-      (note) => note.concept_id === canonicalConceptId,
-    );
-    const preferred =
-      translations.find((note) => note.known_lang === "en") || translations[0];
-    if (!preferred) return;
-    autoOpenedRef.current = true;
-    onOpenEditor({
-      existingNote: preferred,
-      translationFor: null,
-      takenLangs: [],
-      translations,
-    });
-  }, [apiPrefix, loading, notes, onOpenEditor]);
-
   // Group notes by concept_id
   const grouped = notes.reduce<Record<string, Note[]>>((acc, n) => {
     if (!acc[n.concept_id]) acc[n.concept_id] = [];
     acc[n.concept_id].push(n);
     return acc;
   }, {});
+  const grammarConceptId = notes[0]?.concept_id;
+  const grammarPages = grammarConceptId
+    ? notes.filter((note) => note.concept_id === grammarConceptId)
+    : [];
+  const grammarPageForLang = (code: string) =>
+    grammarPages.find((note) => note.known_lang === code) || null;
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
@@ -4528,7 +4692,9 @@ function NotesView({
               color: "var(--text-muted)",
             }}
           >
-            Notes & Translations
+            {apiPrefix === "grammar"
+              ? "Language Pages"
+              : "Notes & Translations"}
           </p>
         </div>
         {!loading && (apiPrefix !== "grammar" || notes.length === 0) && (
@@ -4565,25 +4731,167 @@ function NotesView({
               display: "block",
             }}
           />
-          Loading notes...
+          {apiPrefix === "grammar"
+            ? "Loading language pages..."
+            : "Loading notes..."}
         </div>
-      ) : apiPrefix === "grammar" && notes.length > 0 ? (
-        <div
-          style={{
-            textAlign: "center",
-            padding: "3rem",
-            color: "var(--text-muted)",
-          }}
-        >
-          <Loader2
-            size={24}
-            style={{
-              animation: "spin 1s linear infinite",
-              margin: "0 auto 8px",
-              display: "block",
-            }}
-          />
-          Opening note...
+      ) : apiPrefix === "grammar" ? (
+        <div style={{ display: "grid", gap: "1rem" }}>
+          {grammarPages.length === 0 && (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "4rem",
+                color: "var(--text-muted)",
+                border: "2px dashed var(--border)",
+                borderRadius: 12,
+              }}
+            >
+              <Globe
+                size={40}
+                style={{
+                  opacity: 0.3,
+                  margin: "0 auto 12px",
+                  display: "block",
+                }}
+              />
+              <p style={{ fontWeight: 600, marginBottom: 8 }}>
+                No language pages yet
+              </p>
+              <p style={{ fontSize: 13, marginBottom: 16 }}>
+                Create the first grammar language page for this subtopic.
+              </p>
+              <button
+                className="btn btn-primary"
+                onClick={() =>
+                  onOpenEditor({
+                    existingNote: null,
+                    translationFor: null,
+                    takenLangs: [],
+                    translations: [],
+                  })
+                }
+              >
+                <Plus size={14} style={{ display: "inline", marginRight: 6 }} />{" "}
+                Create English Page
+              </button>
+            </div>
+          )}
+          {grammarPages.length > 0 && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "1rem",
+              }}
+            >
+              {KNOWN_LANGS.map((lang) => {
+                const page = grammarPageForLang(lang.code);
+                return (
+                  <div
+                    key={lang.code}
+                    className="card"
+                    style={{
+                      padding: "1rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700 }}>{lang.label}</div>
+                        <div
+                          style={{ fontSize: 12, color: "var(--text-muted)" }}
+                        >
+                          {page ? page.title || "Untitled" : "Not created"}
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          borderRadius: 999,
+                          padding: "3px 8px",
+                          background: page ? "#2ea04322" : "var(--bg)",
+                          color: page ? "#2ea043" : "var(--text-muted)",
+                        }}
+                      >
+                        {page ? "READY" : "EMPTY"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {page ? (
+                        <>
+                          <a
+                            href={`${(api.defaults as any).baseURL || "http://localhost:8000/api"}/admin/${apiPrefix}/notes/${page.id}/html`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              ...iconBtn("#2ea043"),
+                              textDecoration: "none",
+                            }}
+                            title="Preview language page"
+                          >
+                            <ExternalLink size={14} />
+                          </a>
+                          <button
+                            title="Edit language page"
+                            onClick={() =>
+                              onOpenEditor({
+                                existingNote: page,
+                                translationFor: null,
+                                takenLangs: [],
+                                translations: grammarPages,
+                              })
+                            }
+                            style={iconBtn("#f59e0b")}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            title="Delete language page"
+                            onClick={() => setConfirmDelete(page)}
+                            style={iconBtn("#ef4444")}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            onOpenEditor({
+                              existingNote: null,
+                              translationFor: grammarPages[0],
+                              takenLangs: grammarPages.map((n) => n.known_lang),
+                              translations: grammarPages,
+                              initialKnownLang: lang.code,
+                            })
+                          }
+                          style={{
+                            ...iconBtn("#1f6feb"),
+                            width: "auto",
+                            padding: "0 12px",
+                            gap: 6,
+                            fontSize: 13,
+                          }}
+                        >
+                          <Plus size={14} /> Add Page
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : Object.keys(grouped).length === 0 ? (
         <div
@@ -5741,9 +6049,11 @@ export default function ContentManager({
                   <span style={{ color: "var(--white)" }}>
                     {editorState.existingNote
                       ? "Edit"
-                      : editorState.translationFor
-                        ? "Translate"
-                        : "Create"}
+                      : apiPrefix === "grammar"
+                        ? "Create Page"
+                        : editorState.translationFor
+                          ? "Translate"
+                          : "Create"}
                   </span>
                 </>
               )}
@@ -5795,15 +6105,18 @@ export default function ContentManager({
               translationFor,
               takenLangs,
               translations,
+              initialKnownLang,
             }) => {
               setEditorState({
                 subtopicId: selectedSubtopic.id,
                 subtopicName: selectedSubtopic.name_en,
                 learningLang,
+                levelCode,
                 existingNote,
                 translationFor,
                 takenLangs,
                 translations,
+                initialKnownLang,
               });
               setView("editor");
             }}
@@ -5833,16 +6146,18 @@ export default function ContentManager({
                 editorState.existingNote
                   ? `note-${editorState.existingNote.id}`
                   : editorState.translationFor
-                    ? `translation-${editorState.translationFor.concept_id}`
+                    ? `translation-${editorState.translationFor.concept_id}-${editorState.initialKnownLang || "next"}`
                     : "new-note"
               }
               subtopicId={editorState.subtopicId}
               subtopicName={editorState.subtopicName}
               learningLang={editorState.learningLang}
+              levelCode={editorState.levelCode}
               existingNote={editorState.existingNote}
               translationFor={editorState.translationFor}
               takenLangs={editorState.takenLangs}
               translations={editorState.translations}
+              initialKnownLang={editorState.initialKnownLang}
               onSelectTranslation={(note) =>
                 setEditorState((prev) =>
                   prev
@@ -5870,8 +6185,7 @@ export default function ContentManager({
               onClose={() => {
                 setEditorState(null);
                 if (apiPrefix === "grammar") {
-                  setView("subtopics");
-                  setSelectedSubtopic(null);
+                  setView("notes");
                 } else {
                   setView("notes");
                 }
@@ -5879,8 +6193,7 @@ export default function ContentManager({
               onSaved={() => {
                 setEditorState(null);
                 if (apiPrefix === "grammar") {
-                  setView("subtopics");
-                  setSelectedSubtopic(null);
+                  setView("notes");
                 } else {
                   setView("notes");
                 }
