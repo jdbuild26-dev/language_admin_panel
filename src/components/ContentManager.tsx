@@ -421,7 +421,7 @@ function BoxModal({
 }
 
 // ─── Vocab Table Modal ────────────────────────────────────────────────────────
-// Customizable columns, hover-translate tooltips, and audio per cell.
+// CSV-defined columns, hover-translate tooltips, and audio per cell.
 
 function VocabTableModal({
   onInsert,
@@ -471,26 +471,6 @@ function VocabTableModal({
 
   const numCols = headers.length;
 
-  const addColumn = () => {
-    setHeaders((h) => [...h, `Column ${h.length + 1}`]);
-    setRows((r) =>
-      r.map((row) => ({
-        cells: [
-          ...row.cells,
-          { text: "", tooltip: "", audioUrl: "", tts: false },
-        ],
-      })),
-    );
-  };
-  const removeColumn = (ci: number) => {
-    if (numCols <= 1) return;
-    setHeaders((h) => h.filter((_, i) => i !== ci));
-    setRows((r) =>
-      r.map((row) => ({ cells: row.cells.filter((_, i) => i !== ci) })),
-    );
-  };
-  const updateHeader = (ci: number, val: string) =>
-    setHeaders((h) => h.map((v, i) => (i === ci ? val : v)));
   const addRow = () =>
     setRows((r) => [
       ...r,
@@ -586,7 +566,7 @@ function VocabTableModal({
               📋 Insert Vocabulary Table
             </h3>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: textMuted }}>
-              Customizable columns · hover tooltip · TTS per cell
+              CSV-defined columns · hover tooltip · TTS per cell
             </p>
           </div>
           <button
@@ -602,7 +582,7 @@ function VocabTableModal({
           </button>
         </div>
 
-        {/* Column header editors */}
+        {/* CSV import */}
         <div
           style={{
             flexShrink: 0,
@@ -613,87 +593,6 @@ function VocabTableModal({
             border: `1px solid ${border}`,
           }}
         >
-          <div
-            style={{
-              fontSize: 11,
-              color: textMuted,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              marginBottom: 8,
-            }}
-          >
-            Column Headers
-          </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              flexWrap: "wrap",
-              marginBottom: 8,
-            }}
-          >
-            {headers.map((h, ci) => (
-              <div
-                key={ci}
-                style={{ display: "flex", alignItems: "center", gap: 4 }}
-              >
-                <input
-                  value={h}
-                  onChange={(e) => updateHeader(ci, e.target.value)}
-                  style={{
-                    padding: "5px 8px",
-                    border: `1px solid ${inputBorder}`,
-                    borderRadius: 6,
-                    fontSize: 12,
-                    outline: "none",
-                    background: inputBg,
-                    color: textPrimary,
-                    width: 150,
-                  }}
-                />
-                {headers.length > 1 && (
-                  <button
-                    onClick={() => removeColumn(ci)}
-                    style={{
-                      width: 20,
-                      height: 20,
-                      border: "none",
-                      borderRadius: 4,
-                      background: "#ef444422",
-                      color: "#ef4444",
-                      cursor: "pointer",
-                      fontSize: 13,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      lineHeight: 1,
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-            <button
-              onClick={addColumn}
-              style={{
-                padding: "5px 10px",
-                border: `1px dashed ${border}`,
-                borderRadius: 6,
-                background: "transparent",
-                color: textMuted,
-                cursor: "pointer",
-                fontSize: 12,
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              <Plus size={12} /> Add Column
-            </button>
-          </div>
           <div
             style={{
               display: "flex",
