@@ -690,6 +690,9 @@ function Slide2Subtopics({
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [nameEn, setNameEn] = useState("");
+  const [nameFr, setNameFr] = useState("");
+  const [nameDe, setNameDe] = useState("");
+  const [nameEs, setNameEs] = useState("");
   const [exerciseTypeSlug, setExerciseTypeSlug] = useState<
     GrammarExerciseTypeSlug | ""
   >("");
@@ -744,6 +747,9 @@ function Slide2Subtopics({
 
   const closeCreateDialog = () => {
     setNameEn("");
+    setNameFr("");
+    setNameDe("");
+    setNameEs("");
     setExerciseTypeSlug("");
     setCsvFile(null);
     if (createCsvInputRef.current) createCsvInputRef.current.value = "";
@@ -757,12 +763,18 @@ function Slide2Subtopics({
       const response = await api.post("/admin/grammar/subtopics", {
         topic_id: topic.id,
         name_en: nameEn.trim(),
+        name_fr: nameFr.trim() || undefined,
+        name_de: nameDe.trim() || undefined,
+        name_es: nameEs.trim() || undefined,
         order_index: subtopics.length,
       });
       const createdSubtopic: GrammarSubtopic = {
         id: response.data.id,
         slug: response.data.slug,
         name_en: nameEn.trim(),
+        name_fr: nameFr.trim() || undefined,
+        name_de: nameDe.trim() || undefined,
+        name_es: nameEs.trim() || undefined,
         is_active: true,
         exercise_type_slug: exerciseTypeSlug,
       };
@@ -923,6 +935,54 @@ function Slide2Subtopics({
                   value={nameEn}
                   onChange={(e) => setNameEn(e.target.value)}
                   placeholder="e.g. Proper Nouns Part 1"
+                  style={{ marginBottom: 0 }}
+                />
+                <label
+                  style={{
+                    fontWeight: 500,
+                    fontSize: 14,
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  French Name
+                </label>
+                <input
+                  className="form-control"
+                  value={nameFr}
+                  onChange={(e) => setNameFr(e.target.value)}
+                  placeholder="Nom en français"
+                  style={{ marginBottom: 0 }}
+                />
+                <label
+                  style={{
+                    fontWeight: 500,
+                    fontSize: 14,
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  German Name
+                </label>
+                <input
+                  className="form-control"
+                  value={nameDe}
+                  onChange={(e) => setNameDe(e.target.value)}
+                  placeholder="Deutscher Name"
+                  style={{ marginBottom: 0 }}
+                />
+                <label
+                  style={{
+                    fontWeight: 500,
+                    fontSize: 14,
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  Spanish Name
+                </label>
+                <input
+                  className="form-control"
+                  value={nameEs}
+                  onChange={(e) => setNameEs(e.target.value)}
+                  placeholder="Nombre en español"
                   style={{ marginBottom: 0 }}
                 />
               </div>
