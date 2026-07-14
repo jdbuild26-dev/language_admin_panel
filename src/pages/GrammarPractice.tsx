@@ -690,9 +690,6 @@ function Slide2Subtopics({
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [nameEn, setNameEn] = useState("");
-  const [nameFr, setNameFr] = useState("");
-  const [nameDe, setNameDe] = useState("");
-  const [nameEs, setNameEs] = useState("");
   const [exerciseTypeSlug, setExerciseTypeSlug] = useState<
     GrammarExerciseTypeSlug | ""
   >("");
@@ -747,9 +744,6 @@ function Slide2Subtopics({
 
   const closeCreateDialog = () => {
     setNameEn("");
-    setNameFr("");
-    setNameDe("");
-    setNameEs("");
     setExerciseTypeSlug("");
     setCsvFile(null);
     if (createCsvInputRef.current) createCsvInputRef.current.value = "";
@@ -763,18 +757,12 @@ function Slide2Subtopics({
       const response = await api.post("/admin/grammar/subtopics", {
         topic_id: topic.id,
         name_en: nameEn.trim(),
-        name_fr: nameFr.trim() || undefined,
-        name_de: nameDe.trim() || undefined,
-        name_es: nameEs.trim() || undefined,
         order_index: subtopics.length,
       });
       const createdSubtopic: GrammarSubtopic = {
         id: response.data.id,
         slug: response.data.slug,
         name_en: nameEn.trim(),
-        name_fr: nameFr.trim() || undefined,
-        name_de: nameDe.trim() || undefined,
-        name_es: nameEs.trim() || undefined,
         is_active: true,
         exercise_type_slug: exerciseTypeSlug,
       };
@@ -790,10 +778,15 @@ function Slide2Subtopics({
         });
         subtypeId = subtypeResponse.data.id;
       } catch (error) {
-        await api
-          .delete(`/admin/grammar/subtopics/${createdSubtopic.id}`)
-          .catch(() => {});
-        throw error;
+        const err = error as { response?: { data?: { detail?: string } } };
+        showToast(
+          false,
+          err.response?.data?.detail
+            ? `Subtopic was created, but linking the exercise type failed: ${err.response.data.detail}`
+            : "Subtopic was created, but linking the exercise type failed.",
+        );
+        load();
+        return;
       }
 
       let uploadedCount: string | null = null;
@@ -922,7 +915,7 @@ function Slide2Subtopics({
                     color: "var(--text-muted)",
                   }}
                 >
-                  English Name *
+                  Subtopic Name *
                 </label>
                 <input
                   className="form-control"
@@ -930,54 +923,6 @@ function Slide2Subtopics({
                   value={nameEn}
                   onChange={(e) => setNameEn(e.target.value)}
                   placeholder="e.g. Proper Nouns Part 1"
-                  style={{ marginBottom: 0 }}
-                />
-                <label
-                  style={{
-                    fontWeight: 500,
-                    fontSize: 14,
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  French Name
-                </label>
-                <input
-                  className="form-control"
-                  value={nameFr}
-                  onChange={(e) => setNameFr(e.target.value)}
-                  placeholder="Name in French"
-                  style={{ marginBottom: 0 }}
-                />
-                <label
-                  style={{
-                    fontWeight: 500,
-                    fontSize: 14,
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  German Name
-                </label>
-                <input
-                  className="form-control"
-                  value={nameDe}
-                  onChange={(e) => setNameDe(e.target.value)}
-                  placeholder="Name in German"
-                  style={{ marginBottom: 0 }}
-                />
-                <label
-                  style={{
-                    fontWeight: 500,
-                    fontSize: 14,
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  Spanish Name
-                </label>
-                <input
-                  className="form-control"
-                  value={nameEs}
-                  onChange={(e) => setNameEs(e.target.value)}
-                  placeholder="Name in Spanish"
                   style={{ marginBottom: 0 }}
                 />
               </div>
@@ -1281,6 +1226,33 @@ function Slide3ExerciseTypes({
   onSelect: (typeSlug: GrammarExerciseTypeSlug) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: "var(--text-muted)",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          fontSize: 14,
+          marginBottom: "1rem",
+        }}
+      >
+        <ChevronLeft size={16} /> Back
+      </button>
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Create Subtopic</h2>
+        <p style={{ color: "var(--text-muted)", marginBottom: 0 }}>
+          Exercise type is now selected in the Create Subtopic dialog.
+        </p>
+      </div>
+    </div>
+  );
+
   // Check which types already have exercises for this subtopic
   const [usedSlugs, setUsedSlugs] = useState<Set<string>>(new Set());
 
@@ -3124,13 +3096,15 @@ export default function GrammarPractice() {
           level={level}
           onBack={() => setSlide("topics")}
           onSelect={(subtopic, typeSlug) => {
-            setSelectedSubtopic(subtopic);
             if (typeSlug) {
+              setSelectedSubtopic(subtopic);
               setSelectedTypeSlug(typeSlug);
               setSlide("exercises");
             } else {
-              setSelectedTypeSlug(null);
-              setSlide("exercise_types");
+              showToast(
+                false,
+                "This subtopic does not have an exercise type linked. Create a new subtopic and choose its exercise type in the Create Subtopic dialog.",
+              );
             }
           }}
           showToast={showToast}
