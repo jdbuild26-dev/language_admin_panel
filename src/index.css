@@ -556,6 +556,111 @@ h2 {
   color: #374151;
 }
 
+.note-preview-dark {
+  background: #181818;
+  color: #f3f4f6;
+}
+
+.note-preview-dark .note-preview-sidebar {
+  background: #1f1f1f;
+  border-right-color: #3a3a3a;
+}
+
+.note-preview-dark .note-preview-sidebar-title {
+  color: #e6ad73;
+}
+
+.note-preview-dark .note-preview-sidebar-title::after {
+  background: #e6ad73;
+}
+
+.note-preview-dark .note-preview-sidebar-link {
+  color: #cbd5e1;
+}
+
+.note-preview-dark .note-preview-sidebar-link:hover {
+  background: rgba(230, 173, 115, 0.13);
+}
+
+.note-preview-dark h1,
+.note-preview-dark h2,
+.note-preview-dark h3,
+.note-preview-dark h4,
+.note-preview-dark strong {
+  color: #f3f4f6;
+}
+
+.note-preview-dark h1,
+.note-preview-dark h2 {
+  color: #e6ad73;
+}
+
+.note-preview-dark h2 {
+  border-bottom-color: #3a3a3a;
+}
+
+.note-preview-dark h3 {
+  color: #e6ad73;
+}
+
+.note-preview-dark em,
+.note-preview-dark a {
+  color: #e6ad73;
+}
+
+.note-preview-dark code {
+  background: #2f2f2f;
+  color: #f3f4f6;
+}
+
+.note-preview-dark pre {
+  background: #202020;
+  color: #f3f4f6;
+}
+
+.note-preview-dark blockquote {
+  background: #2f2924;
+  border-left-color: #e6ad73;
+}
+
+.note-preview-dark th {
+  background: #3a3a3a;
+  color: #f3f4f6;
+}
+
+.note-preview-dark th,
+.note-preview-dark td {
+  border-bottom-color: #3d3d3d;
+}
+
+.note-preview-dark td {
+  background: #292929;
+  color: #f3f4f6;
+}
+
+.note-preview-dark [data-vocab-table="1"] > div,
+.note-preview-dark .table-responsive > div {
+  background: #292929 !important;
+  border-color: #3a3a3a !important;
+  box-shadow: none !important;
+}
+
+.note-preview-dark [data-vocab-table="1"] button,
+.note-preview-dark .audio-btn,
+.note-preview-dark .audio-btn-inline {
+  color: #efa6d0 !important;
+}
+
+.note-preview-dark [data-vocab-table="1"] button svg,
+.note-preview-dark [data-vocab-table="1"] button svg *,
+.note-preview-dark .audio-btn svg,
+.note-preview-dark .audio-btn svg *,
+.note-preview-dark .audio-btn-inline svg,
+.note-preview-dark .audio-btn-inline svg * {
+  color: #efa6d0 !important;
+  stroke: #efa6d0 !important;
+}
+
 .note-preview img {
   display: block;
   max-width: 100%;

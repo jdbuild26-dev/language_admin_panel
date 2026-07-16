@@ -1994,8 +1994,9 @@ function NoteEditorView({
       if (seedNote) next[seedNote.known_lang] = seedNote.title || "";
       if (sectionOnly) {
         next.en =
-          seedNote?.title ||
           translations?.find((note) => note.known_lang === "en")?.title ||
+          seedNote?.description ||
+          (seedNote?.known_lang === "en" ? seedNote.title : "") ||
           translations?.[0]?.title ||
           "";
       }
@@ -2024,9 +2025,14 @@ function NoteEditorView({
   );
   const isTranslation = !!translationFor && !existingNote;
   const conceptLocked = !!existingNote || isTranslation;
+  const englishTitle = titlesByLang.en || "";
+  const selectedLangTitle = titlesByLang[knownLang] || "";
   const title = sectionOnly
-    ? titlesByLang.en || ""
+    ? knownLang === "en"
+      ? englishTitle
+      : selectedLangTitle || translatedTitle || englishTitle
     : titlesByLang[knownLang] || "";
+  const secondaryTitle = sectionOnly && knownLang !== "en" ? englishTitle : "";
 
   const [htmlContent, setHtmlContent] = useState("");
   const [rawHtmlInput, setRawHtmlInput] = useState("");
@@ -2053,8 +2059,9 @@ function NoteEditorView({
       if (seedNote) next[seedNote.known_lang] = seedNote.title || "";
       if (sectionOnly) {
         next.en =
-          seedNote?.title ||
           translations?.find((note) => note.known_lang === "en")?.title ||
+          seedNote?.description ||
+          (seedNote?.known_lang === "en" ? seedNote.title : "") ||
           translations?.[0]?.title ||
           "";
       }
@@ -2578,7 +2585,7 @@ function NoteEditorView({
       .post("/admin/grammar/preview-markdown", {
         markdown_text: previewSource,
         title,
-        description: translatedTitle || undefined,
+        description: secondaryTitle || undefined,
       })
       .then((response) => {
         if (!cancelled) setCompiledPreviewHtml(response.data.html || "");
@@ -2598,7 +2605,7 @@ function NoteEditorView({
     return () => {
       cancelled = true;
     };
-  }, [editorSections, sectionOnly, tab, title, translatedTitle]);
+  }, [editorSections, secondaryTitle, sectionOnly, tab, title]);
 
   // Inject raw HTML directly into Quill by setting it as the editor value
   const handleInjectRawHtml = () => {
@@ -2658,6 +2665,10 @@ function NoteEditorView({
       showToast(false, "Title is required");
       return;
     }
+    if (sectionOnly && knownLang !== "en" && !secondaryTitle.trim()) {
+      showToast(false, "English title is required");
+      return;
+    }
     if (!conceptId.trim()) {
       showToast(false, "Concept ID is required");
       return;
@@ -2678,7 +2689,7 @@ function NoteEditorView({
         await api.put(`/admin/${apiPrefix}/notes/${existingNote.id}`, {
           markdown_source: combinedContent,
           title,
-          ...(sectionOnly ? { description: translatedTitle } : {}),
+          ...(sectionOnly ? { description: secondaryTitle } : {}),
         });
         showToast(true, "Note updated");
       } else {
@@ -2689,7 +2700,7 @@ function NoteEditorView({
           learning_lang: learningLang,
           markdown_source: combinedContent,
           title,
-          ...(sectionOnly ? { description: translatedTitle } : {}),
+          ...(sectionOnly ? { description: secondaryTitle } : {}),
         });
         showToast(true, "Note created");
       }
@@ -2710,7 +2721,15 @@ function NoteEditorView({
   const textMuted = dm ? "#8b949e" : "#666";
   const inputBg = dm ? "#0e1117" : "#ffffff";
   const inputBorder = dm ? "#30363d" : "#dee2e6";
-  const previewBg = dm ? "#161b22" : "#f9f5f0";
+  const previewBg = dm ? "#0f141a" : "#f9f5f0";
+  const previewIframeHtml = dm
+    ? compiledPreviewHtml
+        .replace(/<body([^>]*)class="([^"]*)"/i, '<body$1class="$2 dark-mode"')
+        .replace(
+          /applyTheme\(localStorage\.getItem\("grammar-note-theme"\)\|\|"warm"\);/g,
+          'applyTheme("dark");',
+        )
+    : compiledPreviewHtml;
 
   return (
     <div
@@ -3033,14 +3052,16 @@ function NoteEditorView({
                   letterSpacing: "0.05em",
                 }}
               >
-                Title *
+                {knownLang === "en"
+                  ? "English Title *"
+                  : `${KNOWN_LANGS.find((lang) => lang.code === knownLang)?.label || knownLang.toUpperCase()} Title *`}
               </label>
               <input
                 value={title}
                 onChange={(e) =>
                   setTitlesByLang((prev) => ({
                     ...prev,
-                    en: e.target.value,
+                    [knownLang]: e.target.value,
                   }))
                 }
                 placeholder="e.g. Perfect Nouns in French"
@@ -3057,6 +3078,44 @@ function NoteEditorView({
                 }}
               />
             </div>
+            {knownLang !== "en" && (
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 11,
+                    color: textMuted,
+                    marginBottom: 4,
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  English Title *
+                </label>
+                <input
+                  value={englishTitle}
+                  onChange={(e) =>
+                    setTitlesByLang((prev) => ({
+                      ...prev,
+                      en: e.target.value,
+                    }))
+                  }
+                  placeholder="The English page title shown below translated titles"
+                  style={{
+                    width: "100%",
+                    padding: "7px 10px",
+                    border: `1px solid ${inputBorder}`,
+                    borderRadius: 6,
+                    fontSize: 13,
+                    outline: "none",
+                    boxSizing: "border-box",
+                    background: inputBg,
+                    color: textPrimary,
+                  }}
+                />
+              </div>
+            )}
           </>
         ) : (
           <div>
@@ -4177,7 +4236,7 @@ function NoteEditorView({
               ) : compiledPreviewHtml ? (
                 <iframe
                   title="Compiled grammar note preview"
-                  srcDoc={compiledPreviewHtml}
+                  srcDoc={previewIframeHtml}
                   sandbox="allow-scripts allow-same-origin"
                   style={{
                     display: "block",
@@ -4186,7 +4245,7 @@ function NoteEditorView({
                     height: "100%",
                     minHeight: 0,
                     border: "none",
-                    background: "#f9f5f0",
+                    background: previewBg,
                   }}
                 />
               ) : (
@@ -4251,7 +4310,7 @@ function NoteEditorView({
                   </div>
                 ) : (
                   <div
-                    className="note-preview note-preview-document"
+                    className={`note-preview note-preview-document ${dm ? "note-preview-dark" : ""}`}
                     dangerouslySetInnerHTML={{ __html: fullHtml }}
                   />
                 );
@@ -4527,6 +4586,7 @@ function NotesView({
     : [];
   const grammarPageForLang = (code: string) =>
     grammarPages.find((note) => note.known_lang === code) || null;
+  const englishGrammarPage = grammarPageForLang("en");
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
@@ -4765,10 +4825,19 @@ function NotesView({
                         </>
                       ) : (
                         <button
+                          disabled={lang.code !== "en" && !englishGrammarPage}
+                          title={
+                            lang.code !== "en" && !englishGrammarPage
+                              ? "Create the English page first"
+                              : "Add language page"
+                          }
                           onClick={() =>
                             onOpenEditor({
                               existingNote: null,
-                              translationFor: grammarPages[0],
+                              translationFor:
+                                lang.code === "en"
+                                  ? null
+                                  : englishGrammarPage || grammarPages[0],
                               takenLangs: grammarPages.map((n) => n.known_lang),
                               translations: grammarPages,
                               initialKnownLang: lang.code,
@@ -4780,6 +4849,12 @@ function NotesView({
                             padding: "0 12px",
                             gap: 6,
                             fontSize: 13,
+                            opacity:
+                              lang.code !== "en" && !englishGrammarPage ? 0.5 : 1,
+                            cursor:
+                              lang.code !== "en" && !englishGrammarPage
+                                ? "not-allowed"
+                                : "pointer",
                           }}
                         >
                           <Plus size={14} /> Add Page
