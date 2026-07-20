@@ -2947,6 +2947,7 @@ function GrammarViewModal({
         <div
           style={{
             overflowY: "auto",
+            overflowX: "auto",
             flex: 1,
             minHeight: 0,
             padding: "0 0 16px",
@@ -2986,6 +2987,7 @@ function GrammarViewModal({
             <table
               style={{
                 width: "100%",
+                minWidth: 1120,
                 borderCollapse: "collapse",
                 fontSize: 13,
               }}
