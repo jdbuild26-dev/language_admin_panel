@@ -109,6 +109,84 @@ interface GrammarExerciseDetail extends ExerciseRow {
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
+type GrammarExcelRow = Record<string, string | number | boolean | null>;
+const LANG_SUFFIXES = ["_EN", "_FR", "_DE", "_ES"] as const;
+type LangSuffix = (typeof LANG_SUFFIXES)[number];
+const LANG_LABELS: Record<LangSuffix, string> = {
+  _EN: "EN",
+  _FR: "FR",
+  _DE: "DE",
+  _ES: "ES",
+};
+const LANG_COLORS: Record<LangSuffix, string> = {
+  _EN: "#60a5fa",
+  _FR: "#a78bfa",
+  _DE: "#34d399",
+  _ES: "#fb923c",
+};
+const DATA_MASTER_KEYS = [
+  "ExerciseID",
+  "Question Type",
+  "Level",
+  "Category",
+  "QuestionType",
+  "Difficulty",
+  "Exercise Tag",
+  "TimeLimitSeconds",
+  "Time",
+  "Character Limit",
+  "Min_Words_1",
+  "Min_Words_2",
+  "Min_Words_3",
+  "Min_Words_4",
+  "Min_Words_5",
+];
+
+function parseLangKey(key: string): { base: string; lang: LangSuffix } | null {
+  for (const suffix of LANG_SUFFIXES) {
+    if (key.endsWith(suffix)) {
+      return { base: key.slice(0, -suffix.length), lang: suffix };
+    }
+  }
+  return null;
+}
+
+function groupRowKeys(
+  row: GrammarExcelRow,
+  visibleLanguages: readonly LangSuffix[] | LangSuffix[],
+): {
+  masterKeys: string[];
+  pairedGroups: { base: string; langs: LangSuffix[] }[];
+  unpaired: string[];
+} {
+  const masterKeys = DATA_MASTER_KEYS.filter((k) => k in row);
+  const remaining = Object.keys(row).filter(
+    (k) => !DATA_MASTER_KEYS.includes(k),
+  );
+  const baseMap = new Map<string, LangSuffix[]>();
+  const unpaired: string[] = [];
+
+  for (const key of remaining) {
+    const parsed = parseLangKey(key);
+    if (parsed && visibleLanguages.includes(parsed.lang)) {
+      const existing = baseMap.get(parsed.base) ?? [];
+      existing.push(parsed.lang);
+      baseMap.set(parsed.base, existing);
+    } else if (!parsed) {
+      unpaired.push(key);
+    }
+  }
+
+  const pairedGroups = Array.from(baseMap.entries())
+    .map(([base, langs]) => ({
+      base,
+      langs: visibleLanguages.filter((l) => langs.includes(l)),
+    }))
+    .filter((group) => group.langs.length > 0);
+
+  return { masterKeys, pairedGroups, unpaired };
+}
+
 function Toast({
   ok,
   msg,
@@ -387,6 +465,8 @@ function Slide1Topics({
   const [showCreate, setShowCreate] = useState(false);
   const [nameEn, setNameEn] = useState("");
   const [nameFr, setNameFr] = useState("");
+  const [nameDe, setNameDe] = useState("");
+  const [nameEs, setNameEs] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<GrammarTopic | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -416,6 +496,8 @@ function Slide1Topics({
       await api.post("/admin/grammar/topics", {
         name_en: nameEn.trim(),
         name_fr: nameFr.trim() || undefined,
+        name_de: nameDe.trim() || undefined,
+        name_es: nameEs.trim() || undefined,
         learning_lang: learningLang,
         level_code: level,
         order_index: topics.length,
@@ -423,6 +505,8 @@ function Slide1Topics({
       showToast(true, `Created "${nameEn}"`);
       setNameEn("");
       setNameFr("");
+      setNameDe("");
+      setNameEs("");
       setShowCreate(false);
       load();
     } catch (e: unknown) {
@@ -500,6 +584,20 @@ function Slide1Topics({
               placeholder="Name (FR) optional"
               value={nameFr}
               onChange={(e) => setNameFr(e.target.value)}
+              style={{ flex: 1, minWidth: 180 }}
+            />
+            <input
+              className="form-control"
+              placeholder="Name (DE) optional"
+              value={nameDe}
+              onChange={(e) => setNameDe(e.target.value)}
+              style={{ flex: 1, minWidth: 180 }}
+            />
+            <input
+              className="form-control"
+              placeholder="Name (ES) optional"
+              value={nameEs}
+              onChange={(e) => setNameEs(e.target.value)}
               style={{ flex: 1, minWidth: 180 }}
             />
             <button
@@ -927,7 +1025,7 @@ function Slide2Subtopics({
                     color: "var(--text-muted)",
                   }}
                 >
-                  Subtopic Name *
+                  English *
                 </label>
                 <input
                   className="form-control"
@@ -2439,14 +2537,9 @@ function GrammarViewModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [row, setRow] = useState<Record<
-    string,
-    string | number | boolean | null
-  > | null>(null);
-  const [originalRow, setOriginalRow] = useState<Record<
-    string,
-    string | number | boolean | null
-  > | null>(null);
+  const [row, setRow] = useState<GrammarExcelRow | null>(null);
+  const [originalRow, setOriginalRow] = useState<GrammarExcelRow | null>(null);
+  const [typeSlug, setTypeSlug] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -2464,6 +2557,7 @@ function GrammarViewModal({
       );
       setRow(r.data.row);
       setOriginalRow(r.data.row);
+      setTypeSlug(r.data.type_slug || "");
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
       setError(err.response?.data?.detail || "Failed to load");
@@ -2486,7 +2580,12 @@ function GrammarViewModal({
     if (!row) return;
     setSaving(true);
     try {
-      await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, { row });
+      const rowToSave = Object.prototype.hasOwnProperty.call(row, "Skill")
+        ? row
+        : { ...row, Skill: "Grammar" };
+      await api.put(`/admin/exercises/${externalId.trim()}/excel-row`, {
+        row: rowToSave,
+      });
       setOriginalRow(row);
       setSaved(true);
       setIsDirty(false);
@@ -2508,13 +2607,15 @@ function GrammarViewModal({
     }
   };
 
-  const renderCell = (key: string) => {
+  const renderCell = (key: string, editable: boolean) => {
     const val = String(row![key] ?? "");
     const isLong =
       val.length > 60 ||
+      key.toLowerCase().includes("paragraph") ||
       key.toLowerCase().includes("passage") ||
+      key.toLowerCase().includes("scenario") ||
       key.toLowerCase().includes("sample");
-    if (isEditMode) {
+    if (editable) {
       return isLong ? (
         <textarea
           value={val}
@@ -2569,6 +2670,123 @@ function GrammarViewModal({
     );
   };
 
+  const formatKey = (key: string) => {
+    const labels: Record<string, string> = {
+      "Exercise Tag": "Exercise Tag (Topic)",
+      ExerciseID: "Exercise ID",
+      TimeLimitSeconds: "Time Limit (Sec)",
+      Difficulty: "Difficulty Level",
+    };
+    return labels[key] || key;
+  };
+
+  const renderSingleRow = (key: string, colSpan = 1) => (
+    <tr key={key} style={{ borderBottom: "1px solid var(--border)" }}>
+      <td
+        style={{
+          padding: "8px 12px",
+          fontWeight: 500,
+          fontSize: 12,
+          color: "var(--text-muted)",
+          whiteSpace: "nowrap",
+          verticalAlign: "top",
+          width: 200,
+        }}
+      >
+        {formatKey(key)}
+      </td>
+      <td colSpan={colSpan} style={{ padding: "6px 8px" }}>
+        {renderCell(key, isEditMode)}
+      </td>
+    </tr>
+  );
+
+  const renderPairedRow = (base: string, langs: LangSuffix[]) => (
+    <tr key={base} style={{ borderBottom: "1px solid var(--border)" }}>
+      <td
+        style={{
+          padding: "8px 12px",
+          fontWeight: 500,
+          fontSize: 12,
+          color: "var(--text-muted)",
+          whiteSpace: "nowrap",
+          verticalAlign: "top",
+          width: 160,
+        }}
+      >
+        {base}
+      </td>
+      {langs.map((lang) => {
+        const key = `${base}${lang}`;
+        return (
+          <td
+            key={lang}
+            style={{
+              padding: "6px 8px",
+              verticalAlign: "top",
+              borderLeft: "1px solid var(--border)",
+            }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "1px 7px",
+                borderRadius: 10,
+                marginBottom: 4,
+                background: `${LANG_COLORS[lang]}20`,
+                color: LANG_COLORS[lang],
+                border: `1px solid ${LANG_COLORS[lang]}40`,
+                letterSpacing: "0.05em",
+              }}
+            >
+              {LANG_LABELS[lang]}
+            </span>
+            {renderCell(key, isEditMode)}
+          </td>
+        );
+      })}
+      {Array.from({ length: maxLangs - langs.length }).map((_, i) => (
+        <td
+          key={`empty-${i}`}
+          style={{ padding: "6px 8px", borderLeft: "1px solid var(--border)" }}
+        />
+      ))}
+    </tr>
+  );
+
+  const SectionHeader = ({
+    label,
+    colSpan = 2,
+  }: {
+    label: string;
+    colSpan?: number;
+  }) => (
+    <tr>
+      <td
+        colSpan={colSpan}
+        style={{
+          padding: "10px 12px 4px",
+          fontSize: 11,
+          fontWeight: 700,
+          textTransform: "uppercase",
+          color: "var(--text-muted)",
+          letterSpacing: "0.06em",
+          background: "rgba(255,255,255,0.02)",
+        }}
+      >
+        {label}
+      </td>
+    </tr>
+  );
+
+  const { masterKeys, pairedGroups, unpaired } = row
+    ? groupRowKeys(row, LANG_SUFFIXES)
+    : { masterKeys: [], pairedGroups: [], unpaired: [] };
+  const maxLangs = Math.max(LANG_SUFFIXES.length, 2);
+  const totalCols = 1 + maxLangs;
+
   return (
     <>
       <div
@@ -2588,7 +2806,8 @@ function GrammarViewModal({
           left: "50%",
           transform: "translate(-50%,-50%)",
           zIndex: 1001,
-          width: "min(780px,95vw)",
+          width: "min(960px,97vw)",
+          height: "88vh",
           maxHeight: "88vh",
           background: "var(--card-bg)",
           borderRadius: 12,
@@ -2616,6 +2835,11 @@ function GrammarViewModal({
             >
               {externalId}
             </span>
+            {typeSlug && (
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                {typeSlug}
+              </span>
+            )}
             <span
               style={{
                 fontSize: 11,
@@ -2720,7 +2944,15 @@ function GrammarViewModal({
           </div>
         </div>
         {/* Body */}
-        <div style={{ overflowY: "auto", flex: 1, padding: "0 0 16px" }}>
+        <div
+          style={{
+            overflowY: "auto",
+            overflowX: "auto",
+            flex: 1,
+            minHeight: 0,
+            padding: "0 0 16px",
+          }}
+        >
           {loading && (
             <p
               style={{
@@ -2755,32 +2987,65 @@ function GrammarViewModal({
             <table
               style={{
                 width: "100%",
+                minWidth: 1120,
                 borderCollapse: "collapse",
                 fontSize: 13,
               }}
             >
               <tbody>
-                {Object.keys(row).map((key) => (
-                  <tr
-                    key={key}
-                    style={{ borderBottom: "1px solid var(--border)" }}
-                  >
-                    <td
-                      style={{
-                        padding: "8px 12px",
-                        fontWeight: 500,
-                        fontSize: 12,
-                        color: "var(--text-muted)",
-                        whiteSpace: "nowrap",
-                        verticalAlign: "top",
-                        width: 200,
-                      }}
-                    >
-                      {key}
-                    </td>
-                    <td style={{ padding: "6px 8px" }}>{renderCell(key)}</td>
-                  </tr>
-                ))}
+                {masterKeys.length > 0 && (
+                  <>
+                    <SectionHeader
+                      label="Part 1 - Data Master"
+                      colSpan={totalCols}
+                    />
+                    <tr style={{ background: "rgba(255,255,255,0.01)" }}>
+                      <td
+                        colSpan={totalCols}
+                        style={{
+                          padding: "4px 12px 8px",
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        Language-agnostic settings - same for all languages
+                      </td>
+                    </tr>
+                    {masterKeys.map((key) => renderSingleRow(key, maxLangs))}
+                  </>
+                )}
+                {pairedGroups.length > 0 && (
+                  <>
+                    <SectionHeader
+                      label="Part 2 - Teacher Check - Translations"
+                      colSpan={totalCols}
+                    />
+                    <tr style={{ background: "rgba(255,255,255,0.01)" }}>
+                      <td
+                        colSpan={totalCols}
+                        style={{
+                          padding: "4px 12px 8px",
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        Each row shows all language versions side by side for
+                        easy comparison
+                      </td>
+                    </tr>
+                    {pairedGroups.map(({ base, langs }) =>
+                      renderPairedRow(base, langs),
+                    )}
+                  </>
+                )}
+                {unpaired.length > 0 && (
+                  <>
+                    <SectionHeader label="Other" colSpan={totalCols} />
+                    {unpaired.map((key) => renderSingleRow(key, maxLangs))}
+                  </>
+                )}
               </tbody>
             </table>
           )}
