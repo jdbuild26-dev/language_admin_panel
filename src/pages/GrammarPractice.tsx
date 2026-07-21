@@ -474,7 +474,7 @@ function Slide1Topics({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get("/admin/grammar/topics", {
+      const r = await api.get("/admin/grammar-practice/categories", {
         params: { learning_lang: learningLang, level_code: level },
       });
       setTopics(r.data.topics || []);
@@ -493,7 +493,7 @@ function Slide1Topics({
     if (!nameEn.trim()) return;
     setSaving(true);
     try {
-      await api.post("/admin/grammar/topics", {
+      await api.post("/admin/grammar-practice/categories", {
         name_en: nameEn.trim(),
         name_fr: nameFr.trim() || undefined,
         name_de: nameDe.trim() || undefined,
@@ -521,7 +521,7 @@ function Slide1Topics({
     if (!confirmDelete) return;
     setDeleteLoading(true);
     try {
-      await api.delete(`/admin/grammar/topics/${confirmDelete.id}`);
+      await api.delete(`/admin/grammar-practice/categories/${confirmDelete.id}`);
       showToast(true, `Deleted "${confirmDelete.name_en}"`);
       setTopics((prev) => prev.filter((t) => t.id !== confirmDelete.id));
     } catch (e: unknown) {
@@ -806,14 +806,14 @@ function Slide2Subtopics({
     setLoading(true);
     try {
       const [subtopicsResponse, subtypeResponse] = await Promise.all([
-        api.get("/admin/grammar/subtopics", { params: { topic_id: topic.id } }),
+        api.get("/admin/grammar-practice/subtopics", { params: { topic_id: topic.id } }),
         api
           .get("/admin/exercise-subtypes")
           .catch(() => ({ data: { items: [] } })),
       ]);
       const typeBySubtopicId = new Map<number, GrammarExerciseTypeSlug>();
       (subtypeResponse.data.items || []).forEach((subtype: ExerciseSubtype) => {
-        const match = /^grammar_(\d+)$/.exec(subtype.subtype_slug);
+        const match = /^(?:practice|grammar)_(\d+)$/.exec(subtype.subtype_slug);
         if (
           match &&
           GRAMMAR_EXERCISE_TYPES.some((type) => type.slug === subtype.type_slug)
@@ -858,7 +858,7 @@ function Slide2Subtopics({
     if (!nameEn.trim() || !exerciseTypeSlug) return;
     setSaving(true);
     try {
-      const response = await api.post("/admin/grammar/subtopics", {
+      const response = await api.post("/admin/grammar-practice/subtopics", {
         topic_id: topic.id,
         name_en: nameEn.trim(),
         name_fr: nameFr.trim() || undefined,
@@ -883,7 +883,7 @@ function Slide2Subtopics({
           name_fr: createdSubtopic.name_fr,
           name_de: createdSubtopic.name_de,
           name_es: createdSubtopic.name_es,
-          subtype_slug: `grammar_${createdSubtopic.id}`,
+          subtype_slug: `practice_${createdSubtopic.id}`,
           type_slug: exerciseTypeSlug,
         });
         subtypeId = subtypeResponse.data.id;
@@ -906,7 +906,7 @@ function Slide2Subtopics({
           formData.append("file", csvFile, csvFile.name);
           formData.append("skill", "Grammar");
           formData.append("type_slug", exerciseTypeSlug);
-          formData.append("category", `grammar_${createdSubtopic.id}`);
+          formData.append("category", `practice_${createdSubtopic.id}`);
           const uploadResponse = await api.post(
             "/admin/sync/exercises",
             formData,
@@ -921,7 +921,7 @@ function Slide2Subtopics({
             .catch(() => {});
         }
         await api
-          .delete(`/admin/grammar/subtopics/${createdSubtopic.id}`)
+          .delete(`/admin/grammar-practice/subtopics/${createdSubtopic.id}`)
           .catch(() => {});
         throw error;
       }
@@ -946,7 +946,7 @@ function Slide2Subtopics({
     if (!confirmDelete) return;
     setDeleteLoading(true);
     try {
-      await api.delete(`/admin/grammar/subtopics/${confirmDelete.id}`);
+      await api.delete(`/admin/grammar-practice/subtopics/${confirmDelete.id}`);
       showToast(true, `Deleted "${confirmDelete.name_en}"`);
       setSubtopics((prev) => prev.filter((s) => s.id !== confirmDelete.id));
     } catch (e: unknown) {
@@ -1417,7 +1417,7 @@ function Slide3ExerciseTypes({
   useEffect(() => {
     api
       .get("/admin/exercises", {
-        params: { level, page_size: 200, category: `grammar_${subtopic.id}` },
+        params: { level, page_size: 200, category: `practice_${subtopic.id}` },
       })
       .then((r) => {
         const slugs = new Set<string>(
@@ -2205,8 +2205,8 @@ function Slide4Exercises({
     GRAMMAR_EXERCISE_LABELS[exerciseTypeSlug] ??
     GRAMMAR_EXERCISE_TYPES.find((e) => e.slug === exerciseTypeSlug)?.name ??
     exerciseTypeSlug;
-  // Grammar exercises use category = grammar_{subtopic_id} to scope them
-  const grammarCategory = `grammar_${subtopic.id}`;
+  // Grammar Practice exercises use category = practice_{subtopic_id} to scope them
+  const grammarCategory = `practice_${subtopic.id}`;
 
   const load = useCallback(async () => {
     setLoading(true);
