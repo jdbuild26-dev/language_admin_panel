@@ -26,7 +26,7 @@ const LANGUAGES = [
   { code: "pt", label: "Portuguese" },
 ] as const;
 
-interface GrammarTopic {
+interface PracticeCategory {
   id: number;
   slug: string;
   name_en: string;
@@ -36,7 +36,7 @@ interface GrammarTopic {
   subtopics_count: number;
 }
 
-interface GrammarSubtopic {
+interface PracticeSubtopic {
   id: number;
   slug: string;
   name_en: string;
@@ -457,10 +457,10 @@ function Slide1Topics({
 }: {
   learningLang: string;
   level: CefrLevel;
-  onSelect: (topic: GrammarTopic) => void;
+  onSelect: (topic: PracticeCategory) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
-  const [topics, setTopics] = useState<GrammarTopic[]>([]);
+  const [topics, setTopics] = useState<PracticeCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [nameEn, setNameEn] = useState("");
@@ -468,7 +468,7 @@ function Slide1Topics({
   const [nameDe, setNameDe] = useState("");
   const [nameEs, setNameEs] = useState("");
   const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<GrammarTopic | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<PracticeCategory | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -778,13 +778,13 @@ function Slide2Subtopics({
   onSelect,
   showToast,
 }: {
-  topic: GrammarTopic;
+  topic: PracticeCategory;
   level: CefrLevel;
   onBack: () => void;
-  onSelect: (sub: GrammarSubtopic, typeSlug?: GrammarExerciseTypeSlug) => void;
+  onSelect: (sub: PracticeSubtopic, typeSlug?: GrammarExerciseTypeSlug) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
-  const [subtopics, setSubtopics] = useState<GrammarSubtopic[]>([]);
+  const [subtopics, setSubtopics] = useState<PracticeSubtopic[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [nameEn, setNameEn] = useState("");
@@ -796,7 +796,7 @@ function Slide2Subtopics({
   >("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<GrammarSubtopic | null>(
+  const [confirmDelete, setConfirmDelete] = useState<PracticeSubtopic | null>(
     null,
   );
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -813,7 +813,7 @@ function Slide2Subtopics({
       ]);
       const typeBySubtopicId = new Map<number, GrammarExerciseTypeSlug>();
       (subtypeResponse.data.items || []).forEach((subtype: ExerciseSubtype) => {
-        const match = /^(?:practice|grammar)_(\d+)$/.exec(subtype.subtype_slug);
+        const match = /^grammar_(\d+)$/.exec(subtype.subtype_slug);
         if (
           match &&
           GRAMMAR_EXERCISE_TYPES.some((type) => type.slug === subtype.type_slug)
@@ -826,7 +826,7 @@ function Slide2Subtopics({
       });
       setSubtopics(
         (subtopicsResponse.data.subtopics || []).map(
-          (subtopic: GrammarSubtopic) => ({
+          (subtopic: PracticeSubtopic) => ({
             ...subtopic,
             exercise_type_slug: typeBySubtopicId.get(subtopic.id),
           }),
@@ -866,7 +866,7 @@ function Slide2Subtopics({
         name_es: nameEs.trim() || undefined,
         order_index: subtopics.length,
       });
-      const createdSubtopic: GrammarSubtopic = {
+      const createdSubtopic: PracticeSubtopic = {
         id: response.data.id,
         slug: response.data.slug,
         name_en: nameEn.trim(),
@@ -883,7 +883,7 @@ function Slide2Subtopics({
           name_fr: createdSubtopic.name_fr,
           name_de: createdSubtopic.name_de,
           name_es: createdSubtopic.name_es,
-          subtype_slug: `practice_${createdSubtopic.id}`,
+          subtype_slug: `grammar_${createdSubtopic.id}`,
           type_slug: exerciseTypeSlug,
         });
         subtypeId = subtypeResponse.data.id;
@@ -906,7 +906,7 @@ function Slide2Subtopics({
           formData.append("file", csvFile, csvFile.name);
           formData.append("skill", "Grammar");
           formData.append("type_slug", exerciseTypeSlug);
-          formData.append("category", `practice_${createdSubtopic.id}`);
+          formData.append("category", `grammar_${createdSubtopic.id}`);
           const uploadResponse = await api.post(
             "/admin/sync/exercises",
             formData,
@@ -1377,8 +1377,8 @@ function Slide3ExerciseTypes({
   onBack,
   onSelect,
 }: {
-  topic: GrammarTopic;
-  subtopic: GrammarSubtopic;
+  topic: PracticeCategory;
+  subtopic: PracticeSubtopic;
   level: CefrLevel;
   onBack: () => void;
   onSelect: (typeSlug: GrammarExerciseTypeSlug) => void;
@@ -1417,7 +1417,7 @@ function Slide3ExerciseTypes({
   useEffect(() => {
     api
       .get("/admin/exercises", {
-        params: { level, page_size: 200, category: `practice_${subtopic.id}` },
+        params: { level, page_size: 200, category: `grammar_${subtopic.id}` },
       })
       .then((r) => {
         const slugs = new Set<string>(
@@ -2185,8 +2185,8 @@ function Slide4Exercises({
   onBack,
   showToast,
 }: {
-  topic: GrammarTopic;
-  subtopic: GrammarSubtopic;
+  topic: PracticeCategory;
+  subtopic: PracticeSubtopic;
   exerciseTypeSlug: GrammarExerciseTypeSlug;
   level: CefrLevel;
   onBack: () => void;
@@ -2205,8 +2205,8 @@ function Slide4Exercises({
     GRAMMAR_EXERCISE_LABELS[exerciseTypeSlug] ??
     GRAMMAR_EXERCISE_TYPES.find((e) => e.slug === exerciseTypeSlug)?.name ??
     exerciseTypeSlug;
-  // Grammar Practice exercises use category = practice_{subtopic_id} to scope them
-  const grammarCategory = `practice_${subtopic.id}`;
+  // Grammar exercises use category = grammar_{subtopic_id} to scope them
+  const grammarCategory = `grammar_${subtopic.id}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -3196,9 +3196,9 @@ export default function GrammarPractice() {
   const [learningLang, setLearningLang] = useState("fr");
   const [level, setLevel] = useState<CefrLevel>("A1");
   const [slide, setSlide] = useState<Slide>("topics");
-  const [selectedTopic, setSelectedTopic] = useState<GrammarTopic | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<PracticeCategory | null>(null);
   const [selectedSubtopic, setSelectedSubtopic] =
-    useState<GrammarSubtopic | null>(null);
+    useState<PracticeSubtopic | null>(null);
   const [selectedTypeSlug, setSelectedTypeSlug] =
     useState<GrammarExerciseTypeSlug | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
