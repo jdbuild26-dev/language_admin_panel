@@ -118,6 +118,12 @@ const LANG_LABELS: Record<LangSuffix, string> = {
   _DE: "DE",
   _ES: "ES",
 };
+
+type PairedGroup = {
+  base: string;
+  langs: LangSuffix[];
+  keysByLang?: Partial<Record<LangSuffix, string>>;
+};
 const LANG_COLORS: Record<LangSuffix, string> = {
   _EN: "#60a5fa",
   _FR: "#a78bfa",
@@ -156,7 +162,7 @@ function groupRowKeys(
   visibleLanguages: readonly LangSuffix[] | LangSuffix[],
 ): {
   masterKeys: string[];
-  pairedGroups: { base: string; langs: LangSuffix[] }[];
+  pairedGroups: PairedGroup[];
   unpaired: string[];
 } {
   const masterKeys = DATA_MASTER_KEYS.filter((k) => k in row);
@@ -185,6 +191,43 @@ function groupRowKeys(
     .filter((group) => group.langs.length > 0);
 
   return { masterKeys, pairedGroups, unpaired };
+}
+
+function normalizeFourOptionsGroups(groups: PairedGroup[]): PairedGroup[] {
+  const completeSentence = groups.find((group) => group.base === "Complete Sentence");
+  const completePassage = groups.find((group) => group.base === "Complete Passage");
+
+  if (!completeSentence && !completePassage) return groups;
+
+  const mergedLangs = LANG_SUFFIXES.filter(
+    (lang) =>
+      completeSentence?.langs.includes(lang) || completePassage?.langs.includes(lang),
+  );
+  const keysByLang: Partial<Record<LangSuffix, string>> = {};
+
+  for (const lang of mergedLangs) {
+    keysByLang[lang] = completeSentence?.langs.includes(lang)
+      ? `Complete Sentence${lang}`
+      : `Complete Passage${lang}`;
+  }
+
+  const mergedGroup: PairedGroup = {
+    base: "Complete Sentence",
+    langs: mergedLangs,
+    keysByLang,
+  };
+
+  const result = groups.filter(
+    (group) =>
+      group.base !== "Complete Sentence" && group.base !== "Complete Passage",
+  );
+  const insertAt = groups.findIndex(
+    (group) =>
+      group.base === "Complete Sentence" || group.base === "Complete Passage",
+  );
+
+  result.splice(Math.max(insertAt, 0), 0, mergedGroup);
+  return result;
 }
 
 function Toast({
@@ -571,35 +614,41 @@ function Slide1Topics({
           <p style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>
             New Category
           </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                flex: "1 1 360px",
+                maxWidth: 520,
+              }}
+            >
             <input
               className="form-control"
               placeholder="Name (EN) e.g. Nouns *"
               value={nameEn}
               onChange={(e) => setNameEn(e.target.value)}
-              style={{ flex: 1, minWidth: 180 }}
             />
             <input
               className="form-control"
               placeholder="Name (FR) optional"
               value={nameFr}
               onChange={(e) => setNameFr(e.target.value)}
-              style={{ flex: 1, minWidth: 180 }}
             />
             <input
               className="form-control"
               placeholder="Name (DE) optional"
               value={nameDe}
               onChange={(e) => setNameDe(e.target.value)}
-              style={{ flex: 1, minWidth: 180 }}
             />
             <input
               className="form-control"
               placeholder="Name (ES) optional"
               value={nameEs}
               onChange={(e) => setNameEs(e.target.value)}
-              style={{ flex: 1, minWidth: 180 }}
             />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
             <button
               className="btn btn-primary"
               onClick={handleCreate}
@@ -615,6 +664,7 @@ function Slide1Topics({
             >
               Cancel
             </button>
+            </div>
           </div>
         </div>
       )}
@@ -2701,7 +2751,7 @@ function GrammarViewModal({
     </tr>
   );
 
-  const renderPairedRow = (base: string, langs: LangSuffix[]) => (
+  const renderPairedRow = ({ base, langs, keysByLang }: PairedGroup) => (
     <tr key={base} style={{ borderBottom: "1px solid var(--border)" }}>
       <td
         style={{
@@ -2717,7 +2767,7 @@ function GrammarViewModal({
         {base}
       </td>
       {langs.map((lang) => {
-        const key = `${base}${lang}`;
+        const key = keysByLang?.[lang] ?? `${base}${lang}`;
         return (
           <td
             key={lang}
@@ -2781,9 +2831,15 @@ function GrammarViewModal({
     </tr>
   );
 
-  const { masterKeys, pairedGroups, unpaired } = row
+  const groupedKeys = row
     ? groupRowKeys(row, LANG_SUFFIXES)
     : { masterKeys: [], pairedGroups: [], unpaired: [] };
+  const masterKeys = groupedKeys.masterKeys;
+  const pairedGroups =
+    typeSlug === "four_options"
+      ? normalizeFourOptionsGroups(groupedKeys.pairedGroups)
+      : groupedKeys.pairedGroups;
+  const unpaired = groupedKeys.unpaired;
   const maxLangs = Math.max(LANG_SUFFIXES.length, 2);
   const totalCols = 1 + maxLangs;
 
@@ -3035,9 +3091,7 @@ function GrammarViewModal({
                         easy comparison
                       </td>
                     </tr>
-                    {pairedGroups.map(({ base, langs }) =>
-                      renderPairedRow(base, langs),
-                    )}
+                    {pairedGroups.map((group) => renderPairedRow(group))}
                   </>
                 )}
                 {unpaired.length > 0 && (
