@@ -26,7 +26,7 @@ const LANGUAGES = [
   { code: "pt", label: "Portuguese" },
 ] as const;
 
-interface GrammarTopic {
+interface PracticeCategory {
   id: number;
   slug: string;
   name_en: string;
@@ -36,7 +36,7 @@ interface GrammarTopic {
   subtopics_count: number;
 }
 
-interface GrammarSubtopic {
+interface PracticeSubtopic {
   id: number;
   slug: string;
   name_en: string;
@@ -118,6 +118,12 @@ const LANG_LABELS: Record<LangSuffix, string> = {
   _DE: "DE",
   _ES: "ES",
 };
+
+type PairedGroup = {
+  base: string;
+  langs: LangSuffix[];
+  keysByLang?: Partial<Record<LangSuffix, string>>;
+};
 const LANG_COLORS: Record<LangSuffix, string> = {
   _EN: "#60a5fa",
   _FR: "#a78bfa",
@@ -156,7 +162,7 @@ function groupRowKeys(
   visibleLanguages: readonly LangSuffix[] | LangSuffix[],
 ): {
   masterKeys: string[];
-  pairedGroups: { base: string; langs: LangSuffix[] }[];
+  pairedGroups: PairedGroup[];
   unpaired: string[];
 } {
   const masterKeys = DATA_MASTER_KEYS.filter((k) => k in row);
@@ -185,6 +191,43 @@ function groupRowKeys(
     .filter((group) => group.langs.length > 0);
 
   return { masterKeys, pairedGroups, unpaired };
+}
+
+function normalizeFourOptionsGroups(groups: PairedGroup[]): PairedGroup[] {
+  const completeSentence = groups.find((group) => group.base === "Complete Sentence");
+  const completePassage = groups.find((group) => group.base === "Complete Passage");
+
+  if (!completeSentence && !completePassage) return groups;
+
+  const mergedLangs = LANG_SUFFIXES.filter(
+    (lang) =>
+      completeSentence?.langs.includes(lang) || completePassage?.langs.includes(lang),
+  );
+  const keysByLang: Partial<Record<LangSuffix, string>> = {};
+
+  for (const lang of mergedLangs) {
+    keysByLang[lang] = completeSentence?.langs.includes(lang)
+      ? `Complete Sentence${lang}`
+      : `Complete Passage${lang}`;
+  }
+
+  const mergedGroup: PairedGroup = {
+    base: "Complete Sentence",
+    langs: mergedLangs,
+    keysByLang,
+  };
+
+  const result = groups.filter(
+    (group) =>
+      group.base !== "Complete Sentence" && group.base !== "Complete Passage",
+  );
+  const insertAt = groups.findIndex(
+    (group) =>
+      group.base === "Complete Sentence" || group.base === "Complete Passage",
+  );
+
+  result.splice(Math.max(insertAt, 0), 0, mergedGroup);
+  return result;
 }
 
 function Toast({
@@ -457,10 +500,10 @@ function Slide1Topics({
 }: {
   learningLang: string;
   level: CefrLevel;
-  onSelect: (topic: GrammarTopic) => void;
+  onSelect: (topic: PracticeCategory) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
-  const [topics, setTopics] = useState<GrammarTopic[]>([]);
+  const [topics, setTopics] = useState<PracticeCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [nameEn, setNameEn] = useState("");
@@ -468,7 +511,7 @@ function Slide1Topics({
   const [nameDe, setNameDe] = useState("");
   const [nameEs, setNameEs] = useState("");
   const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<GrammarTopic | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<PracticeCategory | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -571,35 +614,41 @@ function Slide1Topics({
           <p style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>
             New Category
           </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                flex: "1 1 360px",
+                maxWidth: 520,
+              }}
+            >
             <input
               className="form-control"
               placeholder="Name (EN) e.g. Nouns *"
               value={nameEn}
               onChange={(e) => setNameEn(e.target.value)}
-              style={{ flex: 1, minWidth: 180 }}
             />
             <input
               className="form-control"
               placeholder="Name (FR) optional"
               value={nameFr}
               onChange={(e) => setNameFr(e.target.value)}
-              style={{ flex: 1, minWidth: 180 }}
             />
             <input
               className="form-control"
               placeholder="Name (DE) optional"
               value={nameDe}
               onChange={(e) => setNameDe(e.target.value)}
-              style={{ flex: 1, minWidth: 180 }}
             />
             <input
               className="form-control"
               placeholder="Name (ES) optional"
               value={nameEs}
               onChange={(e) => setNameEs(e.target.value)}
-              style={{ flex: 1, minWidth: 180 }}
             />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
             <button
               className="btn btn-primary"
               onClick={handleCreate}
@@ -615,6 +664,7 @@ function Slide1Topics({
             >
               Cancel
             </button>
+            </div>
           </div>
         </div>
       )}
@@ -778,13 +828,13 @@ function Slide2Subtopics({
   onSelect,
   showToast,
 }: {
-  topic: GrammarTopic;
+  topic: PracticeCategory;
   level: CefrLevel;
   onBack: () => void;
-  onSelect: (sub: GrammarSubtopic, typeSlug?: GrammarExerciseTypeSlug) => void;
+  onSelect: (sub: PracticeSubtopic, typeSlug?: GrammarExerciseTypeSlug) => void;
   showToast: (ok: boolean, msg: string) => void;
 }) {
-  const [subtopics, setSubtopics] = useState<GrammarSubtopic[]>([]);
+  const [subtopics, setSubtopics] = useState<PracticeSubtopic[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [nameEn, setNameEn] = useState("");
@@ -796,7 +846,7 @@ function Slide2Subtopics({
   >("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<GrammarSubtopic | null>(
+  const [confirmDelete, setConfirmDelete] = useState<PracticeSubtopic | null>(
     null,
   );
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -813,7 +863,7 @@ function Slide2Subtopics({
       ]);
       const typeBySubtopicId = new Map<number, GrammarExerciseTypeSlug>();
       (subtypeResponse.data.items || []).forEach((subtype: ExerciseSubtype) => {
-        const match = /^(?:practice|grammar)_(\d+)$/.exec(subtype.subtype_slug);
+        const match = /^grammar_(\d+)$/.exec(subtype.subtype_slug);
         if (
           match &&
           GRAMMAR_EXERCISE_TYPES.some((type) => type.slug === subtype.type_slug)
@@ -826,7 +876,7 @@ function Slide2Subtopics({
       });
       setSubtopics(
         (subtopicsResponse.data.subtopics || []).map(
-          (subtopic: GrammarSubtopic) => ({
+          (subtopic: PracticeSubtopic) => ({
             ...subtopic,
             exercise_type_slug: typeBySubtopicId.get(subtopic.id),
           }),
@@ -866,7 +916,7 @@ function Slide2Subtopics({
         name_es: nameEs.trim() || undefined,
         order_index: subtopics.length,
       });
-      const createdSubtopic: GrammarSubtopic = {
+      const createdSubtopic: PracticeSubtopic = {
         id: response.data.id,
         slug: response.data.slug,
         name_en: nameEn.trim(),
@@ -883,7 +933,7 @@ function Slide2Subtopics({
           name_fr: createdSubtopic.name_fr,
           name_de: createdSubtopic.name_de,
           name_es: createdSubtopic.name_es,
-          subtype_slug: `practice_${createdSubtopic.id}`,
+          subtype_slug: `grammar_${createdSubtopic.id}`,
           type_slug: exerciseTypeSlug,
         });
         subtypeId = subtypeResponse.data.id;
@@ -906,7 +956,7 @@ function Slide2Subtopics({
           formData.append("file", csvFile, csvFile.name);
           formData.append("skill", "Grammar");
           formData.append("type_slug", exerciseTypeSlug);
-          formData.append("category", `practice_${createdSubtopic.id}`);
+          formData.append("category", `grammar_${createdSubtopic.id}`);
           const uploadResponse = await api.post(
             "/admin/sync/exercises",
             formData,
@@ -1377,8 +1427,8 @@ function Slide3ExerciseTypes({
   onBack,
   onSelect,
 }: {
-  topic: GrammarTopic;
-  subtopic: GrammarSubtopic;
+  topic: PracticeCategory;
+  subtopic: PracticeSubtopic;
   level: CefrLevel;
   onBack: () => void;
   onSelect: (typeSlug: GrammarExerciseTypeSlug) => void;
@@ -1417,7 +1467,7 @@ function Slide3ExerciseTypes({
   useEffect(() => {
     api
       .get("/admin/exercises", {
-        params: { level, page_size: 200, category: `practice_${subtopic.id}` },
+        params: { level, page_size: 200, category: `grammar_${subtopic.id}` },
       })
       .then((r) => {
         const slugs = new Set<string>(
@@ -2185,8 +2235,8 @@ function Slide4Exercises({
   onBack,
   showToast,
 }: {
-  topic: GrammarTopic;
-  subtopic: GrammarSubtopic;
+  topic: PracticeCategory;
+  subtopic: PracticeSubtopic;
   exerciseTypeSlug: GrammarExerciseTypeSlug;
   level: CefrLevel;
   onBack: () => void;
@@ -2205,8 +2255,8 @@ function Slide4Exercises({
     GRAMMAR_EXERCISE_LABELS[exerciseTypeSlug] ??
     GRAMMAR_EXERCISE_TYPES.find((e) => e.slug === exerciseTypeSlug)?.name ??
     exerciseTypeSlug;
-  // Grammar Practice exercises use category = practice_{subtopic_id} to scope them
-  const grammarCategory = `practice_${subtopic.id}`;
+  // Grammar exercises use category = grammar_{subtopic_id} to scope them
+  const grammarCategory = `grammar_${subtopic.id}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2701,7 +2751,7 @@ function GrammarViewModal({
     </tr>
   );
 
-  const renderPairedRow = (base: string, langs: LangSuffix[]) => (
+  const renderPairedRow = ({ base, langs, keysByLang }: PairedGroup) => (
     <tr key={base} style={{ borderBottom: "1px solid var(--border)" }}>
       <td
         style={{
@@ -2717,7 +2767,7 @@ function GrammarViewModal({
         {base}
       </td>
       {langs.map((lang) => {
-        const key = `${base}${lang}`;
+        const key = keysByLang?.[lang] ?? `${base}${lang}`;
         return (
           <td
             key={lang}
@@ -2781,9 +2831,15 @@ function GrammarViewModal({
     </tr>
   );
 
-  const { masterKeys, pairedGroups, unpaired } = row
+  const groupedKeys = row
     ? groupRowKeys(row, LANG_SUFFIXES)
     : { masterKeys: [], pairedGroups: [], unpaired: [] };
+  const masterKeys = groupedKeys.masterKeys;
+  const pairedGroups =
+    typeSlug === "four_options"
+      ? normalizeFourOptionsGroups(groupedKeys.pairedGroups)
+      : groupedKeys.pairedGroups;
+  const unpaired = groupedKeys.unpaired;
   const maxLangs = Math.max(LANG_SUFFIXES.length, 2);
   const totalCols = 1 + maxLangs;
 
@@ -3035,9 +3091,7 @@ function GrammarViewModal({
                         easy comparison
                       </td>
                     </tr>
-                    {pairedGroups.map(({ base, langs }) =>
-                      renderPairedRow(base, langs),
-                    )}
+                    {pairedGroups.map((group) => renderPairedRow(group))}
                   </>
                 )}
                 {unpaired.length > 0 && (
@@ -3196,9 +3250,9 @@ export default function GrammarPractice() {
   const [learningLang, setLearningLang] = useState("fr");
   const [level, setLevel] = useState<CefrLevel>("A1");
   const [slide, setSlide] = useState<Slide>("topics");
-  const [selectedTopic, setSelectedTopic] = useState<GrammarTopic | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<PracticeCategory | null>(null);
   const [selectedSubtopic, setSelectedSubtopic] =
-    useState<GrammarSubtopic | null>(null);
+    useState<PracticeSubtopic | null>(null);
   const [selectedTypeSlug, setSelectedTypeSlug] =
     useState<GrammarExerciseTypeSlug | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
