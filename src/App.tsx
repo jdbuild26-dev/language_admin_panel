@@ -46,10 +46,6 @@ function App() {
             <BookMarked size={20} />
             Stories
           </NavLink>
-          <NavLink to="/stories/upload" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Upload size={20} />
-            Story Upload
-          </NavLink>
           <NavLink to="/ai-practice" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <MessageSquare size={20} />
             AI Practice
