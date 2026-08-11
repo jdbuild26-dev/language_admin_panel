@@ -23,7 +23,7 @@ interface Category {
   name_fr?: string;
   name_de?: string;
   name_es?: string;
-  learning_lang: string;
+  learning_lang?: string | null;
   level_code: string;
   story_type: StoryType | null;
   subtopics_count: number;
@@ -37,16 +37,7 @@ interface StoryItem {
 }
 
 const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
-const LANGUAGES = [
-  { code: "fr", label: "French" },
-  { code: "de", label: "German" },
-  { code: "es", label: "Spanish" },
-  { code: "it", label: "Italian" },
-  { code: "pt", label: "Portuguese" },
-];
-
 export default function StoriesManager() {
-  const [learningLang, setLearningLang] = useState("fr");
   const [level, setLevel] = useState("A1");
   const [storyType, setStoryType] = useState<StoryType>("dialogue");
   const [selected, setSelected] = useState<Category | null>(null);
@@ -69,7 +60,7 @@ export default function StoriesManager() {
     setLoading(true);
     try {
       const response = await api.get("/admin/stories/topics", {
-        params: { learning_lang: learningLang, level_code: level, story_type: storyType },
+        params: { level_code: level, story_type: storyType },
       });
       setCategories(response.data.topics || []);
     } catch (error: any) {
@@ -78,12 +69,14 @@ export default function StoriesManager() {
     } finally {
       setLoading(false);
     }
-  }, [learningLang, level, storyType]);
+  }, [level, storyType]);
 
   const loadStories = useCallback(async (categoryId: number) => {
-    const response = await api.get("/admin/stories/subtopics", { params: { topic_id: categoryId } });
+    const response = await api.get("/admin/stories/subtopics", {
+      params: { topic_id: categoryId, story_type: storyType },
+    });
     setStories(response.data.subtopics || []);
-  }, []);
+  }, [storyType]);
 
   useEffect(() => {
     setSelected(null);
@@ -100,7 +93,6 @@ export default function StoriesManager() {
         name_fr: names.fr.trim() || undefined,
         name_de: names.de.trim() || undefined,
         name_es: names.es.trim() || undefined,
-        learning_lang: learningLang,
         level_code: level,
         story_type: storyType,
         order_index: categories.length,
@@ -174,7 +166,6 @@ export default function StoriesManager() {
     }
     const form = new FormData();
     form.append("story_type", type);
-    form.append("learning_lang", selected.learning_lang);
     form.append("level", selected.level_code);
     form.append("category_id", String(selected.id));
     form.append("csv_quiz", quiz);
@@ -227,7 +218,7 @@ export default function StoriesManager() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "1.5rem" }}>
           <div>
             <h1 style={{ marginBottom: 4 }}>{selected.name_en}</h1>
-            <p className="text-muted">{type === "dialogue" ? "Dialogue" : "Monologue"} · {selected.level_code} · {selected.learning_lang.toUpperCase()}</p>
+            <p className="text-muted">{type === "dialogue" ? "Dialogue" : "Monologue"} · {selected.level_code}</p>
           </div>
         </div>
 
@@ -297,7 +288,6 @@ export default function StoriesManager() {
       <h1 style={{ marginBottom: 6 }}>Stories</h1>
       <p className="text-muted" style={{ marginBottom: "1.5rem" }}>Manage stories as Level → Type → Category → Story.</p>
       <div className="card" style={{ display: "flex", gap: "2rem", alignItems: "center", flexWrap: "wrap", padding: "1.25rem 1.5rem" }}>
-        <label style={controlLabel}>Learning Language<select className="form-control" value={learningLang} onChange={(e) => setLearningLang(e.target.value)}>{LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}</select></label>
         <label style={controlLabel}>CEFR Level<select className="form-control" value={level} onChange={(e) => setLevel(e.target.value)}>{LEVELS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontWeight: 600, color: "var(--text-muted)" }}>Type</span>{(["dialogue", "monologue"] as StoryType[]).map((typeItem) => <button key={typeItem} className={storyType === typeItem ? "btn btn-primary" : "btn"} onClick={() => setStoryType(typeItem)}>{typeItem === "dialogue" ? "Dialogue" : "Monologue"}</button>)}</div>
       </div>
