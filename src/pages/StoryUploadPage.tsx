@@ -4,7 +4,6 @@ import { Upload, CheckCircle2, AlertCircle, FileSpreadsheet, ArrowRight, ArrowLe
 const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:8000';
 
 interface UploadState {
-  learningLang: string;
   level: string;
   storyType: string;
   step: 1 | 2;
@@ -18,7 +17,6 @@ interface UploadState {
 }
 
 const INITIAL_STATE: UploadState = {
-  learningLang: '',
   level: '',
   storyType: '',
   step: 1,
@@ -33,7 +31,6 @@ const INITIAL_STATE: UploadState = {
 
 export default function StoryUploadPage() {
   const [state, setState] = useState<UploadState>(INITIAL_STATE);
-  const [syncLang, setSyncLang] = useState('fr');
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
 
@@ -46,7 +43,7 @@ export default function StoryUploadPage() {
     setState(prev => ({ ...prev, ...patch }));
 
   const step1Complete =
-    state.learningLang !== '' && state.level !== '' && state.storyType !== '';
+    state.level !== '' && state.storyType !== '';
 
   const step2Complete =
     state.storyType === 'Dialogue'
@@ -58,7 +55,6 @@ export default function StoryUploadPage() {
 
     const formData = new FormData();
     formData.append('story_type', state.storyType.toLowerCase());
-    formData.append('learning_lang', state.learningLang);
     formData.append('level', state.level);
 
     if (state.storyType === 'Dialogue') {
@@ -93,7 +89,6 @@ export default function StoryUploadPage() {
     setSyncResult(null);
     try {
       const formData = new FormData();
-      formData.append('learning_lang', syncLang);
       const res = await fetch(`${API_BASE}/api/admin/story-flow/sync-story-concepts`, {
         method: 'POST',
         body: formData,
@@ -129,21 +124,6 @@ export default function StoryUploadPage() {
         {state.step === 1 && (
           <>
             <h2 style={{ marginBottom: '1.5rem' }}>Step 1 — Story Configuration</h2>
-
-            <div className="form-group">
-              <label className="form-label">Learning Language</label>
-              <select
-                className="form-control"
-                value={state.learningLang}
-                onChange={e => update({ learningLang: e.target.value })}
-              >
-                <option value="">Select language…</option>
-                <option value="fr">French (fr)</option>
-                <option value="en">English (en)</option>
-                <option value="es">Spanish (es)</option>
-                <option value="de">German (de)</option>
-              </select>
-            </div>
 
             <div className="form-group">
               <label className="form-label">CEFR Level</label>
@@ -188,7 +168,7 @@ export default function StoryUploadPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
               <h2 style={{ margin: 0 }}>Step 2 — Upload CSV Files</h2>
               <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                {state.storyType} · {state.learningLang.toUpperCase()} · {state.level}
+                {state.storyType} · {state.level}
               </span>
             </div>
 
@@ -281,25 +261,10 @@ export default function StoryUploadPage() {
           Run this once to back-fill them.
         </p>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ marginBottom: '0.25rem' }}>Learning Language</label>
-            <select
-              className="form-control"
-              value={syncLang}
-              onChange={e => setSyncLang(e.target.value)}
-              style={{ width: 'auto' }}
-            >
-              <option value="fr">French (fr)</option>
-              <option value="en">English (en)</option>
-              <option value="es">Spanish (es)</option>
-              <option value="de">German (de)</option>
-            </select>
-          </div>
           <button
             className="btn btn-secondary"
             onClick={handleSync}
             disabled={syncing}
-            style={{ marginTop: '1.25rem' }}
           >
             {syncing ? <><Spinner /> Syncing…</> : 'Sync Now'}
           </button>
