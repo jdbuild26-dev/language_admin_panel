@@ -233,12 +233,12 @@ export default function StoryEditor({ exerciseId, onClose, onSaved, showToast }:
                           placeholder="Speaker" 
                           value={line.person} 
                           onChange={e => updateLine(idx, { person: e.target.value })} 
-                          style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', fontSize: 13, width: 120 }}
+                          style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, width: 120 }}
                         />
                         <select 
                           value={line.gender} 
                           onChange={e => updateLine(idx, { gender: e.target.value })}
-                          style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', fontSize: 13 }}
+                          style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', colorScheme: 'dark', fontSize: 13 }}
                         >
                           <option value="Masculine">Masculine</option>
                           <option value="Feminine">Feminine</option>

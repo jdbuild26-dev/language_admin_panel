@@ -1,11 +1,5 @@
-﻿import ContentManager from '../components/ContentManager';
+import StoriesManager from "../components/StoriesManager";
 
 export default function Stories() {
-  return (
-    <ContentManager
-      pageTitle="Stories"
-      pageDescription="Manage story topics, chapters, and content. Select a language and CEFR level to get started."
-      apiPrefix="stories"
-    />
-  );
+  return <StoriesManager />;
 }
