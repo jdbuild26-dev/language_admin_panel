@@ -48,7 +48,7 @@ export default function StoryUploadPage() {
   const step2Complete =
     state.storyType === 'Dialogue'
       ? state.csvPart1 !== null && state.csvPart2 !== null && state.csvQuiz !== null
-      : state.csvContent !== null && state.csvQuiz !== null;
+      : state.csvContent !== null;
 
   const handleUpload = async () => {
     update({ loading: true, error: null, success: null });
@@ -63,7 +63,7 @@ export default function StoryUploadPage() {
       formData.append('csv_quiz', state.csvQuiz!);
     } else {
       formData.append('csv_content', state.csvContent!);
-      formData.append('csv_quiz', state.csvQuiz!);
+      if (state.csvQuiz) formData.append('csv_quiz', state.csvQuiz);
     }
 
     try {
@@ -202,7 +202,7 @@ export default function StoryUploadPage() {
                   onChange={f => update({ csvContent: f, error: null, success: null })}
                 />
                 <FileInput
-                  label="Quiz CSV"
+                  label="Quiz CSV (optional)"
                   file={state.csvQuiz}
                   inputRef={quizRef}
                   onChange={f => update({ csvQuiz: f, error: null, success: null })}
@@ -329,7 +329,7 @@ function FileInput({ label, file, inputRef, onChange }: FileInputProps) {
       >
         <FileSpreadsheet size={20} color={file ? 'var(--success)' : 'var(--text-muted)'} />
         <span style={{ fontSize: '0.9rem', color: file ? 'var(--success)' : 'var(--text-muted)', flex: 1 }}>
-          {file ? file.name : 'Click to select .csv or .xlsx'}
+          {file ? file.name : 'Click to select .csv'}
         </span>
         {file && (
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -340,7 +340,7 @@ function FileInput({ label, file, inputRef, onChange }: FileInputProps) {
       <input
         ref={inputRef}
         type="file"
-        accept=".csv,.xlsx"
+        accept=".csv"
         style={{ display: 'none' }}
         onChange={e => onChange(e.target.files?.[0] ?? null)}
       />
