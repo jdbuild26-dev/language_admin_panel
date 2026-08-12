@@ -158,9 +158,9 @@ export default function StoriesManager() {
     const type = selected.story_type || storyType;
     const quiz = files.quiz;
     const contentReady = type === "dialogue"
-      ? files.part1 && files.part2
+      ? files.part1 && files.part2 && quiz
       : files.content;
-    if (!quiz || !contentReady) {
+    if (!contentReady) {
       setMessage({ ok: false, text: "Select all required CSV files" });
       return;
     }
@@ -168,7 +168,7 @@ export default function StoriesManager() {
     form.append("story_type", type);
     form.append("level", selected.level_code);
     form.append("category_id", String(selected.id));
-    form.append("csv_quiz", quiz);
+    if (quiz) form.append("csv_quiz", quiz);
     if (type === "dialogue") {
       form.append("csv_part1", files.part1!);
       form.append("csv_part2", files.part2!);
@@ -235,7 +235,7 @@ export default function StoriesManager() {
               ) : (
                 <FilePicker label="Content CSV" file={files.content} onFile={(file) => setFiles((v) => ({ ...v, content: file }))} />
               )}
-              <FilePicker label="Quiz CSV" file={files.quiz} onFile={(file) => setFiles((v) => ({ ...v, quiz: file }))} />
+              <FilePicker label={type === "monologue" ? "Quiz CSV (optional)" : "Quiz CSV"} file={files.quiz} onFile={(file) => setFiles((v) => ({ ...v, quiz: file }))} />
             </div>
             <div style={{ width: 220, padding: "1rem", borderRadius: 10, background: "rgba(31,111,235,0.08)", border: "1px solid rgba(31,111,235,0.2)", color: "var(--text-muted)", fontSize: 13 }}>
               <strong style={{ color: "var(--text)" }}>Upload checklist</strong>
