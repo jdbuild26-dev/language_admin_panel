@@ -174,6 +174,7 @@ export default function StoriesManager() {
       form.append("csv_part2", files.part2!);
     } else {
       form.append("csv_content", files.content!);
+      if (files.part2) form.append("csv_part2", files.part2);
     }
     setSaving(true);
     try {
@@ -233,7 +234,10 @@ export default function StoriesManager() {
                   <FilePicker label="Content Part 2 CSV" file={files.part2} onFile={(file) => setFiles((v) => ({ ...v, part2: file }))} />
                 </>
               ) : (
-                <FilePicker label="Content CSV" file={files.content} onFile={(file) => setFiles((v) => ({ ...v, content: file }))} />
+                <>
+                  <FilePicker label="Content CSV" file={files.content} onFile={(file) => setFiles((v) => ({ ...v, content: file }))} />
+                  <FilePicker label="Content Part 2 CSV (new format, optional)" file={files.part2} onFile={(file) => setFiles((v) => ({ ...v, part2: file }))} />
+                </>
               )}
               <FilePicker label={type === "monologue" ? "Quiz CSV (optional)" : "Quiz CSV"} file={files.quiz} onFile={(file) => setFiles((v) => ({ ...v, quiz: file }))} />
             </div>

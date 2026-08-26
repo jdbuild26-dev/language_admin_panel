@@ -63,6 +63,7 @@ export default function StoryUploadPage() {
       formData.append('csv_quiz', state.csvQuiz!);
     } else {
       formData.append('csv_content', state.csvContent!);
+      if (state.csvPart2) formData.append('csv_part2', state.csvPart2);
       if (state.csvQuiz) formData.append('csv_quiz', state.csvQuiz);
     }
 
@@ -200,6 +201,12 @@ export default function StoryUploadPage() {
                   file={state.csvContent}
                   inputRef={contentRef}
                   onChange={f => update({ csvContent: f, error: null, success: null })}
+                />
+                <FileInput
+                  label="Content Part 2 CSV (new format, optional)"
+                  file={state.csvPart2}
+                  inputRef={part2Ref}
+                  onChange={f => update({ csvPart2: f, error: null, success: null })}
                 />
                 <FileInput
                   label="Quiz CSV (optional)"
