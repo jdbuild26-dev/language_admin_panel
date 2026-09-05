@@ -3,7 +3,6 @@ import { LayoutDashboard, BookOpen, BookText, Dumbbell, BookMarked, MessageSquar
 import Dashboard from './pages/Dashboard';
 import UploadVocabulary from './pages/UploadVocabulary';
 import UploadExercises from './pages/UploadExercises';
-import PromptsEditor from './pages/PromptsEditor';
 import ReadingExercises from './pages/ReadingExercises';
 import TagTopics from './pages/TagTopics';
 import MainPractice from './pages/MainPractice';
@@ -12,6 +11,7 @@ import GrammarPractice from './pages/GrammarPractice';
 import Grammar from './pages/Grammar';
 import Stories from './pages/Stories';
 import StoryUploadPage from './pages/StoryUploadPage';
+import AIChatV2Import from './pages/AIChatV2Import';
 
 function App() {
   return (
@@ -70,8 +70,8 @@ function App() {
           <Route path="/stories/upload" element={<StoryUploadPage />} />
           <Route path="/tag-topics" element={<TagTopics />} />
 
-          <Route path="/ai-practice" element={<PromptsEditor />} />
-          <Route path="/prompts" element={<PromptsEditor />} />
+          <Route path="/ai-practice" element={<AIChatV2Import />} />
+          <Route path="/ai-chat-v2" element={<AIChatV2Import />} />
           <Route path="/blog" element={<Dashboard />} />
         </Routes>
       </main>
