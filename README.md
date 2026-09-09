@@ -71,3 +71,6 @@ export default defineConfig([
   },
 ])
 ```
+# AI Practice v2 rules
+
+The AI Practice v2 rules screen displays and manages the CEFR language rules used by the learner conversation prompt. Response-length and correction-policy fields are no longer presented as active rule inputs.
